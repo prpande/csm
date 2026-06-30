@@ -63,6 +63,16 @@ Sessions live at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`.
 - **Last** `permission-mode` wins. A session can change mode mid-run (observed up
   to 8 `permission-mode` records in one file); the mode it *ended* in best
   represents how it was operating. Revisitable.
+- **`permissionMode` is its own dimension, distinct from the `mode` record.** The
+  `permission-mode` record carries CLI-valid values; verified against real data
+  the value set is `default`, `acceptEdits`, `bypassPermissions`, **`auto`** (and
+  the CLI also accepts `dontAsk`). `auto` is common in real sessions (~100+
+  occurrences observed) and **must not be dropped**. The separate
+  `{"type":"mode","mode":"normal"|"plan"}` record is a *different* dimension and
+  is **not** used for `--permission-mode`.
+- **Pass the parsed `permissionMode` through unchanged** to the launcher (it is
+  already CLI-valid). Fall back to `default` only when the field is absent or the
+  value is not in the known CLI set — never silently coerce a recognized value.
 - The prompt fallback for `title` must **skip meta / `<system-reminder>` /
   command-wrapper** user messages — otherwise titles leak injected text.
 - Malformed JSONL lines are skipped, not fatal.
@@ -111,6 +121,19 @@ sorts sessions **most-recent-first within each folder**, and shows a
 **Caching:** parsed metadata is cached keyed by `filepath + mtime`. On refresh,
 unchanged files resolve instantly; only new/modified files are re-parsed.
 
+**Render virtualization (required):** tiered scanning controls *load order*, not
+the number of DOM nodes. A folder can hold thousands of sessions (the local
+machine has a Temp folder with 2,500+), so the right-pane `SessionList` MUST use
+a **windowed/virtualized list** (fixed row height, only visible rows mounted).
+Without it, selecting a large folder mounts every row at once and freezes the
+renderer — defeating the responsiveness goal. The tree sidebar should likewise
+avoid mounting collapsed subtrees.
+
+**Live-session note:** a `.jsonl` with a very recent mtime may belong to a
+*running* session (this tool targets closed sessions — §2). MVP does not hard-block
+this, but resuming a live session can produce two processes appending the same
+file; flagging/guarding likely-live sessions is tracked as a follow-up.
+
 ## 7. Reopen behavior
 
 On double-click, `terminalLauncher` opens a new terminal window, `cd`'d into the
@@ -122,32 +145,56 @@ session's `cwd`, running:
 
 - `<claudePath>` comes from `settingsStore` (default `"claude"`, resolved via
   PATH).
-- `<mode>` maps directly to the CLI values: `default`, `acceptEdits`,
-  `bypassPermissions`, `plan`.
+- `<mode>` is the parsed `permissionMode`, passed through unchanged (see §4.1).
 
-**OS seam (`terminalLauncher`):**
-- **Windows:** prefer Windows Terminal —
-  `wt.exe -d "<cwd>" cmd /k <claudePath> --resume <id> --permission-mode <mode>`.
-  Fallback when `wt` is absent:
-  `cmd.exe /c start "" cmd /k "cd /d <cwd> && <claudePath> --resume <id> --permission-mode <mode>"`.
-- **macOS:** AppleScript via `osascript` —
-  `tell application "Terminal" to do script "cd <cwd> && <claudePath> --resume <id> --permission-mode <mode>"`.
-  (iTerm support can come later; Terminal.app is the default.)
+**Security — no shell string interpolation (required).** `cwd`, `sessionId`, and
+`claudePath` are read from on-disk content / user settings and are **untrusted**;
+they MUST NOT be concatenated into a shell command string. A crafted `cwd` such
+as `/x" & (do shell script "rm -rf ~") & "` would otherwise execute arbitrary
+code on double-click. Rules:
+- Spawn via `child_process.spawn(file, argsArray, { cwd, shell: false })` —
+  arguments are discrete array elements, never a single interpolated string. Use
+  the `cwd` *option* to set the working directory rather than a `cd …` prefix.
+  `claudePath` is the `file` argument, never embedded in a string.
+- Validate `sessionId` against a strict UUID pattern before use; reject otherwise.
+- For the macOS `osascript` path, the AppleScript text is built in JS and passed
+  as `spawn('osascript', ['-e', script])`; any value embedded in a `do script
+  "…"` literal must have `\` → `\\` and `"` → `\"` escaped first.
+
+**OS seam (`terminalLauncher`)** — each strategy assembles an **argv array**, not
+a string:
+- **Windows:** prefer Windows Terminal — `wt.exe` with `-d <cwd>` then the
+  `claudePath --resume <id> --permission-mode <mode>` argv. Fallback when `wt` is
+  absent: launch a `cmd.exe` window with the same argv and `cwd` set via the spawn
+  option.
+- **macOS:** `osascript -e <script>` where `<script>` is `tell application
+  "Terminal" to do script "…"` with the cwd-change and `claude` invocation built
+  from **escaped** values. (iTerm later; Terminal.app is the default.)
 
 **Decisions / gotchas:**
-- The command-string builder is a **pure function**
-  `buildLaunchCommand(os, cwd, sessionId, mode, claudePath)`, separate from the
-  actual spawn → unit-testable without launching anything.
-- Per-OS quoting/escaping handled in the builder for **spaces + standard
-  Win/Mac paths**. UNC paths (`\\server\share`) and non-ASCII paths are
-  handled best-effort and **marked untested**.
+- The argv/script builder is a **pure function**
+  `buildLaunchSpec(os, cwd, sessionId, mode, claudePath)` returning
+  `{ file, args }` (and the escaped AppleScript for macOS), separate from the
+  actual spawn → unit-testable, and the **escaping/injection tests live here**
+  (quotes, `&`, `$`, backticks, spaces, UNC, non-ASCII).
+- **Stale / missing `cwd`:** `stat` the session's `cwd` before launching. If it no
+  longer exists (worktrees and Temp dirs are frequently deleted), surface a
+  specific "folder no longer exists" error instead of attempting the spawn.
 - Spawn failure (`claude` not found, terminal missing) surfaces an error toast.
+- UNC (`\\server\share`) and non-ASCII paths: covered by argv-array passing (no
+  shell parsing), but still **marked lower-confidence / explicitly tested**.
 
 ## 8. Settings
 
 - `settingsStore` reads/writes `settings.json` in Electron `app.getPath('userData')`.
 - MVP key: `claudePath` (default `"claude"`).
-- Minimal in-app settings panel exposes the `claude` path field.
+- **Settings surface:** a **modal dialog** opened by the title-bar gear, with a
+  labeled text input for the `claude` path, **Save** / **Cancel**, an inline
+  validation error when the path can't be resolved, and the resolved absolute
+  path shown back (so tampering with `settings.json` is detectable). A brief toast
+  confirms a successful save.
+- `claudePath` is always passed as the discrete `file` argument to `spawn` (§7) —
+  never interpolated into a command string.
 - Extensible in C (terminal preference, custom-label store, folder filters).
 
 ## 9. UI / layout
@@ -181,18 +228,44 @@ Slack / Claude-desktop aesthetic; OS-following light & dark themes.
   sessions attach only to the actual `cwd` leaf. A "loading older sessions…"
   line shows while lower tiers stream in.
 - **Right (below the title bar)**: a folder header (path + session count +
-  per-folder refresh), then the session list. Each row: **description**, then
-  **permission-mode chip · relative time · short session ID**. Hover highlight;
-  **double-click → reopen**. Row-hover actions (Delete in B, ★ favorite in C)
-  appear greyed as placeholders.
+  per-folder refresh), then the (virtualized — §6) session list. Each row:
+  **description**, then **permission-mode chip · relative time · short session
+  ID** (`sessionId` shown as the first 8 chars). **Single-click selects** a row
+  (persistent highlight, distinct from hover, themed for both modes);
+  **double-click → reopen**. No B/C placeholder actions in the MVP — the Delete
+  (B) and ★ favorite (C) controls are added with the features that back them.
+- **Permission-mode chips are colour-coded by risk**, not uniform:
+  `bypassPermissions` = amber/warning, `acceptEdits`/`auto` = blue/info, `plan` =
+  neutral, `default` = grey. Tokens defined for both themes. (The risk colouring
+  pairs with the bypass-reopen safeguard — see §7 follow-ups.)
+- **Empty / non-leaf states:** on launch (nothing selected) the right pane shows a
+  centered "Select a folder to view its sessions" prompt and **no** folder header.
+  Clicking an intermediate navigation node (e.g. `src`, `Users`) expands it and
+  leaves the same empty state — it does not aggregate descendant sessions.
+- **The `(unknown)` folder group is pinned to the bottom** of the tree, after all
+  named entries, so it never interrupts drive-based navigation.
+- **Keyboard navigation:** Up/Down move within the focused pane (tree nodes or
+  list rows); Right/Left (or Space) expand/collapse a tree node or move to parent;
+  Tab/Shift-Tab move focus between tree and list; **Enter opens the focused
+  session** (keyboard equivalent of double-click). Focus lands on the tree on
+  launch; rows and nodes show a visible focus ring.
+- **Per-folder refresh** (folder-header ⟳) is **disabled while that folder's tier
+  is still streaming**; once its tier completes it re-stats/re-parses only that
+  folder, without disturbing other in-progress tiers. The title-bar ⟳ refreshes
+  everything.
+- **Rendering safety:** all session metadata (title, cwd, ID, mode label) is
+  inserted via `textContent` / text nodes — **never `innerHTML`** — since titles
+  can fall back to arbitrary user-prompt text (prevents renderer XSS).
 
 ## 10. Phasing
 
 - **A — MVP:** tiered progressive scan → file tree → folder header + session
   list (title · mode · time · short ID) → double-click reopen with same
   permission mode → configurable `claude` path → manual refresh.
-- **B:** per-row **Delete** (deletes the `.jsonl`, with confirmation). Optional
-  `fs.watch` auto-refresh.
+- **B:** per-row **Delete** (deletes the `.jsonl`, with confirmation). The
+  main-process `deleteSession` handler MUST resolve the target path and verify it
+  stays within `~/.claude/projects/` before `fs.unlink` (no path traversal).
+  Optional `fs.watch` auto-refresh.
 - **C (end goal):** global **search**, **favorites / pinning**, **custom rename /
   labels** (stored in CSM's own `userData`, never mutating Claude's files), and a
   **hide temp / worktree folders** filter.
@@ -201,25 +274,45 @@ Slack / Claude-desktop aesthetic; OS-following light & dark themes.
 
 - `sessionParser` — fixture `.jsonl` → assert extracted fields & fallback chain
   (missing aiTitle, skip `<system-reminder>` meta, malformed lines,
-  last-permissionMode wins).
-- `buildLaunchCommand(...)` — assert exact command strings for Windows (wt +
-  cmd fallback) and macOS (osascript), including space quoting. **No spawning.**
+  last-permissionMode wins, `auto`/`dontAsk` passed through, unknown value →
+  `default`).
+- `buildLaunchSpec(...)` — assert the exact `{ file, args }` argv (and escaped
+  AppleScript) for Windows (wt + cmd fallback) and macOS. **Injection/escaping is
+  the core case set**: quotes, `&`, `$`, backticks, spaces, UNC, non-ASCII; assert
+  no shell metacharacter ever lands in an interpreted position. `sessionId` UUID
+  validation rejects malformed IDs. **No spawning.**
 - `pathAdapter` — projects-dir resolution per OS.
-- Lighter integration tests for `sessionStore` (tiering / caching) and IPC.
+- Lighter integration tests for `sessionStore` (tiering / caching) and IPC; smoke
+  test that the `SessionList` virtualizes (bounded mounted-row count) on a large
+  fixture.
 
 ## 12. Error handling (fail soft)
 
 - Malformed JSONL line → skip, continue parsing.
-- Missing `cwd` → group under "(unknown)"; missing title → fallback → "(untitled)";
-  missing mode → `default`.
+- Missing `cwd` → group under "(unknown)" (pinned to tree bottom, §9); missing
+  title → fallback → "(untitled)"; missing or unrecognized mode → `default`.
+- Session `cwd` no longer exists on disk → on reopen, "folder no longer exists"
+  error (stat before spawn, §7); the row still lists normally.
 - Spawn failure (`claude` not found / no terminal) → error toast, not silent.
 - `~/.claude/projects` absent → friendly empty state ("No Claude sessions found").
-- UNC / non-ASCII paths → best-effort, marked untested.
+- UNC / non-ASCII paths → passed as argv (no shell parsing); explicitly tested.
 
 ## 13. Open items / future
 
-- Confirm exact `--permission-mode` value accepted by the installed Claude CLI
-  version (`default` vs `normal`) during implementation.
+- **Resolved (verified against installed CLI):** `--permission-mode` accepts
+  `acceptEdits`, `auto`, `bypassPermissions`, `default`, `dontAsk`, `plan`. The
+  value is `default` (not `normal`); `normal` belongs to the unrelated `mode`
+  record and is never used for `--permission-mode`. `--resume <id>`,
+  `--permission-mode`, and `-d` are all confirmed to exist.
+- **Pending decision — `bypassPermissions` reopen safeguard (§7/§9):** whether to
+  interpose a confirmation modal (with downgrade-to-`default` option) before
+  reopening a `bypassPermissions` session. See review judgment calls.
+- **Pending decision — temp/worktree filter timing:** whether a minimal hide-temp
+  filter moves into the MVP or the MVP navigability goal is downgraded until C.
+- **Pending decision — value vs built-in `claude --resume`:** articulate the
+  concrete gap (cross-folder/global browsing + metadata + mode preservation) the
+  built-in picker doesn't cover; and whether a GUI is the right form factor vs a
+  lighter CLI/TUI picker.
+- CLI **version drift**: the per-session `version` is stored but unused; a future
+  guard could warn when a session's CLI version diverges from the installed one.
 - iTerm support on macOS (C+).
-- "Hide temp / worktree folders" filter — the local machine has 2,500+ throwaway
-  Temp sessions; this filter (C) keeps the tree usable.
