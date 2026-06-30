@@ -22,16 +22,26 @@ Label every issue with:
   `area:packaging`, `area:ci` (add others as the app grows).
 - **`needs-design`** if it requires a design pass before implementation.
 
-## 2. Sizing: small vs needs-spec
+## 2. Sizing gate (enforced, not optional)
 
-Two tracks, pick by judgement (when unsure, escalate to needs-spec):
+Classify every issue into one tier **before** coding and follow that tier's
+track. When unsure between two tiers, pick the heavier one. The point of the gate
+is that the plan/spec and review steps don't get silently skipped — only the
+genuinely trivial tier is exempt.
 
-- **Small** (≈1–3 files, no real design choice): write a failing test, implement,
-  open the PR. No spec.
-- **Needs-spec** (multiple files, a design decision, new module, or a
-  security-sensitive surface): write a short spec in `docs/specs/` first, run
-  `compound-engineering:ce-doc-review` on it, apply what holds up, then implement.
-  Larger efforts use `superpowers:writing-plans` → `docs/plans/`.
+- **Trivial** — hygiene / config, ≈≤3 files, no logic or design choice
+  (e.g. `.gitattributes`, a doc tweak). Implement → open the PR (§4). **No
+  plan/spec.**
+- **Standard** — real logic, multiple files, or a new module
+  (most feature work). Write a **short plan in `docs/plans/`** first (what/why,
+  the approach, the test list), then TDD → open the PR (§4). Use
+  `superpowers:writing-plans` (or `compound-engineering:ce-plan`) for larger ones.
+- **High-risk** — `area:launcher` (terminal spawning), session-file deletion,
+  anything `priority:p1`, or any change touching the security invariants in
+  `CLAUDE.md`. Write a **spec in `docs/specs/`**, run
+  `compound-engineering:ce-doc-review` on it and apply what holds up, then
+  TDD → open the PR (§4). The maintainer should also run `/code-review ultra` on
+  the PR before merge.
 
 ## 3. Picking up an issue
 
@@ -46,13 +56,27 @@ Two tracks, pick by judgement (when unsure, escalate to needs-spec):
    `area:launcher` (terminal spawning) and session-file deletion (phase B).
    Security-sensitive changes get a human review before merge.
 
-## 4. Opening the PR
+## 4. Opening the PR — via pr-autopilot (default)
 
-- Use the PR template; fill the **Proof** checklist (acceptance criteria, tests,
-  lint/build, secrets scan; screenshots for UI).
-- The PR body **must** contain `Closes #<issue>` so merging auto-closes the issue.
-- Run the pre-push checks (lint → build → test) — mirror CI. Optionally drive the
-  reviewer/CI loop with `pr-autopilot`.
+Open and drive the PR with the **`pr-autopilot`** skill — this is the default, not
+an optional extra. It runs the quality + review steps so they don't get skipped:
+
+1. a `/simplify` quality pass over the diff,
+2. preflight **self-review** and **spec/plan-alignment** check (against the
+   `docs/plans/` or `docs/specs/` artifact from §2, when the tier required one),
+3. opens the PR from the template with `Closes #<issue>` in the body,
+4. loops on **reviewer-bot** comments (a Claude PR-review bot reviews every PR),
+   running build + test before each push, until quiescent → final CI gate.
+
+Before invoking it, make sure local pre-push checks pass (lint → build → test) and
+the **Proof** checklist in the PR template (`.github/pull_request_template.md`)
+is fillable (acceptance criteria, tests, lint/build, secrets scan; screenshots
+for UI). After a PR is published, use `pr-followup` to
+re-enter the loop when new review comments arrive.
+
+Manual `gh pr create` is a fallback only when `pr-autopilot` is unavailable; if you
+fall back, still fill the template, include `Closes #<issue>`, and run the pre-push
+checks by hand.
 
 ## 5. Closing the loop
 
