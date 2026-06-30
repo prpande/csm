@@ -7,7 +7,7 @@ ID — and lets you double-click any session to reopen it in a new terminal,
 **using the same permission mode** the session was running in.
 
 > **Status:** Design phase. The architecture and behavior are specified in
-> [`docs/superpowers/specs/2026-06-30-csm-design.md`](docs/superpowers/specs/2026-06-30-csm-design.md);
+> [`docs/specs/2026-06-30-csm-design.md`](docs/specs/2026-06-30-csm-design.md);
 > implementation has not started yet.
 
 ## Why CSM?
