@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege: CI only needs to read the repo.
+permissions:
+  contents: read
+
+# Cancel an in-flight run when a newer commit lands on the same ref.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: lint · typecheck · build · test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # lint/typecheck/build/Vitest need neither the Electron binary (types come
+      # from the npm package) nor Playwright browsers (Vitest uses jsdom). The
+      # e2e job below does NOT set these.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Unit tests
+        run: npm test
+      # Last, per the issue. Scoped to the production tree (--omit=dev): that is
+      # the surface shipped to users, and it blocks on high+ there. The Electron
+      # framework and build tooling (electron-builder, node-gyp, tar) carry a
+      # steady stream of advisories that would otherwise redden every PR; those
+      # devDependencies are kept current by dependabot instead.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  e2e:
+    name: e2e (electron · linux)
+    runs-on: ubuntu-latest
+    # Pinned Playwright image; tag tracks the locked @playwright/test version so
+    # the bundled system deps match. Bump together when Playwright is upgraded.
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+      # Electron binary is required here (_electron.launch), so it is NOT skipped.
+      - name: Install dependencies
+        run: npm ci
+      # pretest:e2e builds dist/ first; xvfb supplies the headless display. The
+      # container runs as root, so the spec adds --no-sandbox under CI.
+      - name: Run e2e
+        run: xvfb-run -a npm run test:e2e
