@@ -1,0 +1,30 @@
+# Normalize all text files to LF in the repository, regardless of the
+# committer's OS. Working-tree checkout stays native unless overridden below.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF in the working tree to run correctly.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets — never normalize or diff as text.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.icns binary
+*.webp binary
+*.exe  binary
+*.dll  binary
+*.asar binary
+*.node binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+
+# Test snapshots are stored with LF; keep them text so diffs stay readable.
+# Re-include rule guards against a future broad `binary` override above.
+**/__snapshots__/** text eol=lf
+*.snap text eol=lf

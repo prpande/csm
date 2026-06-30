@@ -1,0 +1,19 @@
+# EditorConfig — https://editorconfig.org
+# Cross-platform editor defaults that mirror .gitattributes (LF, UTF-8).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Markdown: two trailing spaces denote a hard line break — preserve them.
+[*.md]
+trim_trailing_whitespace = false
+
+# Windows scripts use CRLF (matches .gitattributes).
+[*.{ps1,bat,cmd}]
+end_of_line = crlf
