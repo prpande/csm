@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege: CI only needs to read the repo.
+permissions:
+  contents: read
+
+# Cancel an in-flight run when a newer commit lands on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: lint · typecheck · build · test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      # lint/typecheck/build/Vitest need neither the Electron binary (types come
+      # from the npm package) nor Playwright browsers (Vitest uses jsdom), so skip
+      # both downloads for a faster, display-free install.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Unit tests
+        run: npm test
+      # Last, per the issue. Scoped to the production tree (--omit=dev): that is
+      # the surface shipped to users, and it blocks on high+ there. The Electron
+      # framework and build tooling (electron-builder, node-gyp, tar) carry a
+      # steady stream of advisories that would otherwise redden every PR; those
+      # devDependencies are kept current by dependabot instead.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+# No Playwright `_electron` e2e job here — by design, mirroring PRism (the
+# reference project CSM's CI is modelled on). CSM's only e2e drives the real
+# Electron app via `_electron.launch`, which needs the Electron binary, a
+# display, and the OS sandbox. In a Linux CI container that runs as root, npm
+# de-escalates Electron's postinstall so the binary never installs ("Electron
+# failed to install correctly"), and running as root forces `--no-sandbox`.
+# PRism hit the same wall and keeps its `_electron` suite local/manual, running
+# only `tsc + lint + unit` for the desktop shell in CI — which is exactly what
+# the unit matrix above does. The e2e smoke test stays a local gate
+# (`npm run test:e2e`); wiring it into CI is tracked separately (issue #17).
