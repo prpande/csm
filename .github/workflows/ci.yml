@@ -69,9 +69,14 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Setup toolchain
         uses: ./.github/actions/setup-toolchain
-      # Electron binary is required here (_electron.launch), so it is NOT skipped.
       - name: Install dependencies
         run: npm ci
+      # The Playwright image runs as root, where npm does not run Electron's
+      # postinstall binary download — so node_modules/electron has no dist and
+      # _electron.launch fails with "Electron failed to install correctly".
+      # Fetch the binary explicitly (idempotent; the unit jobs skip it entirely).
+      - name: Fetch the Electron binary
+        run: node node_modules/electron/install.js
       # pretest:e2e builds dist/ first; xvfb supplies the headless display. The
       # container runs as root, so the spec adds --no-sandbox under CI.
       - name: Run e2e
