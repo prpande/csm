@@ -29,6 +29,11 @@ Work GitHub issue #$ARGUMENTS (repo `prpande/csm`) end-to-end, following
 7. **Open the PR via the `pr-autopilot` skill (default).** It runs a `/simplify`
    pass, preflight self-review + spec/plan-alignment, opens the template PR (ensure
    `Closes #$ARGUMENTS` is in the body), then loops on reviewer-bot comments →
-   CI gate. Use `pr-followup` for later comments. Manual `gh pr create` is a
-   fallback only when `pr-autopilot` is unavailable.
-8. Report the PR URL. Merging it will auto-close the issue and drop `in-progress`.
+   CI gate. Manual `gh pr create` is a fallback only when `pr-autopilot` is
+   unavailable.
+8. **Trigger the Claude review:** after the PR is open, post a comment containing
+   `@claude review` (there is no auto-review). With `pr-autopilot`, post it right
+   after the PR opens so the review lands in the loop window. Use `pr-followup` for
+   later comments. (Any `@claude` substring re-triggers the bot — refer to it as
+   "claude[bot]" otherwise.)
+9. Report the PR URL. Merging it will auto-close the issue and drop `in-progress`.

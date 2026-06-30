@@ -65,14 +65,25 @@ an optional extra. It runs the quality + review steps so they don't get skipped:
 2. preflight **self-review** and **spec/plan-alignment** check (against the
    `docs/plans/` or `docs/specs/` artifact from §2, when the tier required one),
 3. opens the PR from the template with `Closes #<issue>` in the body,
-4. loops on **reviewer-bot** comments (a Claude PR-review bot reviews every PR),
-   running build + test before each push, until quiescent → final CI gate.
+4. loops on **reviewer-bot** comments, running build + test before each push,
+   until quiescent → final CI gate.
 
-Before invoking it, make sure local pre-push checks pass (lint → build → test) and
-the **Proof** checklist in the PR template (`.github/pull_request_template.md`)
-is fillable (acceptance criteria, tests, lint/build, secrets scan; screenshots
-for UI). After a PR is published, use `pr-followup` to
-re-enter the loop when new review comments arrive.
+**Trigger the Claude review manually.** The Claude bot is the mention-responder
+only — there is **no** automatic on-open review (the auto-review was unreliable).
+After the PR is open, post a comment containing **`@claude review`** to kick off
+the review. With `pr-autopilot`, post that comment **right after it opens the PR**,
+so the bot's review lands inside the loop's wait window (otherwise the loop goes
+quiescent before any review appears). Use `pr-followup` to fold in review comments
+that arrive later.
+
+> Beware: **any `@claude` substring re-triggers the bot** — even "thanks @claude".
+> Say "claude[bot]" when referring to it in dispositions unless you want a
+> re-review.
+
+Before invoking pr-autopilot, make sure local pre-push checks pass
+(lint → build → test) and the **Proof** checklist in the PR template
+(`.github/pull_request_template.md`) is fillable (acceptance criteria, tests,
+lint/build, secrets scan; screenshots for UI).
 
 Manual `gh pr create` is a fallback only when `pr-autopilot` is unavailable; if you
 fall back, still fill the template, include `Closes #<issue>`, and run the pre-push
