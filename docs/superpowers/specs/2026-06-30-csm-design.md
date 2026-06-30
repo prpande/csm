@@ -28,6 +28,26 @@ in.
 - Cloud / multi-machine sync.
 - Managing running (live) sessions — this tool is for *closed* sessions.
 
+### 2.1 Why CSM (vs the built-in `claude --resume`)
+
+The Claude CLI can already resume a conversation, but it does not solve the
+problem CSM targets — **discoverability and recovery across directories**.
+Verified against the installed CLI:
+
+- The built-in picker is **directory-scoped**: `--continue` is explicitly the
+  current directory, and the `--resume` picker surfaces the current project's
+  sessions. To find a session elsewhere you must `cd` into each directory and
+  resume one at a time. There is **no cross-directory "all my sessions" view**.
+- Resuming does **not** restore the permission mode the session ended in — the
+  caller must re-supply `--permission-mode`.
+
+CSM's value is therefore: (1) a single **cross-directory** view of all sessions,
+(2) launching each in its **correct `cwd`**, (3) re-applying the session's
+**original permission mode**, and (4) **crash/shutdown recovery** — when many
+sessions across many directories are lost at once, reopening them individually via
+the built-in flow is tiresome. (4) motivates a **bulk/multi-select reopen**
+capability — see §10.
+
 ## 3. Tech stack
 
 - **Electron** (Node main process + HTML/CSS/JS renderer). Chosen to match the
@@ -177,6 +197,13 @@ a string:
   `{ file, args }` (and the escaped AppleScript for macOS), separate from the
   actual spawn → unit-testable, and the **escaping/injection tests live here**
   (quotes, `&`, `$`, backticks, spaces, UNC, non-ASCII).
+- **`bypassPermissions` safeguard:** when the session's mode is
+  `bypassPermissions`, interpose a **confirmation modal** before spawning — it
+  names the consequence (all tool calls auto-approved) and offers a one-click
+  **downgrade to `acceptEdits`/`default`**. All other modes reopen directly. This
+  guards against an accidental double-click launching an unsupervised agent
+  (`bypassPermissions` is the dominant stored mode). Bulk reopen (§10) applies the
+  same gate once for any bypass sessions in the batch.
 - **Stale / missing `cwd`:** `stat` the session's `cwd` before launching. If it no
   longer exists (worktrees and Temp dirs are frequently deleted), surface a
   specific "folder no longer exists" error instead of attempting the spawn.
@@ -261,14 +288,22 @@ Slack / Claude-desktop aesthetic; OS-following light & dark themes.
 
 - **A — MVP:** tiered progressive scan → file tree → folder header + session
   list (title · mode · time · short ID) → double-click reopen with same
-  permission mode → configurable `claude` path → manual refresh.
+  permission mode (with the `bypassPermissions` confirmation, §7) → configurable
+  `claude` path → manual refresh → **default-on "hide temp / worktree folders"
+  filter** (sessions whose `cwd` is under a system temp dir or inside a
+  `.../.claude/worktrees/` or git-worktree path are hidden, with a toggle to show
+  them). The filter ships in the MVP because the tree is otherwise dominated by
+  thousands of throwaway sessions on day one.
 - **B:** per-row **Delete** (deletes the `.jsonl`, with confirmation). The
   main-process `deleteSession` handler MUST resolve the target path and verify it
   stays within `~/.claude/projects/` before `fs.unlink` (no path traversal).
-  Optional `fs.watch` auto-refresh.
-- **C (end goal):** global **search**, **favorites / pinning**, **custom rename /
-  labels** (stored in CSM's own `userData`, never mutating Claude's files), and a
-  **hide temp / worktree folders** filter.
+  **Multi-select + bulk reopen** ("recovery") — select multiple sessions (e.g. all
+  recent in a folder) and reopen them in one action, applying the
+  `bypassPermissions` gate once for the batch; this is the primary answer to the
+  crash/shutdown recovery motivation (§2.1). Optional `fs.watch` auto-refresh.
+- **C (end goal):** global **search**, **favorites / pinning**, and **custom
+  rename / labels** (stored in CSM's own `userData`, never mutating Claude's
+  files). (The hide-temp/worktree filter moved to the MVP.)
 
 ## 11. Testing
 
@@ -304,15 +339,14 @@ Slack / Claude-desktop aesthetic; OS-following light & dark themes.
   value is `default` (not `normal`); `normal` belongs to the unrelated `mode`
   record and is never used for `--permission-mode`. `--resume <id>`,
   `--permission-mode`, and `-d` are all confirmed to exist.
-- **Pending decision — `bypassPermissions` reopen safeguard (§7/§9):** whether to
-  interpose a confirmation modal (with downgrade-to-`default` option) before
-  reopening a `bypassPermissions` session. See review judgment calls.
-- **Pending decision — temp/worktree filter timing:** whether a minimal hide-temp
-  filter moves into the MVP or the MVP navigability goal is downgraded until C.
-- **Pending decision — value vs built-in `claude --resume`:** articulate the
-  concrete gap (cross-folder/global browsing + metadata + mode preservation) the
-  built-in picker doesn't cover; and whether a GUI is the right form factor vs a
-  lighter CLI/TUI picker.
+- **Resolved — `bypassPermissions` reopen safeguard:** confirmation modal with
+  downgrade option, MVP scope (§7, §9).
+- **Resolved — temp/worktree filter timing:** default-on filter moved into the
+  MVP (§10).
+- **Resolved — value vs built-in `claude --resume`:** the built-in is
+  directory-scoped and does not restore the original permission mode; CSM adds
+  cross-directory discovery, correct-cwd launch, mode preservation, and bulk
+  recovery (§2.1). GUI/Electron form factor retained.
 - CLI **version drift**: the per-session `version` is stored but unused; a future
   guard could warn when a session's CLI version diverges from the installed one.
 - iTerm support on macOS (C+).
