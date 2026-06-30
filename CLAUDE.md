@@ -45,6 +45,17 @@ authoritative `cwd` read from inside each file, not the encoded folder name.
 - **B:** delete sessions; multi-select bulk reopen (recovery).
 - **C:** search, favorites/pinning, custom labels.
 
+## Issue-driven development
+
+**All work flows through GitHub issues** (repo `prpande/csm`). Don't start
+non-trivial work without an issue; file follow-ups as new issues instead of
+scope-creeping a PR or leaving TODOs. The full convention is in
+[`docs/workflow/issue-driven-development.md`](docs/workflow/issue-driven-development.md).
+In short: create a labelled issue → claim it (self-assign + `in-progress`) →
+branch in an isolated worktree (`<issue#>-<slug>`) → TDD → PR with `Closes #N`.
+Specs go in `docs/specs/`, plans in `docs/plans/`. Commands: `/new-issue`,
+`/work-issue <#>`, `/groom-backlog`.
+
 ## Conventions
 
 - Default branch: `main`. Conventional Commit messages (`feat:`, `fix:`,
