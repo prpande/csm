@@ -38,17 +38,23 @@ export default tseslint.config(
       "@typescript-eslint/no-misused-promises": "error",
     },
   },
-  // Renderer: React in a browser context.
+  // React in a browser context — renderer source + renderer tests. react-hooks
+  // applies to both (hooks can appear in test render helpers).
   {
     files: ["src/renderer/**/*.{ts,tsx}", "test/**/*.{ts,tsx}"],
     languageOptions: { globals: { ...globals.browser } },
-    plugins: {
-      "react-hooks": reactHooks,
-      "react-refresh": reactRefresh,
-    },
+    plugins: { "react-hooks": reactHooks },
     rules: {
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "error",
+    },
+  },
+  // react-refresh enforces Fast Refresh constraints — relevant only to renderer
+  // SOURCE modules, not tests (which legitimately export helpers/multiple values).
+  {
+    files: ["src/renderer/**/*.{ts,tsx}"],
+    plugins: { "react-refresh": reactRefresh },
+    rules: {
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },

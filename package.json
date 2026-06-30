@@ -15,6 +15,7 @@
     "lint": "eslint . && prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
     "dist": "npm run build && electron-builder"
   },

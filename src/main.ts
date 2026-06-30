@@ -15,8 +15,18 @@ const RENDERER_INDEX = path.join(__dirname, "renderer", "index.html");
 // running `npm run dev` alongside Electron.
 function resolveDevServerUrl(): string | undefined {
   if (app.isPackaged) return undefined;
-  const url = process.env.CSM_DEV_SERVER_URL;
-  return url && url.length > 0 ? url : undefined;
+  const raw = process.env.CSM_DEV_SERVER_URL;
+  if (!raw) return undefined;
+  try {
+    // Validate here so the later `new URL(devServerUrl)` in createWindow can't
+    // throw into a swallowed promise rejection (app starts with no window).
+    return new URL(raw).href;
+  } catch {
+    console.warn(
+      `[CSM] CSM_DEV_SERVER_URL is not a valid URL: "${raw}" — falling back to loadFile`,
+    );
+    return undefined;
+  }
 }
 
 // Content-Security-Policy is enforced here (response header) rather than via an
@@ -28,7 +38,7 @@ function resolveDevServerUrl(): string | undefined {
 function installCsp(devServerUrl: string | undefined): void {
   const policy =
     devServerUrl !== undefined
-      ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:5173 http://localhost:5173; object-src 'none'; base-uri 'none'"
+      ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws://localhost:5173 http://localhost:5173; object-src 'none'; base-uri 'none'; form-action 'none'"
       : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -85,26 +95,32 @@ if (!gotLock) {
     }
   });
 
-  void app.whenReady().then(createWindow);
+  void app.whenReady().then(() => {
+    const devServerUrl = resolveDevServerUrl();
+    // CSP is installed ONCE here (onHeadersReceived is a single-slot, session-wide
+    // API) — not inside createWindow, which the macOS `activate` path re-enters.
+    installCsp(devServerUrl);
+    return createWindow(devServerUrl);
+  });
 
   app.on("window-all-closed", () => app.quit());
 
   // macOS: re-create the window when the dock icon is clicked and none are open.
+  // CSP is already installed at startup; only the window is recreated here.
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      void createWindow(resolveDevServerUrl());
+    }
   });
 }
 
-async function createWindow(): Promise<void> {
-  const devServerUrl = resolveDevServerUrl();
-  installCsp(devServerUrl);
-
+async function createWindow(devServerUrl: string | undefined): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
     show: false,
     // Native title bar for the scaffold; the custom full-width title bar with our
-    // own window controls arrives with the renderer (issue #5).
+    // own window controls is deferred to a later phase.
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
