@@ -1,0 +1,27 @@
+name: Task / chore
+description: Implementation task, refactor, tech-debt, test, docs, or CI work
+title: "[Task]: "
+labels: []
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What needs to be done and why.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope / approach
+      description: Files, modules, or steps likely involved. Keep it tight.
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true

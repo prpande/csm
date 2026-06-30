@@ -1,0 +1,29 @@
+name: Unclaim on close
+
+# Label hygiene only (NOT gate enforcement): when an issue closes, drop the
+# `in-progress` claim label so it never lingers on done work.
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+
+jobs:
+  unclaim:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove in-progress label if present
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          if gh issue view "$NUMBER" --repo "$REPO" --json labels \
+               --jq '.labels[].name' | grep -qx 'in-progress'; then
+            gh issue edit "$NUMBER" --repo "$REPO" --remove-label 'in-progress'
+            echo "Removed in-progress from #$NUMBER"
+          else
+            echo "No in-progress label on #$NUMBER; nothing to do."
+          fi
