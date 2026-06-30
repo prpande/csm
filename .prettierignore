@@ -3,6 +3,10 @@ dist-test/
 node_modules/
 package-lock.json
 
+# GitHub config (issue templates, workflows incl. the installer-managed claude.yml)
+# — externally managed; not worth Prettier churn.
+.github/
+
 # Hand-curated markdown prose (design specs, docs, READMEs). Prettier re-aligns
 # tables and rewrites emphasis markers — churn with no value on authored prose.
 # Code, config, and HTML are still formatted.

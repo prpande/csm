@@ -1,14 +1,44 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, session, shell } from "electron";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isOpenableUrl, navigationDecision, windowOpenDecision } from "./urls";
 
 let mainWindow: BrowserWindow | null = null;
 
-// Scaffold renderer: a static placeholder page until the real renderer lands
-// (issue #5 replaces this with the Vite-built UI). Resolved relative to the
-// compiled main.js in dist/, so it points at public/index.html in the repo.
-const INDEX_HTML = path.join(__dirname, "..", "public", "index.html");
+// Built renderer: dist/renderer/index.html, resolved relative to the compiled
+// main.js in dist/. Loaded via loadFile() in the packaged app.
+const RENDERER_INDEX = path.join(__dirname, "renderer", "index.html");
+
+// Dev mode loads the Vite dev server (HMR) instead of the built files. Gated by a
+// RUNTIME check (env var + not-packaged), never a VITE_ build-time gate — those
+// are fragile on Windows CI. Set CSM_DEV_SERVER_URL=http://localhost:5173 when
+// running `npm run dev` alongside Electron.
+function resolveDevServerUrl(): string | undefined {
+  if (app.isPackaged) return undefined;
+  const url = process.env.CSM_DEV_SERVER_URL;
+  return url && url.length > 0 ? url : undefined;
+}
+
+// Content-Security-Policy is enforced here (response header) rather than via an
+// index.html <meta>, so the policy can differ between the dev server (HMR needs
+// inline + ws) and the strict packaged file:// load. Both keep
+// `style-src 'unsafe-inline'`: React inline `style={…}` props set the element
+// style attribute, which that directive governs — dropping it would break any
+// component using inline styles. script-src stays strict ('self') in prod.
+function installCsp(devServerUrl: string | undefined): void {
+  const policy =
+    devServerUrl !== undefined
+      ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:5173 http://localhost:5173; object-src 'none'; base-uri 'none'"
+      : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [policy],
+      },
+    });
+  });
+}
 
 // Single-instance gate FIRST — a second launch focuses the existing window
 // instead of opening a duplicate.
@@ -66,6 +96,9 @@ if (!gotLock) {
 }
 
 async function createWindow(): Promise<void> {
+  const devServerUrl = resolveDevServerUrl();
+  installCsp(devServerUrl);
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -92,10 +125,14 @@ async function createWindow(): Promise<void> {
 
   // will-navigate catches a PLAIN in-window anchor click (a top-frame navigation
   // that bypasses setWindowOpenHandler) — without it the window could navigate
-  // away from the app to an external page. appOrigin is the loaded file's origin;
-  // the initial loadFile is programmatic and never fires will-navigate, so this
-  // only ever sees same-origin in-app hops or real escaping navigations.
-  const appOrigin = new URL(pathToFileURL(INDEX_HTML).href).origin;
+  // away from the app to an external page. appOrigin is the loaded content's
+  // origin (dev-server origin or the built file's origin); the initial load is
+  // programmatic and never fires will-navigate, so this only ever sees
+  // same-origin in-app hops or real escaping navigations.
+  const appOrigin =
+    devServerUrl !== undefined
+      ? new URL(devServerUrl).origin
+      : new URL(pathToFileURL(RENDERER_INDEX).href).origin;
   mainWindow.webContents.on("will-navigate", (event, url) => {
     const { prevent, open } = navigationDecision(url, appOrigin);
     if (prevent) event.preventDefault();
@@ -106,6 +143,10 @@ async function createWindow(): Promise<void> {
     mainWindow = null;
   });
 
-  await mainWindow.loadFile(INDEX_HTML);
+  if (devServerUrl !== undefined) {
+    await mainWindow.loadURL(devServerUrl);
+  } else {
+    await mainWindow.loadFile(RENDERER_INDEX);
+  }
   mainWindow.show();
 }

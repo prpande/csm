@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CSM — Claude Session Manager</title>
+    <!-- No CSP meta here: the policy is enforced in the main process via
+         onHeadersReceived (dev-aware), so HMR works in dev and a strict policy
+         applies to the packaged file:// load. -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/renderer/main.tsx"></script>
+  </body>
+</html>
