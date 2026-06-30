@@ -44,3 +44,6 @@ Thumbs.db
 
 # Electron-builder cache
 .cache/
+
+# pr-autopilot local state (not committed)
+.pr-autopilot/
