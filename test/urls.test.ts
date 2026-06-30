@@ -1,5 +1,4 @@
-import { test } from "node:test";
-import assert from "node:assert/strict";
+import { test, expect } from "vitest";
 import {
   isOpenableUrl,
   windowOpenDecision,
@@ -7,8 +6,8 @@ import {
 } from "../src/urls";
 
 test("isOpenableUrl allows only https", () => {
-  assert.equal(isOpenableUrl("https://example.com"), true);
-  assert.equal(isOpenableUrl("https://example.com/path?q=1#h"), true);
+  expect(isOpenableUrl("https://example.com")).toBe(true);
+  expect(isOpenableUrl("https://example.com/path?q=1#h")).toBe(true);
 
   for (const bad of [
     "http://example.com",
@@ -20,20 +19,20 @@ test("isOpenableUrl allows only https", () => {
     "not a url",
     "",
   ]) {
-    assert.equal(isOpenableUrl(bad), false, `${bad} should be rejected`);
+    expect(isOpenableUrl(bad), `${bad} should be rejected`).toBe(false);
   }
 });
 
 test("windowOpenDecision always denies, opens only https in OS browser", () => {
-  assert.deepEqual(windowOpenDecision("https://example.com"), {
+  expect(windowOpenDecision("https://example.com")).toEqual({
     action: "deny",
     open: true,
   });
-  assert.deepEqual(windowOpenDecision("http://example.com"), {
+  expect(windowOpenDecision("http://example.com")).toEqual({
     action: "deny",
     open: false,
   });
-  assert.deepEqual(windowOpenDecision("file:///etc/passwd"), {
+  expect(windowOpenDecision("file:///etc/passwd")).toEqual({
     action: "deny",
     open: false,
   });
@@ -45,25 +44,25 @@ test("navigationDecision allows same-origin, blocks and routes the rest", () => 
   const origin = "http://localhost:5173";
 
   // Same origin → allowed in-window, never routed out.
-  assert.deepEqual(navigationDecision("http://localhost:5173/route", origin), {
+  expect(navigationDecision("http://localhost:5173/route", origin)).toEqual({
     prevent: false,
     open: false,
   });
 
   // Cross-origin https → blocked in-window, routed to OS browser.
-  assert.deepEqual(navigationDecision("https://example.com", origin), {
+  expect(navigationDecision("https://example.com", origin)).toEqual({
     prevent: true,
     open: true,
   });
 
   // Cross-origin non-https → blocked, not routed.
-  assert.deepEqual(navigationDecision("http://evil.test", origin), {
+  expect(navigationDecision("http://evil.test", origin)).toEqual({
     prevent: true,
     open: false,
   });
 
   // Unparseable → blocked, never opened.
-  assert.deepEqual(navigationDecision("::::not a url", origin), {
+  expect(navigationDecision("::::not a url", origin)).toEqual({
     prevent: true,
     open: false,
   });
@@ -72,11 +71,8 @@ test("navigationDecision allows same-origin, blocks and routes the rest", () => 
   // "null". CSM loads its UI via loadFile, so main.ts derives appOrigin the same
   // way and a local in-app hop is same-origin ("null" === "null") → allowed.
   const fileOrigin = new URL("file:///C:/app/index.html").origin;
-  assert.deepEqual(
-    navigationDecision("file:///C:/app/other.html", fileOrigin),
-    {
-      prevent: false,
-      open: false,
-    },
-  );
+  expect(navigationDecision("file:///C:/app/other.html", fileOrigin)).toEqual({
+    prevent: false,
+    open: false,
+  });
 });

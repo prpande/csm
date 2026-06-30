@@ -1,12 +1,25 @@
 {
-  // Lint-only project for type-aware ESLint. The build tsconfigs are narrow
-  // (tsconfig.json → src/**; tsconfig.test.json → src + test/**) and neither spans
-  // every linted file. typescript-eslint needs ONE project covering all of them, so
-  // this widens include. noEmit + rootDir:"." because linting type-checks only.
-  "extends": "./tsconfig.json",
+  // Standalone lint-only project for type-aware ESLint. typescript-eslint needs
+  // ONE project spanning every linted file; the build tsconfigs are narrow
+  // (tsconfig.json → main/preload CommonJS; tsconfig.renderer.json → renderer
+  // ESM+JSX) and conflict on module/jsx, so this is its own config with jsx + DOM
+  // + node enabled. noEmit because linting only type-checks.
   "compilerOptions": {
-    "rootDir": ".",
-    "noEmit": true
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": [
+      "node",
+      "vite/client",
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": ["src", "test", "e2e", "vite.config.ts", "playwright.config.ts"]
 }
