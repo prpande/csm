@@ -1,0 +1,104 @@
+name: Publish desktop
+
+# Manual-only release pipeline. Builds the unsigned preview app for Windows (and,
+# optionally, macOS arm64) and uploads the artifacts to a DRAFT GitHub release for
+# the maintainer to review and publish by hand. Nothing is ever published
+# automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag / version (e.g. v0.2.0)"
+        required: true
+        type: string
+      include_macos:
+        description: "Also build the macOS (arm64) DMG"
+        required: false
+        type: boolean
+        default: false
+
+# Write is needed only to create/upload the draft release.
+permissions:
+  contents: write
+
+# Serialise publishes: the matrix jobs upload to the same draft release, so two
+# concurrent runs (or an in-flight one) must not race on it.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  # GitHub Actions can't conditionally include a matrix entry straight from a
+  # workflow input, so the matrix is computed here: include_macos=false → Windows
+  # only; true → Windows + macOS.
+  prepare:
+    name: Resolve build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.set.outputs.include }}
+    steps:
+      - id: set
+        run: |
+          if [ "${{ inputs.include_macos }}" = "true" ]; then
+            echo 'include=[{"os":"windows-latest","artifacts":"release/*.exe"},{"os":"macos-14","artifacts":"release/*.dmg"}]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'include=[{"os":"windows-latest","artifacts":"release/*.exe"}]' >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build & upload (${{ matrix.os }})
+    needs: prepare
+    strategy:
+      fail-fast: true
+      # Sequential: both jobs upload to the same draft release; serialising avoids
+      # a create/append race when the second OS finishes.
+      max-parallel: 1
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.include) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    # Packaging needs the Electron binary (npm run dist) but never runs the
+    # Playwright e2e, so skip the browser download — faster install, and it
+    # sidesteps the known Windows-CI Playwright extraction hang.
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    defaults:
+      run:
+        # bash on every OS (it's present on the Windows runner too) so the version
+        # step below is byte-identical across the matrix.
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+      - name: Install dependencies
+        run: npm ci
+      - name: Set package version from tag
+        # The tag is passed as an env var (not interpolated into the script body)
+        # so the untrusted input reaches bash as data, not code — closes the
+        # Actions script-injection class.
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          # Strip an optional leading "v" — `npm version` wants bare semver. Not
+          # committed (--no-git-tag-version); it only stamps the version into the
+          # artifact filenames and the app's package.json for this build.
+          # --allow-same-version: publishing at the version already in package.json
+          # (e.g. the first release at v0.1.0) must not fail — npm errors on an
+          # unchanged version otherwise.
+          VERSION="${TAG#v}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+      - name: Build & package
+        run: npm run dist
+      - name: Upload to draft release
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          draft: true
+          # name defaults to tag_name, so it isn't set explicitly.
+          tag_name: ${{ inputs.tag }}
+          # Each OS uploads only its own artifact type, so an empty match means the
+          # build silently produced nothing — fail loudly instead.
+          fail_on_unmatched_files: true
+          files: |
+            ${{ matrix.artifacts }}
