@@ -11,7 +11,7 @@ permissions:
 
 # Cancel an in-flight run when a newer commit lands on the same ref.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,8 +24,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       # lint/typecheck/build/Vitest need neither the Electron binary (types come
-      # from the npm package) nor Playwright browsers (Vitest uses jsdom). The
-      # e2e job below does NOT set these.
+      # from the npm package) nor Playwright browsers (Vitest uses jsdom), so skip
+      # both downloads. The e2e job keeps the Electron binary but still skips the
+      # Playwright browsers (it drives _electron, not a browser).
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
     steps:
@@ -58,6 +59,11 @@ jobs:
     # the bundled system deps match. Bump together when Playwright is upgraded.
     container:
       image: mcr.microsoft.com/playwright:v1.61.1-noble
+    env:
+      # The suite drives _electron only (no browser), and the image already
+      # bundles browsers — skip the redundant postinstall download. The Electron
+      # binary is NOT skipped here: _electron.launch needs it.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
