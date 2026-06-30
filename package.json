@@ -1,0 +1,25 @@
+{
+  "name": "csm",
+  "version": "0.1.0",
+  "description": "CSM — Claude Session Manager: browse and reopen closed Claude Code sessions",
+  "author": "Pratyush Pande",
+  "license": "Apache-2.0",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && electron .",
+    "lint": "eslint . && prettier --check .",
+    "test:unit": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\"",
+    "dist": "npm run build && electron-builder"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0"
+  }
+}

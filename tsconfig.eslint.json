@@ -1,0 +1,12 @@
+{
+  // Lint-only project for type-aware ESLint. The build tsconfigs are narrow
+  // (tsconfig.json → src/**; tsconfig.test.json → src + test/**) and neither spans
+  // every linted file. typescript-eslint needs ONE project covering all of them, so
+  // this widens include. noEmit + rootDir:"." because linting type-checks only.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}
