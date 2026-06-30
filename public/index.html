@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Lock the renderer down: no remote anything, no inline script. The real
+         renderer (issue #5) ships its own CSP tuned to the Vite build. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CSM — Claude Session Manager</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+      }
+      body {
+        margin: 0;
+        display: grid;
+        place-items: center;
+        height: 100vh;
+        gap: 0.25rem;
+        text-align: center;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+      p {
+        margin: 0;
+        opacity: 0.6;
+        font-size: 0.875rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CSM — Claude Session Manager</h1>
+      <p>Shell scaffold. UI arrives in a later phase.</p>
+    </main>
+  </body>
+</html>
