@@ -17,9 +17,11 @@ on:
         type: boolean
         default: false
 
-# Write is needed only to create/upload the draft release.
+# Least privilege: default to read-only. Only the build job is granted
+# contents: write (to create/upload the draft release); prepare just computes a
+# matrix and needs nothing.
 permissions:
-  contents: write
+  contents: read
 
 # Serialise publishes: the matrix jobs upload to the same draft release, so two
 # concurrent runs (or an in-flight one) must not race on it.
@@ -48,6 +50,9 @@ jobs:
   build:
     name: Build & upload (${{ matrix.os }})
     needs: prepare
+    # Only this job writes the draft release.
+    permissions:
+      contents: write
     strategy:
       fail-fast: true
       # Sequential: both jobs upload to the same draft release; serialising avoids
