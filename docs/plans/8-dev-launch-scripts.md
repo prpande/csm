@@ -27,7 +27,10 @@ delete and its safe-target guard entirely.
 - `scripts/run-desktop.sh` — macOS launcher (`nohup` + `disown`).
 - `TESTING.md` — unsigned-install guidance + data/log locations.
 - `.gitignore` — add `.dev-run/` (launcher log + pidfile live there).
-- `README.md` — one-line pointer to the scripts + TESTING.md (optional, if it reads well).
+- `README.md` — **omitted.** A contributor pointer would clash with the README's current
+  "implementation has not started yet" status line, and refreshing that framing is
+  doc-staleness work outside #8. TESTING.md's "Running from source" section covers
+  discoverability instead.
 
 ## Behavior (both scripts)
 
