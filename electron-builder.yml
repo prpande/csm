@@ -1,0 +1,42 @@
+# electron-builder configuration for CSM. Kept as a standalone file (not a
+# package.json "build" key) so the packaging config stays readable and reviewable
+# on its own. Mirrors PRism's preview-packaging setup: no sidecar binaries, no
+# extraResources, unsigned (identity: null) builds for preview distribution.
+#
+# `npm run dist` builds the app (tsc + vite) then runs electron-builder against
+# this file, emitting artifacts to release/ for whichever OS it runs on.
+
+# Must equal the AppUserModelID set in src/main.ts (app.setAppUserModelId) so
+# Windows groups the taskbar button and reads the icon from the same identity.
+appId: com.prpande.csm
+productName: CSM
+
+directories:
+  # release/ is gitignored. Branded icons go in the default build/ resources dir
+  # (build/icon.ico, build/icon.icns) — tracked in #36; until then electron-builder
+  # falls back to its default Electron icon.
+  output: release
+
+# Only the build output ships. The renderer bundles react/react-dom via Vite, and
+# main/preload import nothing beyond Electron + Node builtins, so no production
+# node_modules are needed at runtime — this keeps the package lean.
+files:
+  - dist/**
+  - package.json
+
+win:
+  # portable = single self-contained .exe (no install); nsis = a normal installer.
+  target:
+    - portable
+    - nsis
+
+mac:
+  category: public.app-category.developer-tools
+  # Unsigned preview build — no Developer ID. Setting identity to null skips the
+  # signing step entirely (Gatekeeper will warn on first open, expected for a
+  # preview). Real signing/notarization is a later, separate concern.
+  identity: null
+  target:
+    - target: dmg
+      arch:
+        - arm64
