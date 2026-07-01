@@ -37,7 +37,9 @@ delete and its safe-target guard entirely.
 2. **Single-instance short-circuit** — read a pidfile in `<repo>/.dev-run/`; if it names a
    live process, print "already running, nothing rebuilt" and exit 0 (avoids a multi-minute
    rebuild that would just hit Electron's own single-instance lock and quit). Non-destructive.
-3. **Build** — unless `-SkipBuild` / `--skip-build`: `npm ci` then `npm run build`.
+3. **Build** — unless `-SkipBuild` / `--skip-build`: `npm install` then `npm run build`
+   (`install`, not `ci` — a dev launcher runs repeatedly, so install's near-no-op-when-current
+   beats `ci`'s nuke-and-repave; CI keeps `ci` for reproducibility).
 4. **Resolve** — the local `electron` binary (`node_modules/.bin/electron[.cmd]`); error with
    "run without -SkipBuild" if absent.
 5. **Launch detached** —

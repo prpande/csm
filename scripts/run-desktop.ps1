@@ -104,19 +104,21 @@ function Write-LauncherPidfile {
 }
 
 function Test-LauncherAlreadyRunning {
-    # True only if the pidfile names a LIVE process whose name is in $ExpectedNames. A 32-bit
-    # PID recycles fast, so a stale pidfile PID may now be an unrelated app — the name check
-    # guards that. The wrapper host stays alive as electron's parent, so that host is the live
-    # owner: 'pwsh' when launched from PowerShell 7, 'powershell' from the built-in 5.1 (see
-    # Get-PowerShellHostPath). 'electron' is included defensively.
-    param([string]$PidfilePath, [string[]]$ExpectedNames = @('pwsh', 'powershell', 'electron'))
+    # True only if the pidfile names a LIVE process. Bare liveness check, matching the macOS
+    # sibling's `kill -0`: Electron's own single-instance lock (main.ts requestSingleInstanceLock)
+    # is the real backstop, and a recycled-PID false positive is self-recoverable via the "delete
+    # that pidfile" message the caller prints. A process-name allowlist would only shrink the
+    # already-rare recycle window at the cost of coupling this to Get-PowerShellHostPath's
+    # spawn-host names — not worth it, and it made the two launchers diverge.
+    param([string]$PidfilePath)
     if (-not (Test-Path -LiteralPath $PidfilePath)) { return $false }
     $raw = Get-Content -LiteralPath $PidfilePath -Raw -ErrorAction SilentlyContinue
-    if (-not ($raw -match '^\s*(\d+)\s*$')) { return $false }
+    # Require a positive integer (parity with the macOS sibling): reject empty / 0 / negative /
+    # non-numeric. Guarding 0 matters on Windows — Get-Process -Id 0 returns the System Idle
+    # Process (always "alive"), which would wrongly read as "app running" and block a relaunch.
+    if (-not ($raw -match '^\s*([1-9][0-9]*)\s*$')) { return $false }
     $procId = [int]$Matches[1]
-    $p = Get-Process -Id $procId -ErrorAction SilentlyContinue
-    if (-not $p) { return $false }
-    return $ExpectedNames -contains $p.Name
+    return [bool](Get-Process -Id $procId -ErrorAction SilentlyContinue)
 }
 
 function Assert-Platform {
@@ -167,16 +169,19 @@ function Invoke-Main {
     Invoke-Preflight
 
     if (-not $SkipBuild) {
+        # npm install (not npm ci): a dev launcher is run repeatedly, and install is a near-no-op
+        # when the lockfile and node_modules already agree — no nuke-and-repave each run. CI uses
+        # npm ci for bit-exact reproducibility; a local launcher optimizes for fast iteration.
         Push-Location $repoRoot
         try {
-            npm ci;        if ($LASTEXITCODE -ne 0) { throw "npm ci failed ($LASTEXITCODE)." }
+            npm install;   if ($LASTEXITCODE -ne 0) { throw "npm install failed ($LASTEXITCODE)." }
             npm run build; if ($LASTEXITCODE -ne 0) { throw "npm run build failed ($LASTEXITCODE)." }
         } finally { Pop-Location }
     }
 
     $electron = Join-Path $repoRoot 'node_modules\.bin\electron.cmd'
     if (-not (Test-Path -LiteralPath $electron)) {
-        throw "Electron not found at $electron. Run without -SkipBuild so 'npm ci' installs it."
+        throw "Electron not found at $electron. Run without -SkipBuild so 'npm install' installs it."
     }
 
     # Author the wrapper (owns the log redirection), spawn it detached via WMI.

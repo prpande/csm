@@ -95,12 +95,15 @@ main() {
   command -v npm  >/dev/null 2>&1 || { node_remediation; exit 1; }
 
   if [[ "$skip_build" -eq 0 ]]; then
-    ( cd "$repo_root" && npm ci && npm run build )
+    # npm install (not npm ci): a dev launcher is run repeatedly, and install is a near-no-op
+    # when the lockfile and node_modules already agree — no nuke-and-repave each run. CI uses
+    # npm ci for bit-exact reproducibility; a local launcher optimizes for fast iteration.
+    ( cd "$repo_root" && npm install && npm run build )
   fi
 
   local electron
   electron="$repo_root/node_modules/.bin/electron"
-  [[ -x "$electron" ]] || { echo "Electron not found at $electron. Run without --skip-build so 'npm ci' installs it." >&2; exit 1; }
+  [[ -x "$electron" ]] || { echo "Electron not found at $electron. Run without --skip-build so 'npm install' installs it." >&2; exit 1; }
 
   # --- Launch detached. nohup is the load-bearing detach (Electron ignores SIGHUP); disown
   #     additionally drops the job from the shell's table. disown is best-effort: in a
