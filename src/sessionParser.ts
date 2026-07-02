@@ -120,9 +120,14 @@ function eligiblePromptText(rec: Record_): string | undefined {
   return trimmed;
 }
 
+// Truncate by CODE POINT, not UTF-16 code unit: spreading the string iterates
+// whole code points, so a supplementary-plane character (emoji, some CJK) that
+// straddles the limit is kept or dropped as a unit rather than being sliced into
+// a lone, malformed surrogate. TITLE_MAX_LENGTH is thus a code-point budget.
 function truncateTitle(text: string): string {
-  return text.length > TITLE_MAX_LENGTH
-    ? text.slice(0, TITLE_MAX_LENGTH) + "…"
+  const codePoints = [...text];
+  return codePoints.length > TITLE_MAX_LENGTH
+    ? codePoints.slice(0, TITLE_MAX_LENGTH).join("") + "…"
     : text;
 }
 

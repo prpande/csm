@@ -85,6 +85,20 @@ test("title: first eligible user prompt when no ai-title/summary, truncated", ()
   expect(title.startsWith("x".repeat(TITLE_MAX_LENGTH))).toBe(true);
 });
 
+test("title: truncation keeps a multibyte char intact at the boundary (no lone surrogate)", () => {
+  // 119 ASCII code points + one emoji = the 120th code point; the emoji occupies
+  // UTF-16 units 120-121, so a code-UNIT slice(0,120) would split its surrogate
+  // pair and leave a lone high surrogate. Code-POINT truncation keeps it whole.
+  const prompt = "x".repeat(TITLE_MAX_LENGTH - 1) + "😀" + "yyyy";
+  const title = parseSession(
+    SID,
+    jsonl({ type: "user", message: { role: "user", content: prompt } }),
+  ).title;
+  expect(title).toBe("x".repeat(TITLE_MAX_LENGTH - 1) + "😀" + "…");
+  expect(title).toContain("😀"); // full emoji survived
+  expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(title)).toBe(false); // no lone high surrogate
+});
+
 test("title: short prompt is used verbatim (trimmed, no ellipsis)", () => {
   const content = jsonl({
     type: "user",
