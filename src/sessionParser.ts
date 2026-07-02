@@ -30,6 +30,13 @@ const TITLE_FALLBACK = "(untitled)";
 // A user "prompt" that is really an injected wrapper, not something the human
 // typed. Titles must skip these so injected text can't leak into the list (spec
 // §4.1). Matched against the trimmed leading text of a user message.
+//
+// Deliberately an explicit allowlist rather than a generic `^<tag>` regex: a
+// regex would misclassify legitimate prompts that genuinely open with a tag
+// ("<div> how do I center this", "<Button> not firing") and drop them from the
+// title. The cost is that a NEW Claude Code wrapper tag must be added here; that
+// only affects a 3rd-tier fallback label, so an occasional miss is preferable to
+// silently swallowing real user prompts.
 const WRAPPER_PREFIXES = [
   "<system-reminder",
   "<command-name",
@@ -119,27 +126,41 @@ function truncateTitle(text: string): string {
     : text;
 }
 
-// Title fallback chain (spec §4.1): ai-title -> summary -> first eligible user
-// prompt (truncated) -> "(untitled)". Each tier scans in file order for the
-// first hit.
-function extractTitle(records: Record_[]): string {
+// First record of `type` whose `key` field is a non-empty string. The ai-title
+// and summary title tiers share this exact shape.
+function firstFieldValue(
+  records: Record_[],
+  type: string,
+  key: string,
+): string | undefined {
   for (const r of records) {
-    if (r.type === "ai-title") {
-      const t = asNonEmptyString(r.aiTitle);
-      if (t) return t;
+    if (r.type === type) {
+      const value = asNonEmptyString(r[key]);
+      if (value) return value;
     }
   }
-  for (const r of records) {
-    if (r.type === "summary") {
-      const t = asNonEmptyString(r.summary);
-      if (t) return t;
-    }
-  }
+  return undefined;
+}
+
+// The first eligible (human-typed, non-wrapper) user prompt, truncated for the
+// list — the third title tier, which has its own predicate (eligiblePromptText).
+function firstPromptTitle(records: Record_[]): string | undefined {
   for (const r of records) {
     const prompt = eligiblePromptText(r);
     if (prompt) return truncateTitle(prompt);
   }
-  return TITLE_FALLBACK;
+  return undefined;
+}
+
+// Title fallback chain (spec §4.1), read top to bottom as strict priority:
+// ai-title -> summary -> first eligible user prompt (truncated) -> "(untitled)".
+function extractTitle(records: Record_[]): string {
+  return (
+    firstFieldValue(records, "ai-title", "aiTitle") ??
+    firstFieldValue(records, "summary", "summary") ??
+    firstPromptTitle(records) ??
+    TITLE_FALLBACK
+  );
 }
 
 // LAST permission-mode record wins — a session can change mode mid-run, and the
