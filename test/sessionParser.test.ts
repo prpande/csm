@@ -188,6 +188,7 @@ test("permissionMode: every recognized CLI value passes through (esp. auto)", ()
     "auto",
     "bypassPermissions",
     "dontAsk",
+    "plan",
   ]) {
     const content = jsonl({ type: "permission-mode", permissionMode: mode });
     expect(parseSession(SID, content).permissionMode).toBe(mode);

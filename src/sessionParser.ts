@@ -5,12 +5,16 @@
 // parsing, and malformed-line skipping live INSIDE this unit per the design spec
 // (docs/specs/2026-06-30-csm-design.md §4.1, §12 fail-soft).
 
-// The CLI-valid permission modes, verified against real session data. `auto` is
-// common (~100+ occurrences observed) and must not be dropped. This is a
-// SEPARATE dimension from the `{type:"mode","mode":"normal"|"plan"}` record,
-// which is NOT used for --permission-mode.
+// The complete set of --permission-mode values the CLI accepts (CLAUDE.md; design
+// spec §13). This is the "known CLI set" that gates pass-through: a recognized
+// value is passed through unchanged, and only an absent/unrecognized value falls
+// back to "default" (spec §4.1 — never coerce a recognized value). `auto` is
+// common in real data (~100+ occurrences); `plan` is CLI-valid and kept here for
+// completeness even though plan-ness usually rides the SEPARATE
+// `{type:"mode","mode":"normal"|"plan"}` record — which is a different dimension
+// and is NOT read for permissionMode.
 export type PermissionMode =
-  "default" | "acceptEdits" | "auto" | "bypassPermissions" | "dontAsk";
+  "default" | "acceptEdits" | "auto" | "bypassPermissions" | "dontAsk" | "plan";
 
 const KNOWN_PERMISSION_MODES = new Set<PermissionMode>([
   "default",
@@ -18,6 +22,7 @@ const KNOWN_PERMISSION_MODES = new Set<PermissionMode>([
   "auto",
   "bypassPermissions",
   "dontAsk",
+  "plan",
 ]);
 
 // Prompt-derived titles are truncated to keep list rows uniform; ai-title /
@@ -59,8 +64,10 @@ export interface SessionMetadata {
 
 type Record_ = { [k: string]: unknown };
 
+// Excludes arrays: a top-level JSON array line is not a session record (all its
+// named-field reads would be undefined), so it is dropped rather than pushed.
 const isRecord = (v: unknown): v is Record_ =>
-  typeof v === "object" && v !== null;
+  typeof v === "object" && v !== null && !Array.isArray(v);
 const asString = (v: unknown): string | undefined =>
   typeof v === "string" ? v : undefined;
 const asNonEmptyString = (v: unknown): string | undefined => {
