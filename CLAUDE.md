@@ -10,7 +10,9 @@ The authoritative design lives in
 [`docs/specs/2026-06-30-csm-design.md`](docs/specs/2026-06-30-csm-design.md) —
 read it before making implementation decisions. Specs go in `docs/specs/`.
 
-**Status:** design complete; implementation not started.
+**Status:** Phase A (MVP) in progress. The Electron shell, preload IPC bridge,
+React renderer scaffold, 3-OS CI, and packaging have landed; the core session
+scan, file tree, session list, and reopen flow are still being built.
 
 ## Data source (read-only — never mutate)
 
