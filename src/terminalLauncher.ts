@@ -37,7 +37,10 @@ const UUID_RE =
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/;
 
-function assertValidInputs(
+// Exported so the impure spawn layer (reopenSession, #52) reuses the exact same
+// UUID / mode-allowlist / empty / control-char validation instead of
+// re-implementing it — the issue's "do not re-implement escaping/validation".
+export function assertLaunchInputs(
   cwd: string,
   sessionId: string,
   mode: string,
@@ -74,7 +77,7 @@ export function buildLaunchSpec(
   mode: string,
   claudePath: string,
 ): LaunchSpec {
-  assertValidInputs(cwd, sessionId, mode, claudePath);
+  assertLaunchInputs(cwd, sessionId, mode, claudePath);
   switch (os) {
     case "win32":
       return buildWindowsTerminalSpec(cwd, sessionId, mode, claudePath);
