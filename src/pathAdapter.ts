@@ -1,12 +1,13 @@
-// OS seam for resolving the Claude projects root (spec §5 module table).
+// OS seam for spec §5's "OS-aware path handling": resolving the Claude projects
+// root AND classifying a session's cwd for the §10 hide filter.
 // Sessions live at <root>/<encoded-cwd>/<sessionId>.jsonl where <root> defaults
 // to ~/.claude/projects. `os.homedir()` absorbs the Windows/macOS home
 // difference and the relative .claude/projects structure is identical on both
 // OSes, so no per-OS branch is needed. Pure: imports only node:os/node:path and
-// does no I/O — the path is returned, not verified to exist (a missing root is
-// sessionStore's concern; §12 surfaces it as the "No Claude sessions found"
-// empty state). The broader §5 "OS-aware path handling" charter (temp/worktree
-// path predicates for the §10 hide filter) is deliberately deferred to #49.
+// does no I/O — the path is returned/classified, not verified to exist (a missing
+// root is sessionStore's concern; §12 surfaces it as the "No Claude sessions
+// found" empty state). The path-classification half (isTempPath/isWorktreePath,
+// #49) completes the charter below; the root-resolution half shipped in #48.
 
 import { homedir, platform as osPlatform, tmpdir as osTmpdir } from "node:os";
 import { join, win32, posix } from "node:path";
