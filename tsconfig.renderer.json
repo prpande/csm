@@ -12,5 +12,6 @@
     "useDefineForClassFields": true,
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src/renderer", "test"]
+  "include": ["src/renderer", "test"],
+  "exclude": ["test/main"]
 }
