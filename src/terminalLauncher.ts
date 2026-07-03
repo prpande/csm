@@ -28,10 +28,14 @@ export type LaunchOS = "win32" | "darwin";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// U+0000–U+001F. A control char (esp. newline) cannot live inside a macOS
-// AppleScript double-quoted literal, and no real launchable path contains one.
+// Control + exotic separators: C0 (U+0000–U+001F), DEL + C1 (U+007F–U+009F, which
+// includes NEL U+0085), and the Unicode line/paragraph separators (U+2028/U+2029).
+// A C0 newline cannot live inside a macOS AppleScript double-quoted literal at all;
+// the rest are inert in every container but carry no meaning in a real launchable
+// path, so rejecting them yields a clear "invalid" error instead of a silently
+// non-existent cd target. No real cwd/claudePath contains any of these.
 // eslint-disable-next-line no-control-regex
-const CONTROL_CHARS = /[\x00-\x1f]/;
+const CONTROL_CHARS = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/;
 
 function assertValidInputs(
   cwd: string,

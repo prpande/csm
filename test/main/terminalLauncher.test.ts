@@ -122,24 +122,19 @@ describe("cwd / claudePath sanity gate", () => {
   test("rejects empty claudePath", () => {
     expect(() => buildLaunchSpec("win32", CWD, ID, "default", "")).toThrow();
   });
-  test.each(["\n", "\r", "\t", "\x00"])(
-    "rejects control char %j in cwd",
-    (ctrl) => {
-      const bad = `/Users/me/pr${ctrl}oj`;
-      expect(() =>
-        buildLaunchSpec("darwin", bad, ID, "default", CLAUDE),
-      ).toThrow();
-    },
-  );
-  test.each(["\n", "\r", "\t", "\x00"])(
-    "rejects control char %j in claudePath",
-    (ctrl) => {
-      const bad = `cla${ctrl}ude`;
-      expect(() =>
-        buildLaunchSpec("darwin", CWD, ID, "default", bad),
-      ).toThrow();
-    },
-  );
+  // C0, plus DEL/C1 (\x7f, NEL \x85) and the Unicode line/paragraph separators —
+  // all inert to injection but rejected so a bad path fails clearly, not silently.
+  const CTRL = ["\n", "\r", "\t", "\x00", "\x7f", "\x85", "\u2028", "\u2029"];
+  test.each(CTRL)("rejects control char %j in cwd", (ctrl) => {
+    const bad = `/Users/me/pr${ctrl}oj`;
+    expect(() =>
+      buildLaunchSpec("darwin", bad, ID, "default", CLAUDE),
+    ).toThrow();
+  });
+  test.each(CTRL)("rejects control char %j in claudePath", (ctrl) => {
+    const bad = `cla${ctrl}ude`;
+    expect(() => buildLaunchSpec("darwin", CWD, ID, "default", bad)).toThrow();
+  });
 });
 
 describe("macOS injection / escaping (highest-risk surface)", () => {
@@ -223,7 +218,8 @@ describe("purity", () => {
       join(process.cwd(), "src", "terminalLauncher.ts"),
       "utf8",
     );
-    expect(src).not.toMatch(/from\s+["']node:(child_process|fs|os)["']/);
+    // Catch both the node:-prefixed and bare specifiers (`node:fs` and `fs`).
+    expect(src).not.toMatch(/from\s+["'](node:)?(child_process|fs|os)["']/);
     expect(src).not.toMatch(/from\s+["']electron["']/);
   });
 });

@@ -120,11 +120,15 @@ settings). Validate before building argv:
 - **Non-empty:** throw `Error("cwd must not be empty")` / `Error("claudePath must
   not be empty")` on `""`. (A legitimate `cwd` is at minimum the `"(unknown)"`
   fallback — never empty.)
-- **No control characters** (U+0000–U+001F): throw. A path containing a raw newline
-  cannot be represented inside a macOS AppleScript double-quoted literal at all (it
-  is a compile error, not a graceful failure), and no real launchable directory
-  contains a control character. Rejecting up front is simpler and safer than
-  encoding, and keeps the AppleScript builder total.
+- **No control / exotic-separator characters** — C0 (U+0000–U+001F), DEL + C1
+  (U+007F–U+009F, incl. NEL U+0085), and the Unicode line/paragraph separators
+  (U+2028/U+2029): throw. A C0 newline cannot be represented inside a macOS
+  AppleScript double-quoted literal at all (a compile error, not a graceful
+  failure); the wider separators are inert to injection (verified — they break
+  neither the shell single-quote, the AppleScript literal, nor the JS template) but
+  carry no meaning in a real launchable path, so rejecting them yields a clear
+  "invalid" error instead of a silently non-existent `cd` target. Rejecting up front
+  is simpler and safer than encoding, and keeps the AppleScript builder total.
 
 These values are only ever emitted as **discrete argv elements** (Windows) or
 **escaped/quoted AppleScript literals** (macOS) — never concatenated into a shell
@@ -236,8 +240,8 @@ Node-context unit tests (tsconfig `test/main` seam), fixtures only, no I/O.
 
 **cwd / claudePath gate**
 7. Empty `cwd` / empty `claudePath` → throws.
-8. `cwd` or `claudePath` containing a control char (`\n`, `\r`, `\t`, `\x00`) →
-   throws. (parametrized)
+8. `cwd` or `claudePath` containing a control / exotic-separator char (`\n`, `\r`,
+   `\t`, `\x00`, DEL `\x7f`, NEL `\x85`, U+2028, U+2029) → throws. (parametrized)
 
 **Injection / escaping — macOS (the core of this slice)**
 9. Adversarial `cwd` values — `/x" & (do shell script "rm -rf ~") & "`, a path with a
