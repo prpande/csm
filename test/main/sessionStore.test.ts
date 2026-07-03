@@ -146,6 +146,25 @@ test("grouping: same in-file cwd across different encoded folders -> one folder"
   expect(result.folders[0].sessions).toHaveLength(2);
 });
 
+test("folders are ordered by their most-recently-active session", async () => {
+  // /old's newest session predates /new's newest, so /new must sort first even
+  // though /old is created first while iterating (both in the same tier).
+  writeSession(
+    "enc-old",
+    "11111111-1111-1111-1111-111111111111",
+    [{ type: "system", cwd: "/old", timestamp: "2026-06-30T08:00:00.000Z" }],
+    0,
+  );
+  writeSession(
+    "enc-new",
+    "22222222-2222-2222-2222-222222222222",
+    [{ type: "system", cwd: "/new", timestamp: "2026-06-30T11:00:00.000Z" }],
+    0,
+  );
+  const result = await scanNow(createSessionStore(root));
+  expect(result.folders.map((f) => f.cwd)).toEqual(["/new", "/old"]);
+});
+
 test("streaming: onBatch fires once per non-empty tier, newest-first, before resolve", async () => {
   writeSession(
     "e",

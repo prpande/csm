@@ -175,7 +175,7 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
       if (batch.length > 0) onBatch?.(batch);
     }
 
-    // Sort each folder most-recent-first by activity time.
+    // Within each folder, sessions most-recent-first by activity time.
     const folders: SessionFolder[] = [];
     for (const [cwd, sessions] of groups) {
       sessions.sort(
@@ -183,6 +183,14 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
       );
       folders.push({ cwd, sessions });
     }
+    // Folders themselves most-recent-first by their newest session, so the
+    // folder used most recently sorts first. sessions[0] is that folder's newest
+    // (sorted just above); a folder is never empty (only created on first push).
+    folders.sort(
+      (a, b) =>
+        activityEpoch(b.sessions[0].lastActivity) -
+        activityEpoch(a.sessions[0].lastActivity),
+    );
     return { folders };
   }
 
