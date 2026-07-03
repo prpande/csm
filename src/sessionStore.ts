@@ -35,6 +35,11 @@ export interface StoreDeps {
   parse?: (sessionId: string, content: string) => SessionMetadata;
 }
 
+// Session files. The match is case-sensitive: Claude always writes lowercase
+// `.jsonl`, and this reads Claude's own files (spec §6) — a `.JSONL` from an
+// external tool is out of scope and intentionally ignored.
+const JSONL_EXT = ".jsonl";
+
 // Age tiers by mtime (spec §6): <=1d, <=3d, <=7d, <=14d, <=30d, then a final
 // "older than 30d" bucket. Newest tier is parsed and emitted first.
 const DAY_MS = 86_400_000;
@@ -73,8 +78,16 @@ async function collectFiles(rootDir: string): Promise<FileEntry[]> {
     let names: string[];
     try {
       const entries = await readdir(dir, { withFileTypes: true });
+      // Require a non-empty stem: a file named exactly ".jsonl" would yield an
+      // empty sessionId (basename(".jsonl", ".jsonl") === ""), leaking a bogus
+      // un-reopenable session — skip it rather than emit it (fail-soft, §12).
       names = entries
-        .filter((e) => e.isFile() && e.name.endsWith(".jsonl"))
+        .filter(
+          (e) =>
+            e.isFile() &&
+            e.name.endsWith(JSONL_EXT) &&
+            e.name.length > JSONL_EXT.length,
+        )
         .map((e) => e.name);
     } catch {
       continue;
@@ -94,7 +107,7 @@ async function collectFiles(rootDir: string): Promise<FileEntry[]> {
 // `<sessionId>.jsonl` -> `<sessionId>`. The filename is the authoritative id
 // (trusted over any in-file field), matching sessionParser's contract.
 function sessionIdOf(filePath: string): string {
-  return basename(filePath, ".jsonl");
+  return basename(filePath, JSONL_EXT);
 }
 
 // Epoch ms for a lastActivity value, used only for sorting. The parser passes a

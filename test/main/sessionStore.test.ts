@@ -242,11 +242,13 @@ test("skips non-.jsonl, empty, and non-dir entries; scan still completes", async
   writeFileSync(join(root, "e", "notes.txt"), "ignore me"); // non-jsonl
   writeFileSync(join(root, "e", "empty.jsonl"), ""); // empty -> full-fallback metadata
   writeFileSync(join(root, "loose.jsonl"), JSON.stringify({ type: "x" })); // file at root (not in a subdir)
+  writeFileSync(join(root, "e", ".jsonl"), JSON.stringify({ type: "x" })); // empty stem -> must be skipped
 
   const result = await scanNow(createSessionStore(root));
   const ids = result.folders.flatMap((f) => f.sessions.map((s) => s.sessionId));
   expect(ids).toContain("11111111-1111-1111-1111-111111111111");
   expect(ids).not.toContain("notes"); // txt skipped
+  expect(ids).not.toContain(""); // ".jsonl" (empty sessionId) never leaks a session
 });
 
 test("read-only: fixture dir is byte-identical after a scan", async () => {
