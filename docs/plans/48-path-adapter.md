@@ -43,18 +43,16 @@ approach and unblocks the end-to-end scan now.
 
 ## Tests (`test/main/pathAdapter.test.ts`, node-context per the tsconfig seam)
 
-1. Appends `.claude/projects` under an injected platform-native home (exact
-   `path.join` contract, correct separators).
-2. Appends **exactly** the `.claude` then `projects` segments — asserted
-   structurally via `path.relative` + platform `sep` (deterministic on all 3 CI
-   OSes; a POSIX literal would be mangled by Windows `join` normalization).
-3. Defaults to `os.homedir()` when no argument is given.
-4. Pure resolution — returns a path for a non-existent home without throwing /
-   touching disk.
+1. Resolves `<home>/.claude/projects` under an injected platform-native home
+   (exact `path.join` contract — itself the per-OS assertion, since `join` uses
+   the platform separator).
+2. Defaults to `os.homedir()` when no argument is given.
+3. Pure resolution — does not verify the home exists / never throws (guards the
+   intentional no-I/O contract).
 
 ## Out of scope / follow-ons
 
-- Temp/worktree path predicates for the §10 filter (own issue with the filter).
+- Temp/worktree path predicates for the §10 filter — deferred to #49.
 - Configurable projects root (spec makes only the `claude` **binary** path
   configurable).
 - IPC wiring `pathAdapter` → `sessionStore` in main bootstrap (`ipc` slice).
