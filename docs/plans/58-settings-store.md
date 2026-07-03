@@ -35,9 +35,14 @@ createSettingsStore(dir: string) => {
 - **Fail-soft (§12).** A missing, empty, non-object, or unparseable `settings.json`
   → treated as `{}` → `getClaudePath()` returns the `"claude"` default. Never throws
   to the caller.
-- **Default guard.** `claudePath` is honored only when it is a non-blank string;
-  absent / blank / non-string → default `"claude"`. (So even a persisted `""`
-  resolves to the default; the store stores the raw value, the getter guards.)
+- **Default guard + trim-on-read.** `getClaudePath` honors `claudePath` only when
+  it is a non-blank string and returns it **trimmed** — the value flows to spawn as
+  the `file` argument, so surrounding whitespace from a hand-edited `settings.json`
+  would otherwise fail to resolve as an executable (internal spaces, e.g.
+  `C:\Program Files\claude.exe`, are preserved). `setClaudePath` stores the value
+  as given; the getter normalizes on read. Absent / blank / non-string → default
+  `"claude"` (so even a persisted `""` resolves to the default). _(Trim-on-read was
+  added from a preflight adversarial-review finding.)_
 - **Forward-compat write.** `setClaudePath` reads current settings, **spread-merges**
   `{ ...current, claudePath: value }`, and writes — so an unknown future key
   (terminal preference, Phase C) survives an MVP save rather than being clobbered.
@@ -70,6 +75,8 @@ createSettingsStore(dir: string) => {
 7. After writes, the injected dir contains only `settings.json` (no path escapes
    the dir → structurally cannot touch `~/.claude`).
 8. `setClaudePath` creates `settings.json` when the dir is initially empty.
+9. Surrounding whitespace on a stored `claudePath` is trimmed on read (internal
+   spaces preserved).
 
 ## Out of scope / follow-ons (#59 and later)
 
