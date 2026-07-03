@@ -63,16 +63,33 @@ that **filter by the active `scanId`** (dropping a concurrent scan's events),
 invokes `sessions:scan`, and returns an unsubscribe that detaches them; done/error
 auto-detach. One listener set, no per-scan channel churn.
 
+**Hardening (from preflight review).** Two error paths were tightened after the
+adversarial pass: (1) the main scan handler routes all three pushes through a
+`post()` wrapper that swallows `sender.send` failures — when the WebContents is
+destroyed mid-scan the send throws, and letting it escape (including the
+`sessions:error` send in the catch) would reject the invoke as an unhandled
+error; `post` contains it and keeps the catch meaning "scan failed", not "send
+failed". (2) The preload holds a `settled` flag so `onDone`/`onError` (and
+cleanup) fire **at most once**, deduping a pushed done/error against a rejected
+invoke and any late-batch race.
+
 ### reopenSession — typed discriminated result
 
 `session:reopen` (invoke, arg = `{ cwd, sessionId, mode }`): sender guard → read
 `claudePath` from `settingsStore` → `reopen({ os: platform, cwd, sessionId, mode,
 claudePath })`. Returns `{ ok: true }` on resolve; on a thrown typed error returns
-`{ ok: false, code }` using **only** the stable `.code` (allowlist of the four
-codes; any unexpected throw → `SPAWN_FAILED`). `error.message` (which may embed an
-untrusted path) never crosses IPC. `os: platform` is passed through unchanged —
-`reopenSession` itself raises `UNSUPPORTED_OS` for a non win32/darwin host, which
-is the intended path. `permissionMode`/`mode` passed through untouched.
+`{ ok: false, code }` using **only** the stable `.code` (allowlist derived from
+the single-source `REOPEN_ERROR_CODES` array; any unexpected throw → `SPAWN_FAILED`).
+`error.message` (which may embed an untrusted path) never crosses IPC. `os: platform`
+is passed through unchanged — `reopenSession` itself raises `UNSUPPORTED_OS` for a
+non win32/darwin host, which is the intended path. `permissionMode`/`mode` passed
+through untouched. The **entire** body after the sender guard (including the `req`
+destructuring and the `settingsStore.getClaudePath()` await) runs inside the
+try/catch, so a malformed `req` (null/undefined from a buggy renderer) or a
+settings-read failure resolves to `{ ok: false, code: "SPAWN_FAILED" }` rather than
+rejecting the invoke. The untrusted-sender return is the same opaque
+`SPAWN_FAILED` — deliberately no distinct auth code (unreachable in a single-window
+app; an IPC-auth result has no place in a reopen-domain enum).
 
 ### settings get/set
 
@@ -107,9 +124,12 @@ Fake `ipcMain` records handlers; invoke them with a fake event
    → `{ ok: false, code }`; result has no `message` key.
 9. Unexpected (untyped) throw → `{ ok: false, code: "SPAWN_FAILED" }`, no message.
 10. `session:reopen` untrusted → `reopen` not called, `{ ok: false }`.
-11. `settings:getClaudePath` trusted → store value; untrusted → `"claude"`,
+11. `session:reopen` malformed `req` (null/undefined) from a trusted sender
+    resolves to `{ ok: false, code: "SPAWN_FAILED" }` (never rejects). _(Added
+    from preflight review.)_
+12. `settings:getClaudePath` trusted → store value; untrusted → `"claude"`,
     store not read.
-12. `settings:setClaudePath` trusted → delegates value; untrusted / non-string →
+13. `settings:setClaudePath` trusted → delegates value; untrusted / non-string →
     `setClaudePath` not called.
 
 ## Out of scope (separate issues)
