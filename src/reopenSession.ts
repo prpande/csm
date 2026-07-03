@@ -135,9 +135,19 @@ export const realDeps: LauncherDeps = {
   cwdExists,
 };
 
-// Spawn a new detached terminal; resolve on the `spawn` event, reject on `error`.
-// Always shell:false + discrete argv (I1); detached+ignore+unref so CSM can exit
-// without killing the terminal and the child gets its own console.
+// A spawn that neither succeeds ('spawn') nor fails ('error') — e.g. a
+// WindowsApps alias stub that resolves at the OS layer without libuv firing an
+// event — would otherwise wedge this promise forever, and on the wt attempt would
+// starve the cmd fallback. Bound it so a hang becomes a rejection the caller can
+// recover from (wt hang → cmd fallback; cmd hang → SpawnFailedError). 'spawn'
+// fires at process creation (ms), so 10s is far above real spawn latency and
+// never false-trips a healthy launch; the timer is cleared the instant we settle.
+const SPAWN_TIMEOUT_MS = 10_000;
+
+// Spawn a new detached terminal; resolve on the `spawn` event, reject on `error`
+// (or on the hang-guard timeout). Always shell:false + discrete argv (I1);
+// detached+ignore+unref so CSM can exit without killing the terminal and the
+// child gets its own console.
 function trySpawn(
   spawn: SpawnFn,
   file: string,
@@ -152,14 +162,21 @@ function trySpawn(
       detached: true,
       stdio: "ignore",
     });
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`spawn timed out: ${file}`));
+    }, SPAWN_TIMEOUT_MS);
     child.once("error", (err) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       reject(err);
     });
     child.once("spawn", () => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       child.unref();
       resolve();
     });

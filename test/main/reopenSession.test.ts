@@ -48,10 +48,12 @@ function req(overrides: Partial<ReopenRequest> = {}): ReopenRequest {
 
 // A fake ChildProcess: emits its outcome asynchronously (after reopenSession has
 // attached its once("spawn")/once("error") listeners), and records unref().
-type Outcome = "spawn" | { errorCode: string };
+// "hang" emits neither event — it exercises trySpawn's timeout guard.
+type Outcome = "spawn" | "hang" | { errorCode: string };
 function makeFakeChild(outcome: Outcome): EventEmitter & { unref: () => void } {
   const ee = new EventEmitter() as EventEmitter & { unref: () => void };
   ee.unref = vi.fn();
+  if (outcome === "hang") return ee;
   queueMicrotask(() => {
     if (outcome === "spawn") {
       ee.emit("spawn");
@@ -158,6 +160,33 @@ test("win32: wt and cmd both fail → SpawnFailedError, no throw escapes", async
   expect(calls).toHaveLength(2);
 });
 
+test("win32: a wt spawn that hangs (neither event) times out and falls back to cmd", async () => {
+  vi.useFakeTimers();
+  try {
+    const { spawn, calls } = fakeSpawn(["hang", "spawn"]);
+    const p = reopenSession(req(), { spawn, cwdExists: alwaysExists });
+    await vi.runAllTimersAsync(); // fire the wt hang-guard timeout → cmd fallback
+    await p;
+    expect(calls.map((c) => c.file)).toEqual(["wt.exe", "cmd.exe"]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("win32: wt and cmd both hang → SpawnFailedError (no silent wedge)", async () => {
+  vi.useFakeTimers();
+  try {
+    const { spawn, calls } = fakeSpawn(["hang", "hang"]);
+    const p = reopenSession(req(), { spawn, cwdExists: alwaysExists });
+    const assertion = expect(p).rejects.toBeInstanceOf(SpawnFailedError);
+    await vi.runAllTimersAsync(); // both hang-guard timeouts fire in sequence
+    await assertion;
+    expect(calls).toHaveLength(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Windows — metacharacter gate (I4)
 // ---------------------------------------------------------------------------
@@ -239,13 +268,17 @@ test("unsupported os → UnsupportedOsError, spawn never called", async () => {
   expect(calls).toHaveLength(0);
 });
 
-test("invalid sessionId (non-UUID) is rejected before spawn", async () => {
+test("a sessionId carrying shell metacharacters is rejected before spawn (raw-splice safety)", async () => {
+  // sessionId and mode are spliced RAW (unquoted) into the osascript shell line
+  // (terminalLauncher buildOsascriptSpec); their safety rests entirely on the UUID
+  // gate / mode allowlist. A metacharacter-bearing id must be rejected before it
+  // can reach that splice — this documents why the raw interpolation is safe.
   const { spawn, calls } = fakeSpawn(["spawn"]);
   await expect(
-    reopenSession(req({ sessionId: "not-a-uuid" }), {
-      spawn,
-      cwdExists: alwaysExists,
-    }),
+    reopenSession(
+      req({ os: "darwin", cwd: "/Users/x/proj", sessionId: "3b9f$(rm -rf ~)" }),
+      { spawn, cwdExists: alwaysExists },
+    ),
   ).rejects.toThrow();
   expect(calls).toHaveLength(0);
 });
@@ -364,6 +397,34 @@ winTest("integration: a (x86)-style path launches with no injection", () => {
   expect(marker).toContain("--resume");
   expect(injected).toBe(false);
 });
+
+winTest(
+  "integration: an & in the cwd dir is inert (start-dir option, not re-parsed)",
+  () => {
+    // `&` is a legal Windows dir char AND a cmd separator. Keep it OUT of the
+    // claudePath argv (that path is gated) and put it ONLY in the spawn cwd option;
+    // it must NOT execute (spec §3.3.1). Stand-in lives in a clean dir so its own
+    // path carries no `&`.
+    const clean = join(fixRoot, "clean");
+    mkdirSync(clean, { recursive: true });
+    const standin = join(clean, "stand in.cmd");
+    writeFileSync(standin, STANDIN);
+    const ampCwd = join(fixRoot, "a & b");
+    mkdirSync(ampCwd, { recursive: true });
+    const args = buildPlainCmdArgs(VALID_ID, "default", standin);
+    spawnSync("cmd.exe", args as string[], {
+      cwd: ampCwd,
+      shell: false,
+      windowsHide: true,
+    });
+    const markerPath = join(clean, "marker.txt");
+    const marker = existsSync(markerPath)
+      ? readFileSync(markerPath, "utf8")
+      : "";
+    expect(marker).toContain("--resume");
+    expect(existsSync(join(ampCwd, "inject.txt"))).toBe(false);
+  },
+);
 
 winTest(
   "integration: the metachar gate blocks a payload cmd WOULD otherwise execute",

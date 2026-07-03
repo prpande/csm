@@ -233,6 +233,9 @@ open showing the error, but `reopenSession` has resolved. There is no
   with plain argv; `cwd` option = req.cwd; `cwd` NOT in args (I2); resolves on
   cmd `spawn` event.
 - win32 both fail: wt errors, cmd errors → `SpawnFailedError` (I: no throw escapes).
+- win32 hang guard: a wt spawn that emits NEITHER `spawn` nor `error` times out
+  and falls back to cmd; both hanging → `SpawnFailedError` (never a silent wedge).
+  Uses fake timers so no real wait.
 - win32 metachar `claudePath` (each of ``& | < > ^ % ! "``) → `UnsafePathError`,
   spawn never called (I4).
 - win32 `(x86)`-style + spaced `claudePath` → allowed (not rejected), argv element
@@ -254,8 +257,11 @@ captured output** against a temp stand-in `.cmd` that writes its args to a marke
   (Node quoting round-trips a space through cmd).
 - **`(x86)`-style path** (`…\dir (x86)\stand in.cmd`) → marker written, and **no**
   `inject.txt` created (parens confined by quoting; proves we don't over-reject).
-- **`&`-in-`cwd`** dir (`…\a & b\`) launched via the wt-style `-d`/spawn-cwd → the
-  stand-in runs, no `inject.txt` (cwd is a start-dir param, not re-parsed).
+- **`&`-in-`cwd`** dir (`…\a & b\`) launched via the spawn `cwd` option (the same
+  start-directory channel wt's `-d` uses) → the stand-in runs, no `inject.txt`
+  (cwd is a start-dir param, not re-parsed). Real `wt.exe` is not driven in CI (it
+  opens a window and may be absent on runners); the wt `-d` claim rests on this
+  same OS start-directory semantics.
 - **Gate proof:** a `claudePath` with `& echo PWNED> inject.txt` → `UnsafePathError`
   from the gate, no spawn, no `inject.txt` (I4 end-to-end; payload is
   independently-executable so the assertion is not vacuous — adversarial I3).
