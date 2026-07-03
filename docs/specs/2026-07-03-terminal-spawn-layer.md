@@ -193,7 +193,10 @@ a sanity check. Asserted by a regression test (§5).
   fallback. A 10s timeout bounds each attempt so a hang becomes a rejection the
   caller recovers from (wt hang → cmd fallback; cmd hang → `SpawnFailedError`).
   `spawn` fires at process creation (ms), so the bound never false-trips a healthy
-  launch; the timer clears the instant the attempt settles.
+  launch; the timer clears the instant the attempt settles. The timeout branch
+  also best-effort `kill()`s the child: a permanent hang has nothing to kill, but
+  a merely-SLOW spawn (e.g. AV-scanning wt.exe) could fire `spawn` after the
+  fallback already ran — the kill stops that late child opening a SECOND window.
 
 ### 3.6 Error surface (typed, no crash)
 

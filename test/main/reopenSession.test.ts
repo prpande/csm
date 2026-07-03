@@ -47,12 +47,14 @@ function req(overrides: Partial<ReopenRequest> = {}): ReopenRequest {
 }
 
 // A fake ChildProcess: emits its outcome asynchronously (after reopenSession has
-// attached its once("spawn")/once("error") listeners), and records unref().
+// attached its once("spawn")/once("error") listeners), and records unref()/kill().
 // "hang" emits neither event — it exercises trySpawn's timeout guard.
 type Outcome = "spawn" | "hang" | { errorCode: string };
-function makeFakeChild(outcome: Outcome): EventEmitter & { unref: () => void } {
-  const ee = new EventEmitter() as EventEmitter & { unref: () => void };
+type FakeChild = EventEmitter & { unref: () => void; kill: () => void };
+function makeFakeChild(outcome: Outcome): FakeChild {
+  const ee = new EventEmitter() as FakeChild;
   ee.unref = vi.fn();
+  ee.kill = vi.fn();
   if (outcome === "hang") return ee;
   queueMicrotask(() => {
     if (outcome === "spawn") {
@@ -74,20 +76,24 @@ type SpawnCall = {
 };
 
 // Build an injected spawn that returns the given outcomes in call order and
-// records every (file, args, opts) it was called with.
+// records every (file, args, opts) it was called with, plus the child handles.
 function fakeSpawn(outcomes: Outcome[]): {
   spawn: SpawnFn;
   calls: SpawnCall[];
+  children: FakeChild[];
 } {
   const calls: SpawnCall[] = [];
+  const children: FakeChild[] = [];
   let i = 0;
   const spawn: SpawnFn = (file, args, opts) => {
     calls.push({ file, args, opts: opts as Record<string, unknown> });
     const outcome = outcomes[i] ?? "spawn";
     i += 1;
-    return makeFakeChild(outcome);
+    const child = makeFakeChild(outcome);
+    children.push(child);
+    return child;
   };
-  return { spawn, calls };
+  return { spawn, calls, children };
 }
 
 const alwaysExists = () => Promise.resolve(true);
@@ -160,14 +166,17 @@ test("win32: wt and cmd both fail → SpawnFailedError, no throw escapes", async
   expect(calls).toHaveLength(2);
 });
 
-test("win32: a wt spawn that hangs (neither event) times out and falls back to cmd", async () => {
+test("win32: a wt spawn that hangs (neither event) times out, is killed, and falls back to cmd", async () => {
   vi.useFakeTimers();
   try {
-    const { spawn, calls } = fakeSpawn(["hang", "spawn"]);
+    const { spawn, calls, children } = fakeSpawn(["hang", "spawn"]);
     const p = reopenSession(req(), { spawn, cwdExists: alwaysExists });
     await vi.runAllTimersAsync(); // fire the wt hang-guard timeout → cmd fallback
     await p;
     expect(calls.map((c) => c.file)).toEqual(["wt.exe", "cmd.exe"]);
+    // The timed-out wt child is killed so a late 'spawn' can't open a 2nd window.
+    expect(children[0].kill).toHaveBeenCalledTimes(1);
+    expect(children[1].kill).not.toHaveBeenCalled();
   } finally {
     vi.useRealTimers();
   }

@@ -30,10 +30,11 @@ export interface ReopenRequest {
   claudePath: string;
 }
 
-/** Minimal ChildProcess surface reopenSession needs (spawn/error events + unref). */
+/** Minimal ChildProcess surface reopenSession needs (spawn/error events, unref, kill). */
 export interface SpawnedChild {
   once(event: string, listener: (arg: unknown) => void): unknown;
   unref(): void;
+  kill?(): void;
 }
 export type SpawnFn = (
   file: string,
@@ -165,6 +166,11 @@ function trySpawn(
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      // A permanent hang (alias stub) never spawns, so there is nothing to kill.
+      // But if the spawn was merely SLOW (e.g. AV-scanning wt.exe on first launch)
+      // it could still fire 'spawn' after we've fallen back to cmd.exe — best-effort
+      // kill so a late-arriving child can't open a SECOND window.
+      child.kill?.();
       reject(new Error(`spawn timed out: ${file}`));
     }, SPAWN_TIMEOUT_MS);
     child.once("error", (err) => {
