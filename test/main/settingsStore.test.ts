@@ -66,6 +66,16 @@ test("blank / whitespace-only stored claudePath resolves to default", async () =
   }
 });
 
+test("surrounding whitespace on a stored claudePath is trimmed on read", async () => {
+  // A hand-edited settings.json value with leading/trailing spaces must not reach
+  // spawn verbatim (it would fail to resolve). Internal spaces are preserved.
+  writeSettings(
+    JSON.stringify({ claudePath: "  C:\\Program Files\\claude.exe  " }),
+  );
+  const store = createSettingsStore(dir);
+  expect(await store.getClaudePath()).toBe("C:\\Program Files\\claude.exe");
+});
+
 test("unknown keys are preserved across a setClaudePath write", async () => {
   writeSettings(
     JSON.stringify({ claudePath: "old", terminalPreference: "iterm" }),

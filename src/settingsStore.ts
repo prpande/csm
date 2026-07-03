@@ -41,8 +41,12 @@ export function createSettingsStore(dir: string) {
 
   async function getClaudePath(): Promise<string> {
     const v = (await readSettings()).claudePath;
-    // Honor only a non-blank string; absent / blank / non-string → default.
-    return typeof v === "string" && v.trim() !== "" ? v : DEFAULT_CLAUDE_PATH;
+    // Honor only a non-blank string, and return it TRIMMED — the value flows to
+    // spawn as the `file` argument, and surrounding whitespace (from a hand-edited
+    // settings.json) would otherwise fail to resolve as an executable. Absent /
+    // blank / non-string → default.
+    const trimmed = typeof v === "string" ? v.trim() : "";
+    return trimmed !== "" ? trimmed : DEFAULT_CLAUDE_PATH;
   }
 
   async function setClaudePath(value: string): Promise<void> {
