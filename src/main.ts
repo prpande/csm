@@ -111,7 +111,7 @@ if (!gotLock) {
       mainWindow !== null && sender === mainWindow.webContents,
     createSessionStore,
     settingsStore: createSettingsStore(app.getPath("userData")),
-    reopen: (req) => reopenSession(req),
+    reopen: reopenSession,
     projectsRoot: defaultProjectsRoot(),
     platform: process.platform,
     now: () => Date.now(),

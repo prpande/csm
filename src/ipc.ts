@@ -19,6 +19,8 @@ import type {
   ReopenResult,
   ReopenRequestDto,
 } from "./ipcTypes";
+import { REOPEN_ERROR_CODES } from "./ipcTypes";
+import { DEFAULT_CLAUDE_PATH } from "./settingsStore";
 import { CH } from "./ipcChannels";
 
 /** The minimal renderer target the streaming scan pushes to (WebContents.send). */
@@ -47,18 +49,12 @@ export interface IpcHandlerDeps {
   now: () => number;
 }
 
-const REOPEN_CODES: ReadonlySet<ReopenErrorCode> = new Set([
-  "UNSUPPORTED_OS",
-  "FOLDER_MISSING",
-  "UNSAFE_PATH",
-  "SPAWN_FAILED",
-]);
-
 // Map a thrown reopen error to its stable code; an unexpected (non-typed) throw
 // is bucketed as SPAWN_FAILED. error.message is deliberately never read.
 function reopenCodeOf(err: unknown): ReopenErrorCode {
   const code = (err as { code?: unknown } | null | undefined)?.code;
-  return typeof code === "string" && REOPEN_CODES.has(code as ReopenErrorCode)
+  return typeof code === "string" &&
+    (REOPEN_ERROR_CODES as readonly string[]).includes(code)
     ? (code as ReopenErrorCode)
     : "SPAWN_FAILED";
 }
@@ -123,7 +119,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // settings: an untrusted frame gets the benign default (get) / a no-op (set) —
   // only the main window's preload can legitimately reach these.
   ipcMain.handle(CH.settingsGet, async (event) => {
-    if (!isTrustedSender(event.sender)) return "claude";
+    if (!isTrustedSender(event.sender)) return DEFAULT_CLAUDE_PATH;
     return settingsStore.getClaudePath();
   });
 
