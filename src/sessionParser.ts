@@ -16,14 +16,17 @@
 export type PermissionMode =
   "default" | "acceptEdits" | "auto" | "bypassPermissions" | "dontAsk" | "plan";
 
-const KNOWN_PERMISSION_MODES = new Set<PermissionMode>([
-  "default",
-  "acceptEdits",
-  "auto",
-  "bypassPermissions",
-  "dontAsk",
-  "plan",
-]);
+// ReadonlySet so consumers (e.g. terminalLauncher's --permission-mode gate) can't
+// mutate this load-bearing allowlist at runtime; the type blocks .add()/.delete().
+export const KNOWN_PERMISSION_MODES: ReadonlySet<PermissionMode> =
+  new Set<PermissionMode>([
+    "default",
+    "acceptEdits",
+    "auto",
+    "bypassPermissions",
+    "dontAsk",
+    "plan",
+  ]);
 
 // Prompt-derived titles are truncated to keep list rows uniform; ai-title /
 // summary values are used verbatim (they are already short, curated strings).
