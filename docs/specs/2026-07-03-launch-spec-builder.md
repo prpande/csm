@@ -105,7 +105,7 @@ value reaches `spawn`. Validate **before building any argv**:
 `default`, `dontAsk`, `plan`. The parser (parent §4.1) already resolves `default`
 for absent/unrecognized modes, so by this layer `mode` should *always* be in the
 set. `buildLaunchSpec` nevertheless **re-checks** and throws
-`Error("Invalid permissionMode")` on anything else. This is the last pure gate
+``Error(`Invalid permissionMode: ${mode}`)`` on anything else. This is the last pure gate
 before spawn, and the `bypassPermissions` **downgrade** path (the confirmation
 modal offers a one-click downgrade to `acceptEdits`/`default`) will feed a mode
 string through IPC that never passed through the parser — a closed allowlist here
