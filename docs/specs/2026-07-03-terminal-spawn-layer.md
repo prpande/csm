@@ -187,6 +187,13 @@ a sanity check. Asserted by a regression test (§5).
   integration test therefore runs **non-detached** to observe output; the visible
   new-console behavior of `detached:true` is verified manually, **not** claimed to
   be covered by the integration test (adversarial correction).
+- **Hang guard.** A spawn resolves on the child's `spawn` event and rejects on
+  `error`; a child that emits neither (e.g. a WindowsApps alias stub resolving at
+  the OS layer) would wedge the promise and, on the wt attempt, starve the cmd
+  fallback. A 10s timeout bounds each attempt so a hang becomes a rejection the
+  caller recovers from (wt hang → cmd fallback; cmd hang → `SpawnFailedError`).
+  `spawn` fires at process creation (ms), so the bound never false-trips a healthy
+  launch; the timer clears the instant the attempt settles.
 
 ### 3.6 Error surface (typed, no crash)
 
