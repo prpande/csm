@@ -94,11 +94,9 @@ export function assertNoCmdMetachars(claudePath: string): void {
   }
 }
 
-// `cwd` is deliberately not in the argv: cmd.exe has no start-directory flag, so
-// it is passed only via the spawn `cwd` option (Invariant I2). Param kept for
-// call symmetry with buildWtWrappedArgs.
+// `cwd` is deliberately absent from the argv: cmd.exe has no start-directory
+// flag, so it is passed only via the spawn `cwd` option (Invariant I2).
 export function buildPlainCmdArgs(
-  cwd: string,
   sessionId: string,
   mode: string,
   claudePath: string,
@@ -119,12 +117,7 @@ export function buildWtWrappedArgs(
     "-d",
     cwd,
     "cmd.exe",
-    "/k",
-    claudePath,
-    "--resume",
-    sessionId,
-    "--permission-mode",
-    mode,
+    ...buildPlainCmdArgs(sessionId, mode, claudePath),
   ];
 }
 
@@ -173,6 +166,20 @@ function trySpawn(
   });
 }
 
+// trySpawn, wrapping any spawn failure as the typed SpawnFailedError.
+async function spawnOrFail(
+  spawn: SpawnFn,
+  file: string,
+  args: readonly string[],
+  cwd: string,
+): Promise<void> {
+  try {
+    await trySpawn(spawn, file, args, cwd);
+  } catch (err) {
+    throw new SpawnFailedError(err);
+  }
+}
+
 async function reopenWindows(
   spawn: SpawnFn,
   cwd: string,
@@ -195,16 +202,12 @@ async function reopenWindows(
   } catch {
     // fall through to the plain cmd.exe window
   }
-  try {
-    await trySpawn(
-      spawn,
-      "cmd.exe",
-      buildPlainCmdArgs(cwd, sessionId, mode, claudePath),
-      cwd,
-    );
-  } catch (err) {
-    throw new SpawnFailedError(err);
-  }
+  await spawnOrFail(
+    spawn,
+    "cmd.exe",
+    buildPlainCmdArgs(sessionId, mode, claudePath),
+    cwd,
+  );
 }
 
 async function reopenMac(
@@ -215,11 +218,7 @@ async function reopenMac(
   claudePath: string,
 ): Promise<void> {
   const spec = buildLaunchSpec("darwin", cwd, sessionId, mode, claudePath);
-  try {
-    await trySpawn(spawn, spec.file, spec.args, cwd);
-  } catch (err) {
-    throw new SpawnFailedError(err);
-  }
+  await spawnOrFail(spawn, spec.file, spec.args, cwd);
 }
 
 /**

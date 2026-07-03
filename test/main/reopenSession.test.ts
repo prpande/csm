@@ -65,21 +65,19 @@ function makeFakeChild(outcome: Outcome): EventEmitter & { unref: () => void } {
   return ee;
 }
 
+type SpawnCall = {
+  file: string;
+  args: readonly string[];
+  opts: Record<string, unknown>;
+};
+
 // Build an injected spawn that returns the given outcomes in call order and
 // records every (file, args, opts) it was called with.
 function fakeSpawn(outcomes: Outcome[]): {
   spawn: SpawnFn;
-  calls: {
-    file: string;
-    args: readonly string[];
-    opts: Record<string, unknown>;
-  }[];
+  calls: SpawnCall[];
 } {
-  const calls: {
-    file: string;
-    args: readonly string[];
-    opts: Record<string, unknown>;
-  }[] = [];
+  const calls: SpawnCall[] = [];
   let i = 0;
   const spawn: SpawnFn = (file, args, opts) => {
     calls.push({ file, args, opts: opts as Record<string, unknown> });
@@ -268,7 +266,7 @@ test("default deps are wired: a missing cwd rejects FolderMissingError without s
 // ---------------------------------------------------------------------------
 
 test("buildPlainCmdArgs / buildWtWrappedArgs shapes", () => {
-  expect(buildPlainCmdArgs("C:\\w", VALID_ID, "plan", "claude")).toEqual([
+  expect(buildPlainCmdArgs(VALID_ID, "plan", "claude")).toEqual([
     "/k",
     "claude",
     "--resume",
@@ -340,7 +338,7 @@ function runCmdReparse(standinDir: string): {
   mkdirSync(standinDir, { recursive: true });
   const standin = join(standinDir, "stand in.cmd");
   writeFileSync(standin, STANDIN);
-  const args = buildPlainCmdArgs(standinDir, VALID_ID, "default", standin);
+  const args = buildPlainCmdArgs(VALID_ID, "default", standin);
   spawnSync("cmd.exe", args as string[], {
     cwd: standinDir,
     shell: false,
