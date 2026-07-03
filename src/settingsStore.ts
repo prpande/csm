@@ -13,8 +13,8 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-export const SETTINGS_FILENAME = "settings.json";
-export const DEFAULT_CLAUDE_PATH = "claude";
+const SETTINGS_FILENAME = "settings.json";
+const DEFAULT_CLAUDE_PATH = "claude";
 
 // Local minimal guard: JSON.parse can yield any type; `null`/array/primitive must
 // not be spread or property-accessed as settings. (A shared type-guard util with
@@ -31,17 +31,11 @@ export function createSettingsStore(dir: string) {
   // file. Used both for reads and as the merge base of a write (so unknown future
   // keys survive — §8 extensibility).
   async function readSettings(): Promise<Record<string, unknown>> {
-    let text: string;
     try {
-      text = await readFile(file, "utf8");
-    } catch {
-      return {}; // absent / unreadable
-    }
-    try {
-      const parsed: unknown = JSON.parse(text);
+      const parsed: unknown = JSON.parse(await readFile(file, "utf8"));
       return isRecord(parsed) ? parsed : {};
     } catch {
-      return {}; // corrupt / non-JSON
+      return {}; // absent, unreadable, or unparseable → default
     }
   }
 
