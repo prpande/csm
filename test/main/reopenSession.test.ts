@@ -294,13 +294,15 @@ test("a sessionId carrying shell metacharacters is rejected before spawn (raw-sp
 
 test("default deps are wired: a missing cwd rejects FolderMissingError without spawning", async () => {
   // Exercises realDeps.cwdExists (real fs) against a guaranteed-absent path,
-  // proving the default deps object is wired without launching a terminal.
+  // proving the default deps object is wired without launching a terminal. `os`
+  // stays a fixed SUPPORTED value (the req() default, win32) — NOT process.platform,
+  // which is "linux" on CI ubuntu and would trip the unsupported-os guard before
+  // the cwd check runs. A missing cwd fails before the OS-specific spawn branch, so
+  // any supported os exercises the same realDeps.cwdExists path.
   const ghost = join(tmpdir(), "csm-does-not-exist-3b9f1c2a", "nope");
-  await expect(
-    reopenSession(
-      req({ os: process.platform as ReopenRequest["os"], cwd: ghost }),
-    ),
-  ).rejects.toBeInstanceOf(FolderMissingError);
+  await expect(reopenSession(req({ cwd: ghost }))).rejects.toBeInstanceOf(
+    FolderMissingError,
+  );
 });
 
 // ---------------------------------------------------------------------------
