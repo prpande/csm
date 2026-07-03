@@ -40,22 +40,24 @@ contextBridge.exposeInMainWorld("csm", {
   // dropped. Returns an unsubscribe; done/error also auto-detach the listeners.
   listSessions(listener: SessionsListener): () => void {
     const scanId = `scan-${++scanSeq}`;
+    // Terminate the subscription at most once. Both the pushed done/error event
+    // and a rejected invoke can signal completion, and a done/error could race a
+    // late batch — this flag guarantees the caller's onDone/onError fires exactly
+    // once and cleanup runs once, regardless of how the terminal signal arrives.
+    let settled = false;
     const onBatch = (_e: IpcRendererEvent, msg: SessionsBatchMessage): void => {
-      if (msg.scanId === scanId) listener.onBatch(msg.sessions);
+      if (!settled && msg.scanId === scanId) listener.onBatch(msg.sessions);
     };
-    const onDone = (_e: IpcRendererEvent, msg: SessionsSignalMessage): void => {
-      if (msg.scanId !== scanId) return;
+    const settle = (terminal: () => void, msgScanId: string): void => {
+      if (settled || msgScanId !== scanId) return;
+      settled = true;
       cleanup();
-      listener.onDone();
+      terminal();
     };
-    const onError = (
-      _e: IpcRendererEvent,
-      msg: SessionsSignalMessage,
-    ): void => {
-      if (msg.scanId !== scanId) return;
-      cleanup();
-      listener.onError();
-    };
+    const onDone = (_e: IpcRendererEvent, msg: SessionsSignalMessage): void =>
+      settle(listener.onDone, msg.scanId);
+    const onError = (_e: IpcRendererEvent, msg: SessionsSignalMessage): void =>
+      settle(listener.onError, msg.scanId);
     const cleanup = (): void => {
       ipcRenderer.off(CH.sessionsBatch, onBatch);
       ipcRenderer.off(CH.sessionsDone, onDone);
@@ -64,11 +66,11 @@ contextBridge.exposeInMainWorld("csm", {
     ipcRenderer.on(CH.sessionsBatch, onBatch);
     ipcRenderer.on(CH.sessionsDone, onDone);
     ipcRenderer.on(CH.sessionsError, onError);
-    // A rejected invoke (main threw before streaming) surfaces as an error too.
-    void ipcRenderer.invoke(CH.sessionsScan, scanId).catch(() => {
-      cleanup();
-      listener.onError();
-    });
+    // A rejected invoke (main threw before streaming) surfaces as an error too;
+    // settle() dedupes it against any error event that also arrived.
+    void ipcRenderer
+      .invoke(CH.sessionsScan, scanId)
+      .catch(() => settle(listener.onError, scanId));
     return cleanup;
   },
 

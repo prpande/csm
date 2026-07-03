@@ -78,16 +78,26 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(CH.sessionsScan, async (event, scanId) => {
     if (!isTrustedSender(event.sender) || typeof scanId !== "string") return;
     const { sender } = event;
+    // Once the renderer's WebContents is destroyed (window closed mid-scan),
+    // sender.send throws. Swallow it: there is no renderer left to stream to, and
+    // letting it escape would reject the invoke as an unhandled error. This also
+    // keeps the catch below meaning "scan itself failed" — not "a send failed".
+    const post = (channel: string, payload: unknown): void => {
+      try {
+        sender.send(channel, payload);
+      } catch {
+        /* renderer gone — nothing to stream to */
+      }
+    };
     try {
       const store = createSessionStore(projectsRoot);
       await store.scan({
         now: now(),
-        onBatch: (sessions) =>
-          sender.send(CH.sessionsBatch, { scanId, sessions }),
+        onBatch: (sessions) => post(CH.sessionsBatch, { scanId, sessions }),
       });
-      sender.send(CH.sessionsDone, { scanId });
+      post(CH.sessionsDone, { scanId });
     } catch {
-      sender.send(CH.sessionsError, { scanId });
+      post(CH.sessionsError, { scanId });
     }
   });
 
@@ -97,11 +107,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(
     CH.sessionReopen,
     async (event, req): Promise<ReopenResult> => {
+      // Untrusted frame → opaque non-success. SPAWN_FAILED doubles as the generic
+      // "could not reopen" bucket (see the catch): we deliberately do NOT mint a
+      // distinct auth code, both because the guard is defense-in-depth for a state
+      // a single-window app can't reach, and because an IPC-layer authorization
+      // result has no place in a reopen-DOMAIN error enum.
       if (!isTrustedSender(event.sender))
         return { ok: false, code: "SPAWN_FAILED" };
-      const { cwd, sessionId, mode } = req as ReopenRequestDto;
-      const claudePath = await settingsStore.getClaudePath();
+      // The whole body is guarded: a malformed `req` (a buggy/compromised renderer
+      // sending null/non-object) or an unexpected settings-read failure must map to
+      // a ReopenResult, never reject — the renderer relies on this resolving.
       try {
+        const { cwd, sessionId, mode } = req as ReopenRequestDto;
+        const claudePath = await settingsStore.getClaudePath();
         await reopen({
           os: platform as LaunchOS,
           cwd,

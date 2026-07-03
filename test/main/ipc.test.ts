@@ -207,6 +207,20 @@ test("an unexpected (untyped) reopen throw falls back to SPAWN_FAILED", async ()
   expect(result).toEqual({ ok: false, code: "SPAWN_FAILED" });
 });
 
+test("session:reopen resolves (never rejects) on a malformed req from a trusted sender", async () => {
+  // A null/undefined req throws at destructuring (inside the guard-scoped try);
+  // the handler must map that to a ReopenResult, not reject the invoke — the
+  // renderer relies on reopenSession always resolving.
+  const { call, reopen } = setup();
+  for (const bad of [null, undefined]) {
+    await expect(call(CH.sessionReopen, bad)).resolves.toEqual({
+      ok: false,
+      code: "SPAWN_FAILED",
+    });
+  }
+  expect(reopen).not.toHaveBeenCalled();
+});
+
 test("session:reopen from an untrusted sender never calls reopen", async () => {
   const reopen = vi.fn(async () => {});
   const { handlers } = setup({ reopen });
@@ -222,7 +236,7 @@ test("session:reopen from an untrusted sender never calls reopen", async () => {
 // ---- settings ----------------------------------------------------------------
 
 test("settings:getClaudePath returns the store value when trusted, default when not", async () => {
-  const { handlers, call, settingsStore, trusted } = setup();
+  const { handlers, call, settingsStore } = setup();
   expect(await call(CH.settingsGet)).toBe("claude-configured");
 
   settingsStore.getClaudePath.mockClear();
@@ -231,7 +245,6 @@ test("settings:getClaudePath returns the store value when trusted, default when 
     "claude",
   );
   expect(settingsStore.getClaudePath).not.toHaveBeenCalled();
-  void trusted;
 });
 
 test("settings:setClaudePath delegates when trusted, no-ops for untrusted or non-string", async () => {
