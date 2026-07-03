@@ -11,6 +11,8 @@
 // concatenated into a shell command string — hence discrete argv (Windows) and the
 // strictly-ordered two-layer escaping (macOS).
 
+import { KNOWN_PERMISSION_MODES, type PermissionMode } from "./sessionParser";
+
 export interface LaunchSpec {
   /** Executable to spawn — the `file` arg of child_process.spawn. Never interpolated. */
   file: string;
@@ -19,16 +21,6 @@ export interface LaunchSpec {
 }
 
 export type LaunchOS = "win32" | "darwin";
-
-/** The six CLI permission modes; the parser (§4.1) never emits anything else. */
-const PERMISSION_MODES: ReadonlySet<string> = new Set([
-  "acceptEdits",
-  "auto",
-  "bypassPermissions",
-  "default",
-  "dontAsk",
-  "plan",
-]);
 
 // Strict RFC-4122 UUID, SINGLE-LINE (no `m` flag): under `m`, ^/$ match line
 // boundaries and a `<uuid>\n<payload>` string would pass the anchors. A match is
@@ -50,7 +42,10 @@ function assertValidInputs(
   if (!UUID_RE.test(sessionId)) {
     throw new Error("Invalid sessionId: expected a UUID");
   }
-  if (!PERMISSION_MODES.has(mode)) {
+  // Reuse the parser's canonical set (it produces `mode`) so the two can't drift.
+  // `mode` is typed `string` because it can arrive un-parsed via the bypass-modal
+  // downgrade IPC path — the cast only satisfies Set.has; membership is the gate.
+  if (!KNOWN_PERMISSION_MODES.has(mode as PermissionMode)) {
     throw new Error(`Invalid permissionMode: ${mode}`);
   }
   assertPathish(cwd, "cwd");

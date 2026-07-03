@@ -16,7 +16,7 @@
 export type PermissionMode =
   "default" | "acceptEdits" | "auto" | "bypassPermissions" | "dontAsk" | "plan";
 
-const KNOWN_PERMISSION_MODES = new Set<PermissionMode>([
+export const KNOWN_PERMISSION_MODES = new Set<PermissionMode>([
   "default",
   "acceptEdits",
   "auto",
