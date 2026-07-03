@@ -88,7 +88,7 @@ describe("sessionId UUID gate", () => {
     "877F5CDD-0250-4CED-7BC6-B44CF0B2ADE2", // bad variant (7)
     `${ID}\n; rm -rf ~`, // valid-looking prefix + newline payload
   ])("rejects %j", (bad) => {
-    // Gate runs in assertValidInputs before the OS switch, so win32 suffices
+    // Gate runs in assertLaunchInputs before the OS switch, so win32 suffices
     // (matches the mode / cwd / claudePath gate blocks below).
     expect(() =>
       buildLaunchSpec("win32", CWD, bad, "default", CLAUDE),
