@@ -226,7 +226,10 @@ a string:
 
 ## 9. UI / layout
 
-Slack / Claude-desktop aesthetic; OS-following light & dark themes.
+Warm **Clay** palette — a burnt-terracotta lean that keeps CSM visibly related
+to Claude without copying its coral (adopted in #78); OS-following light & dark
+themes. Every colour routes through semantic tokens in `styles/global.css`, so a
+palette swap is a one-file value edit.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -262,8 +265,9 @@ Slack / Claude-desktop aesthetic; OS-following light & dark themes.
   **double-click → reopen**. No B/C placeholder actions in the MVP — the Delete
   (B) and ★ favorite (C) controls are added with the features that back them.
 - **Permission-mode chips are colour-coded by risk**, not uniform:
-  `bypassPermissions` = amber/warning, `acceptEdits`/`auto` = blue/info, `plan` =
-  neutral, `default` = grey. Tokens defined for both themes. (The risk colouring
+  `bypassPermissions` = red/danger (held clear of the warm accent),
+  `acceptEdits`/`auto` = teal/info, `plan` = violet, `default` = grey. Tokens
+  defined for both themes. (The risk colouring
   pairs with the bypass-reopen safeguard — see §7 follow-ups.)
 - **Empty / non-leaf states:** on launch (nothing selected) the right pane shows a
   centered "Select a folder to view its sessions" prompt and **no** folder header.
