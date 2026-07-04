@@ -69,8 +69,3 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
-
-.listPlaceholder {
-  flex: 1 1 auto;
-  min-height: 0;
-}

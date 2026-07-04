@@ -1,0 +1,78 @@
+.row {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.2rem;
+  box-sizing: border-box;
+  padding: 0.375rem 0.875rem;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.row:hover {
+  background: var(--hover-bg);
+}
+
+.title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.sep {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.time {
+  white-space: nowrap;
+}
+
+.id {
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  white-space: nowrap;
+}
+
+/* Risk-coded permission-mode chips (spec §9). Tokens defined for both themes in
+   global.css; the variant is keyed off the data-variant attribute. */
+.chip {
+  flex: 0 0 auto;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.chip[data-variant="bypass"] {
+  background: var(--chip-bypass-bg);
+  color: var(--chip-bypass-text);
+}
+
+.chip[data-variant="info"] {
+  background: var(--chip-info-bg);
+  color: var(--chip-info-text);
+}
+
+.chip[data-variant="plan"] {
+  background: var(--chip-plan-bg);
+  color: var(--chip-plan-text);
+}
+
+.chip[data-variant="default"] {
+  background: var(--chip-default-bg);
+  color: var(--chip-default-text);
+}
