@@ -6,53 +6,63 @@
     "Segoe UI",
     sans-serif;
 
-  /* Semantic tokens — light theme (Slack / Claude-desktop neutral palette).
+  /* Semantic tokens — light theme (Clay palette, issue #78). A warm,
+     burnt-terracotta direction that keeps CSM visibly related to Claude without
+     copying its coral. Every color routes through these tokens; component CSS
+     modules hold zero hardcoded hex (enforced by test/main/designTokens.test.ts).
      Dark values follow via prefers-color-scheme below. */
-  --bg: #ffffff;
-  --bg-sidebar: #f7f7f5;
-  --bg-elevated: #ffffff;
-  --border: #e6e6e3;
-  --text: #1f1f1e;
-  --text-muted: #6b6b68;
-  --hover-bg: #eeeeeb;
-  --selection-bg: #e4ecfb;
-  --selection-text: #123a8f;
-  --accent: #2f6bd6;
-  --count-bg: #e6e6e3;
-  --count-text: #6b6b68;
+  --bg: #faf6f0;
+  --bg-sidebar: #f2ebe1;
+  --bg-elevated: #fffdfa;
+  --border: #e7dccd;
+  --text: #2a2320;
+  --text-muted: #786d61;
+  --hover-bg: #ede4d7;
+  --selection-bg: #f7e0cf;
+  --selection-text: #8a3c17;
+  --accent: #d9622b;
+  /* Text/icon on an --accent fill. White-on-#d9622b is ~3.6:1 — below AA-normal
+     (4.5:1) but above the 3:1 large-text bar. Accepted only for the single
+     primary accent button (standard brand-button treatment); no other pair is
+     exempt. See issue #78. */
+  --on-accent: #fffaf6;
+  --count-bg: #eae0d2;
+  --count-text: #786d61;
 
-  /* Risk-coded permission-mode chips (spec §9): bypass = amber/warning,
-     acceptEdits/auto = blue/info, plan = distinct neutral. The `default` variant
-     reuses the neutral --count-* grey (same palette value). */
-  --chip-bypass-bg: #fbecc9;
-  --chip-bypass-text: #8a5a00;
-  --chip-info-bg: #dbe8fb;
-  --chip-info-text: #1b4fa0;
-  --chip-plan-bg: #e9e2f7;
-  --chip-plan-text: #5b3fa0;
+  /* Risk-coded permission-mode chips (spec §9): bypass = red/danger (held clear
+     of the warm accent), acceptEdits/auto = teal/info, plan = violet. The
+     `default` variant reuses the neutral --count-* grey (same palette value). */
+  --chip-bypass-bg: #f6d6cd;
+  --chip-bypass-text: #a12c14;
+  --chip-info-bg: #d6e6ea;
+  --chip-info-text: #1d6875;
+  --chip-plan-bg: #e6ddef;
+  --chip-plan-text: #6a49a0;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1e1e1e;
-    --bg-sidebar: #191919;
-    --bg-elevated: #252525;
-    --border: #333331;
-    --text: #ececec;
-    --text-muted: #9a9a97;
-    --hover-bg: #2a2a2a;
-    --selection-bg: #24406e;
-    --selection-text: #d5e2fb;
-    --accent: #6a9bf0;
-    --count-bg: #333331;
-    --count-text: #b5b5b2;
+    --bg: #201b18;
+    --bg-sidebar: #191512;
+    --bg-elevated: #2a2420;
+    --border: #383029;
+    --text: #ece5dc;
+    --text-muted: #9c8f81;
+    --hover-bg: #2e2721;
+    --selection-bg: #7a4524;
+    --selection-text: #f7d8bd;
+    --accent: #e27a48;
+    /* Dark theme uses dark text on the brighter accent (~6:1, passes AA). */
+    --on-accent: #241610;
+    --count-bg: #383029;
+    --count-text: #b7aa9b;
 
-    --chip-bypass-bg: #4a3410;
-    --chip-bypass-text: #f0c674;
-    --chip-info-bg: #1f3a63;
-    --chip-info-text: #a9c7f5;
-    --chip-plan-bg: #352a52;
-    --chip-plan-text: #c3b3ee;
+    --chip-bypass-bg: #4b2019;
+    --chip-bypass-text: #f0a48d;
+    --chip-info-bg: #123640;
+    --chip-info-text: #8cc3d1;
+    --chip-plan-bg: #322850;
+    --chip-plan-text: #c3b2ee;
   }
 }
 
