@@ -85,7 +85,11 @@ matchers only — no jest-dom, per the local-caveat):
 - `test/renderer/SessionList.test.tsx` — **bounded mounted-row count** on a 2,500
   fixture (§11); window **slides** when a scroll event sets `scrollTop` (index 0
   gone, deep index present).
-- Update `FolderPane`/`FolderBrowser` tests for the wired list.
+- `test/renderer/FolderPane.test.tsx` — the selected folder's list renders;
+  **switching folders resets the list to the top** (the list is keyed by folder
+  path so one folder's scroll offset never carries into the next — newest-first,
+  §9). Preflight-review regression.
+- Update `FolderBrowser` tests for the wired list.
 
 ## Out of scope (filed / owned by later slices)
 
