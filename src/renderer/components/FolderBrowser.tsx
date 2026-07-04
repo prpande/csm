@@ -15,7 +15,9 @@ export function FolderBrowser() {
   const { tree, status, refresh } = useSessionScan();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  // Auto-expand the drive roots once, the first time a scan yields any.
+  // Auto-expand the drive roots once, the first time a scan yields any. A ref
+  // gates it so a later refresh (which re-streams the same roots) does not undo
+  // the user's manual collapses by re-seeding.
   const seededRoots = useRef(false);
 
   useEffect(() => {

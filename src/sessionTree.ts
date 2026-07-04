@@ -139,16 +139,16 @@ function finalize(node: Building): FolderNode {
 // "(unknown)" group. The FolderBrowser holds selection as a path (not a node
 // reference) so it survives a `buildTree` rebuild; this recovers the live node
 // for the right pane, and returns null when the folder no longer exists (the
-// selection then self-clears). Descends only into the matching path prefix.
+// selection then self-clears). A plain recursive walk — the tree is a few
+// thousand nodes at most and this only runs on a selection, so pruning by path
+// prefix earns nothing and just adds a path-boundary edge case to reason about.
 export function findFolder(tree: SessionTree, path: string): FolderNode | null {
   if (tree.unknown && tree.unknown.path === path) return tree.unknown;
   const search = (nodes: FolderNode[]): FolderNode | null => {
     for (const node of nodes) {
       if (node.path === path) return node;
-      if (path.startsWith(node.path)) {
-        const hit = search(node.children);
-        if (hit) return hit;
-      }
+      const hit = search(node.children);
+      if (hit) return hit;
     }
     return null;
   };
