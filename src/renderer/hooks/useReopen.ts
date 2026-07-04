@@ -1,6 +1,12 @@
 import { useCallback, useState } from "react";
 import type { SessionMetadata } from "../../sessionParser";
-import { needsBypassConfirm, reopenErrorMessage } from "../../reopenView";
+import type { CsmBridge } from "../types/csm";
+import { currentBridge } from "../bridge";
+import {
+  needsBypassConfirm,
+  reopenErrorMessage,
+  GENERIC_REOPEN_MESSAGE,
+} from "../../reopenView";
 
 /** A transient, non-blocking status message (spec §7 error surface). */
 export interface ReopenToast {
@@ -27,7 +33,9 @@ export interface UseReopen {
 // and toast state; the bypass decision and error-message mapping are the pure
 // reopenView helpers. Rendered/owned by FolderBrowser (Approach 1); the modal and
 // toast are presentational and driven by this state.
-export function useReopen(): UseReopen {
+export function useReopen(
+  bridge: CsmBridge | undefined = currentBridge(),
+): UseReopen {
   const [pendingBypass, setPendingBypass] = useState<SessionMetadata | null>(
     null,
   );
@@ -36,21 +44,23 @@ export function useReopen(): UseReopen {
   // Reopen `session` with `mode` (passed through unchanged, §4.1). Never throws:
   // the bridge resolves a discriminated result, and an absent bridge (a plain
   // browser without the preload) fails soft to the generic toast.
-  const run = useCallback(async (session: SessionMetadata, mode: string) => {
-    const bridge = window.csm;
-    if (!bridge) {
-      setToast({ message: reopenErrorMessage("SPAWN_FAILED") });
-      return;
-    }
-    const result = await bridge.reopenSession({
-      cwd: session.cwd,
-      sessionId: session.sessionId,
-      mode,
-    });
-    if (!result.ok) {
-      setToast({ message: reopenErrorMessage(result.code) });
-    }
-  }, []);
+  const run = useCallback(
+    async (session: SessionMetadata, mode: string) => {
+      if (!bridge) {
+        setToast({ message: GENERIC_REOPEN_MESSAGE });
+        return;
+      }
+      const result = await bridge.reopenSession({
+        cwd: session.cwd,
+        sessionId: session.sessionId,
+        mode,
+      });
+      if (!result.ok) {
+        setToast({ message: reopenErrorMessage(result.code) });
+      }
+    },
+    [bridge],
+  );
 
   const requestReopen = useCallback(
     async (session: SessionMetadata) => {

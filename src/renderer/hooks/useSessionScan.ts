@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildTree, type SessionTree } from "../../sessionTree";
 import type { SessionMetadata } from "../../sessionParser";
 import type { CsmBridge } from "../types/csm";
+import { currentBridge } from "../bridge";
 
 // Thin React adapter over the #59 streaming bridge: it drives `csm.listSessions`,
 // accumulates the per-tier `SessionMetadata[]` batches, and (re)derives the
@@ -17,9 +18,6 @@ export interface SessionScan {
   /** Restart the scan from scratch (title-bar refresh). */
   refresh: () => void;
 }
-
-const currentBridge = (): CsmBridge | undefined =>
-  typeof window !== "undefined" ? window.csm : undefined;
 
 export function useSessionScan(
   bridge: CsmBridge | undefined = currentBridge(),

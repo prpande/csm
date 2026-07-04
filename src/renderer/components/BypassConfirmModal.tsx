@@ -72,7 +72,7 @@ export function BypassConfirmModal({
             type="button"
             className={styles.danger}
             data-testid="confirm-bypass"
-            onClick={() => onConfirm("bypassPermissions")}
+            onClick={() => onConfirm(session.permissionMode)}
           >
             Reopen with bypass
           </button>
