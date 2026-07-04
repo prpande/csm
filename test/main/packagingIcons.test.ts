@@ -48,7 +48,11 @@ describe("packaging icons", () => {
     for (const rel of icons) {
       const abs = join(repoRoot, rel);
       try {
-        if (statSync(abs).size === 0) missing.push(`${rel} (empty)`);
+        const stat = statSync(abs);
+        // Enforce the stated contract: a real, non-empty *file*. A directory
+        // reports a nonzero size on some platforms and would otherwise pass.
+        if (!stat.isFile()) missing.push(`${rel} (not a file)`);
+        else if (stat.size === 0) missing.push(`${rel} (empty)`);
       } catch {
         missing.push(`${rel} (not found)`);
       }
