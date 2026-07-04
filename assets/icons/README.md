@@ -14,6 +14,9 @@ palette's warm-orange lean.
 
 ## Usage
 
-These are the **source** assets. Wiring them into the packaged installers
-(`build/icon.ico` / `build/icon.icns`, electron-builder) is tracked separately in
-**#36** — until that lands, packaged builds still use the default Electron icon.
+These are the **source** assets. `electron-builder.yml` references `icon.ico`
+(`win.icon`) and `icon.icns` (`mac.icon`) directly from this folder, so packaged
+builds embed the CSM icon — no copies live under `build/`. The
+`test/main/packagingIcons.test.ts` guard fails if a referenced path stops
+resolving, so renaming or moving these files without updating the config is
+caught in CI.

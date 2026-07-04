@@ -12,9 +12,9 @@ appId: com.prpande.csm
 productName: CSM
 
 directories:
-  # release/ is gitignored. Branded icons go in the default build/ resources dir
-  # (build/icon.ico, build/icon.icns) — tracked in #36; until then electron-builder
-  # falls back to its default Electron icon.
+  # release/ is gitignored. Icons are referenced explicitly from win.icon /
+  # mac.icon below (pointing at the committed assets/icons/ source set) rather than
+  # duplicated into the default build/ resources dir — one source of truth (#36).
   output: release
 
 # Only the build output ships. The renderer bundles react/react-dom via Vite, and
@@ -25,6 +25,9 @@ files:
   - package.json
 
 win:
+  # Multi-resolution .ico from the committed source set; embedded in the portable
+  # .exe and the nsis installer, and shown on the taskbar.
+  icon: assets/icons/icon.ico
   # portable = single self-contained .exe (no install); nsis = a normal installer.
   target:
     - portable
@@ -32,6 +35,8 @@ win:
 
 mac:
   category: public.app-category.developer-tools
+  # .icns bundle from the committed source set; shown in the dock and Finder.
+  icon: assets/icons/icon.icns
   # Unsigned preview build — no Developer ID. Setting identity to null skips the
   # signing step entirely (Gatekeeper will warn on first open, expected for a
   # preview). Real signing/notarization is a later, separate concern.
