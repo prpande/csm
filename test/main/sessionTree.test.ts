@@ -1,5 +1,10 @@
 import { test, expect } from "vitest";
-import { buildTree, UNKNOWN_CWD, type FolderNode } from "../../src/sessionTree";
+import {
+  buildTree,
+  findFolder,
+  UNKNOWN_CWD,
+  type FolderNode,
+} from "../../src/sessionTree";
 import type { SessionMetadata } from "../../src/sessionParser";
 
 // buildTree is a pure renderer-model builder (no DOM / no node runtime deps), so
@@ -151,4 +156,34 @@ test("totalCount aggregates sessions across the whole subtree depth", () => {
   expect(src.totalCount).toBe(3);
   expect(src.ownCount).toBe(1);
   expect(child(src, "csm").totalCount).toBe(1);
+});
+
+// findFolder — the pure lookup the FolderBrowser container uses to resolve a
+// persisted selectedPath back to a node against the current tree (so selection
+// survives a rebuild, or self-clears when the folder disappears). Walks roots
+// AND the pinned "(unknown)" group.
+
+test("findFolder returns a root node by its path", () => {
+  const tree = buildTree([s("a", "D:\\src\\csm")]);
+  const hit = findFolder(tree, "D:");
+  expect(hit?.name).toBe("D:");
+});
+
+test("findFolder returns a deeply nested node by its full path", () => {
+  const tree = buildTree([s("a", "D:\\src\\csm")]);
+  const hit = findFolder(tree, "D:\\src\\csm");
+  expect(hit?.name).toBe("csm");
+  expect(hit?.ownCount).toBe(1);
+});
+
+test("findFolder resolves the pinned (unknown) group", () => {
+  const tree = buildTree([s("a", UNKNOWN_CWD)]);
+  const hit = findFolder(tree, UNKNOWN_CWD);
+  expect(hit?.name).toBe(UNKNOWN_CWD);
+  expect(hit?.ownCount).toBe(1);
+});
+
+test("findFolder returns null when no node has the path", () => {
+  const tree = buildTree([s("a", "D:\\src\\csm")]);
+  expect(findFolder(tree, "D:\\nope")).toBeNull();
 });

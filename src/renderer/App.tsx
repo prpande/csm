@@ -1,16 +1,9 @@
-import styles from "./App.module.css";
+import { FolderBrowser } from "./components/FolderBrowser";
 
-// Sample scaffold component. Reads the platform from the window.csm IPC bridge
-// (exposed by the preload in #4) to prove the renderer ↔ main contract is wired;
-// falls back to "web" when the bridge is absent (e.g. a plain browser / test).
+// Root renderer component: the folder-browser shell (title bar + sidebar tree +
+// folder-view pane) over the #64 data layer. The bridge is read inside
+// useSessionScan; a plain browser without the preload fails soft to an empty
+// tree with an error notice.
 export function App() {
-  const platform = window.csm?.platform ?? "web";
-
-  return (
-    <main className={styles.app}>
-      <h1>CSM — Claude Session Manager</h1>
-      <p>Renderer scaffold ready.</p>
-      <p className={styles.meta}>platform: {platform}</p>
-    </main>
-  );
+  return <FolderBrowser />;
 }
