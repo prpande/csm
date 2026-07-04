@@ -5,8 +5,42 @@
     -apple-system,
     "Segoe UI",
     sans-serif;
+
+  /* Semantic tokens — light theme (Slack / Claude-desktop neutral palette).
+     Dark values follow via prefers-color-scheme below. */
+  --bg: #ffffff;
+  --bg-sidebar: #f7f7f5;
+  --bg-elevated: #ffffff;
+  --border: #e6e6e3;
+  --text: #1f1f1e;
+  --text-muted: #6b6b68;
+  --hover-bg: #eeeeeb;
+  --selection-bg: #e4ecfb;
+  --selection-text: #123a8f;
+  --accent: #2f6bd6;
+  --count-bg: #e6e6e3;
+  --count-text: #6b6b68;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e1e;
+    --bg-sidebar: #191919;
+    --bg-elevated: #252525;
+    --border: #333331;
+    --text: #ececec;
+    --text-muted: #9a9a97;
+    --hover-bg: #2a2a2a;
+    --selection-bg: #24406e;
+    --selection-text: #d5e2fb;
+    --accent: #6a9bf0;
+    --count-bg: #333331;
+    --count-text: #b5b5b2;
+  }
 }
 
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--text);
 }
