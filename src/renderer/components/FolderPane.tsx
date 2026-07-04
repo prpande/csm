@@ -48,7 +48,10 @@ export function FolderPane({
           ⟳
         </button>
       </header>
-      <SessionList sessions={selected.sessions} />
+      {/* key by folder path so a new selection mounts a fresh list — the
+          previous folder's scroll position never carries over (spec §9:
+          newest-first). */}
+      <SessionList key={selected.path} sessions={selected.sessions} />
     </section>
   );
 }
