@@ -1,0 +1,87 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  padding: 24px;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 440px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  padding: 20px 22px;
+  color: var(--text);
+}
+
+.title {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.desc strong {
+  color: var(--chip-bypass-text);
+}
+
+.session {
+  margin: 0 0 18px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: var(--count-bg);
+  color: var(--text);
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.actions button {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.danger {
+  background: var(--chip-bypass-bg);
+  border-color: var(--chip-bypass-text);
+  color: var(--chip-bypass-text);
+}
+
+.cancel {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.cancel:hover {
+  background: var(--hover-bg);
+}

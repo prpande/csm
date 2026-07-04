@@ -1,5 +1,5 @@
-import { test, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { test, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { SessionRow } from "../../src/renderer/components/SessionRow";
 import type { SessionMetadata } from "../../src/sessionParser";
 import type { PermissionMode } from "../../src/sessionParser";
@@ -45,6 +45,22 @@ test("chip carries the risk-coded variant and the raw mode label", () => {
     expect(chip?.textContent).toBe(mode);
     unmount();
   }
+});
+
+test("double-click fires onOpen with the session (the reopen gesture)", () => {
+  const onOpen = vi.fn();
+  const session = makeSession();
+  render(<SessionRow session={session} rowHeight={56} onOpen={onOpen} />);
+  fireEvent.doubleClick(screen.getByText("Refactor the parser"));
+  expect(onOpen).toHaveBeenCalledTimes(1);
+  expect(onOpen).toHaveBeenCalledWith(session);
+});
+
+test("a row with no onOpen handler does not crash on double-click", () => {
+  render(<SessionRow session={makeSession()} rowHeight={56} />);
+  // No throw when the optional handler is absent.
+  fireEvent.doubleClick(screen.getByText("Refactor the parser"));
+  expect(screen.getByText("Refactor the parser")).toBeTruthy();
 });
 
 test("title is inserted as text, never as HTML (spec §9)", () => {

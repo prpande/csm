@@ -1,3 +1,4 @@
+import type { SessionMetadata } from "../../sessionParser";
 import type { FolderNode } from "../../sessionTree";
 import { SessionList } from "./SessionList";
 import styles from "./FolderPane.module.css";
@@ -9,6 +10,8 @@ interface FolderPaneProps {
   onRefreshFolder: () => void;
   /** Disabled while a scan is in flight. */
   refreshDisabled: boolean;
+  /** Row open gesture (double-click → reopen, #67). */
+  onOpen?: (session: SessionMetadata) => void;
 }
 
 // Right pane shell. With no selection it shows a centered prompt and NO folder
@@ -18,6 +21,7 @@ export function FolderPane({
   selected,
   onRefreshFolder,
   refreshDisabled,
+  onOpen,
 }: FolderPaneProps) {
   if (!selected) {
     return (
@@ -51,7 +55,11 @@ export function FolderPane({
       {/* key by folder path so a new selection mounts a fresh list — the
           previous folder's scroll position never carries over (spec §9:
           newest-first). */}
-      <SessionList key={selected.path} sessions={selected.sessions} />
+      <SessionList
+        key={selected.path}
+        sessions={selected.sessions}
+        onOpen={onOpen}
+      />
     </section>
   );
 }
