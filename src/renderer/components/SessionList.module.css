@@ -1,0 +1,22 @@
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Reserves the full list height so the scrollbar thumb is sized correctly even
+   though only the visible window is mounted. */
+.spacer {
+  position: relative;
+  width: 100%;
+}
+
+/* The mounted window, offset to its true scroll position via translateY. */
+.window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}

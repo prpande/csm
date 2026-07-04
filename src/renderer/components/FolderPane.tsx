@@ -1,4 +1,5 @@
 import type { FolderNode } from "../../sessionTree";
+import { SessionList } from "./SessionList";
 import styles from "./FolderPane.module.css";
 
 interface FolderPaneProps {
@@ -12,8 +13,7 @@ interface FolderPaneProps {
 
 // Right pane shell. With no selection it shows a centered prompt and NO folder
 // header (spec §9). With a folder selected it shows the header (path + count +
-// per-folder refresh); the virtualized session list that fills the body is a
-// later slice (#66).
+// per-folder refresh) and the virtualized session list (#66) filling the body.
 export function FolderPane({
   selected,
   onRefreshFolder,
@@ -48,7 +48,10 @@ export function FolderPane({
           ⟳
         </button>
       </header>
-      <div className={styles.listPlaceholder} aria-hidden="true" />
+      {/* key by folder path so a new selection mounts a fresh list — the
+          previous folder's scroll position never carries over (spec §9:
+          newest-first). */}
+      <SessionList key={selected.path} sessions={selected.sessions} />
     </section>
   );
 }
