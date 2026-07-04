@@ -7,13 +7,15 @@ import styles from "./SessionList.module.css";
 interface SessionListProps {
   /** The selected folder's sessions, already sorted newest-first (#64). */
   sessions: SessionMetadata[];
+  /** Row open gesture (double-click → reopen, #67). */
+  onOpen?: (session: SessionMetadata) => void;
 }
 
 // Windowed / virtualized session list (spec §6/§11). A folder can hold thousands
 // of sessions, so only the rows in (and just around) the viewport are mounted:
 // the scroll container reserves the full height via a spacer, and the visible
 // slice — chosen by the pure `computeWindow` — is offset with translateY.
-export function SessionList({ sessions }: SessionListProps) {
+export function SessionList({ sessions, onOpen }: SessionListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -68,6 +70,7 @@ export function SessionList({ sessions }: SessionListProps) {
               key={session.sessionId}
               session={session}
               rowHeight={ROW_HEIGHT}
+              onOpen={onOpen}
             />
           ))}
         </div>

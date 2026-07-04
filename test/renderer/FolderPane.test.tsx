@@ -36,6 +36,20 @@ test("renders the selected folder's session list", () => {
   expect(screen.getByText("A session 0")).toBeTruthy();
 });
 
+test("double-clicking a row forwards the session to onOpen (reopen gesture)", () => {
+  const opened: string[] = [];
+  render(
+    <FolderPane
+      selected={makeFolder("A", 3)}
+      onRefreshFolder={noop}
+      refreshDisabled={false}
+      onOpen={(s) => opened.push(s.sessionId)}
+    />,
+  );
+  fireEvent.doubleClick(screen.getByText("A session 1"));
+  expect(opened).toEqual(["A000001"]);
+});
+
 // Regression (preflight finding): the SessionList instance must not carry one
 // folder's scroll offset into the next. Switching folders should show the new
 // folder from the top (newest-first, spec §9), not mid-list.

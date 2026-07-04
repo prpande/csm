@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSessionScan } from "../hooks/useSessionScan";
+import { useReopen } from "../hooks/useReopen";
 import { findFolder, type FolderNode } from "../../sessionTree";
 import { TitleBar } from "./TitleBar";
 import { FolderTree } from "./FolderTree";
 import { FolderPane } from "./FolderPane";
+import { BypassConfirmModal } from "./BypassConfirmModal";
+import { Toast } from "./Toast";
 import styles from "./FolderBrowser.module.css";
 
 // Slice-2 shell (decision A): the single owner of the tree's expansion and
@@ -13,6 +16,14 @@ import styles from "./FolderBrowser.module.css";
 // the selection self-clears if that folder disappears.
 export function FolderBrowser() {
   const { tree, status, refresh } = useSessionScan();
+  const {
+    pendingBypass,
+    toast,
+    requestReopen,
+    confirmReopen,
+    cancelReopen,
+    dismissToast,
+  } = useReopen();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   // Auto-expand each drive root once, the first time it appears — including a
@@ -72,8 +83,17 @@ export function FolderBrowser() {
           selected={selected}
           onRefreshFolder={refresh}
           refreshDisabled={scanning}
+          onOpen={(session) => void requestReopen(session)}
         />
       </div>
+      {pendingBypass && (
+        <BypassConfirmModal
+          session={pendingBypass}
+          onConfirm={(mode) => void confirmReopen(mode)}
+          onCancel={cancelReopen}
+        />
+      )}
+      {toast && <Toast message={toast.message} onDismiss={dismissToast} />}
     </div>
   );
 }
