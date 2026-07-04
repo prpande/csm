@@ -14,7 +14,10 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 const SETTINGS_FILENAME = "settings.json";
-const DEFAULT_CLAUDE_PATH = "claude";
+// The product-wide default Claude executable (spec §8). Exported so the IPC
+// bridge's untrusted-sender fallback returns the same default instead of
+// re-hardcoding the literal.
+export const DEFAULT_CLAUDE_PATH = "claude";
 
 // Local minimal guard: JSON.parse can yield any type; `null`/array/primitive must
 // not be spread or property-accessed as settings. (A shared type-guard util with

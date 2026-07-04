@@ -15,6 +15,10 @@ describe("App", () => {
       isDesktop: true,
       platform: "win32",
       openExternal: vi.fn(async () => true),
+      listSessions: vi.fn(() => vi.fn()),
+      reopenSession: vi.fn(async () => ({ ok: true as const })),
+      getClaudePath: vi.fn(async () => "claude"),
+      setClaudePath: vi.fn(async () => {}),
     };
     render(<App />);
     expect(screen.getByText(/platform: win32/i)).toBeInTheDocument();

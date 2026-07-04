@@ -2,6 +2,12 @@ import { app, BrowserWindow, ipcMain, session, shell } from "electron";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isOpenableUrl, navigationDecision, windowOpenDecision } from "./urls";
+import { registerIpcHandlers } from "./ipc";
+import { CH } from "./ipcChannels";
+import { createSessionStore } from "./sessionStore";
+import { createSettingsStore } from "./settingsStore";
+import { reopenSession } from "./reopenSession";
+import { defaultProjectsRoot } from "./pathAdapter";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -84,7 +90,7 @@ if (!gotLock) {
   const fromMainWindow = (e: Electron.IpcMainInvokeEvent): boolean =>
     mainWindow !== null && e.sender === mainWindow.webContents;
 
-  ipcMain.handle("shell:open-external", async (e, url: string) => {
+  ipcMain.handle(CH.shellOpenExternal, async (e, url: string) => {
     if (!fromMainWindow(e)) return false;
     if (typeof url !== "string" || !isOpenableUrl(url)) return false;
     try {
@@ -93,6 +99,22 @@ if (!gotLock) {
     } catch {
       return false;
     }
+  });
+
+  // The session-scan / reopen / settings bridge (#59). Registered once at startup
+  // (ipcMain.handle is process-global); the sender guard resolves mainWindow
+  // lazily, so it correctly rejects until the window exists. The scan/reopen/
+  // settings deps are the shipped units, injected here with real I/O.
+  registerIpcHandlers({
+    ipcMain,
+    isTrustedSender: (sender) =>
+      mainWindow !== null && sender === mainWindow.webContents,
+    createSessionStore,
+    settingsStore: createSettingsStore(app.getPath("userData")),
+    reopen: reopenSession,
+    projectsRoot: defaultProjectsRoot(),
+    platform: process.platform,
+    now: () => Date.now(),
   });
 
   void app.whenReady().then(() => {
