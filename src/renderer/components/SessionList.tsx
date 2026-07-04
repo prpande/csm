@@ -49,13 +49,18 @@ export function SessionList({ sessions }: SessionListProps) {
       aria-label="Sessions"
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
     >
+      {/* The spacer/window wrappers carry no semantics — mark them presentation
+          so the role="listitem" rows stay the direct a11y children of the
+          role="list" container despite the intervening layout divs. */}
       <div
         className={styles.spacer}
+        role="presentation"
         data-testid="session-list-spacer"
         style={{ height: sessions.length * ROW_HEIGHT }}
       >
         <div
           className={styles.window}
+          role="presentation"
           style={{ transform: `translateY(${startIndex * ROW_HEIGHT}px)` }}
         >
           {visible.map((session) => (
