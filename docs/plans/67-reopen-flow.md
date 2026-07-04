@@ -91,6 +91,24 @@ Wiring:
 - `test/renderer/FolderPane.test.tsx` — integration: double-click a bypass row
   shows the modal; confirm calls `reopenSession` (add to existing file).
 
+## Post-review adjustments
+
+- **/simplify pass:** extracted the `window.csm` accessor into a shared
+  `src/renderer/bridge.ts` (`currentBridge()`) reused by both `useReopen` and
+  `useSessionScan`; added `reopenView.GENERIC_REOPEN_MESSAGE`; typed
+  `DOWNGRADE_MODE` as `PermissionMode`; the bypass button confirms with
+  `session.permissionMode` rather than a hardcoded literal.
+- **Adversarial preflight:** `useReopen` now holds an in-flight `useRef` guard so
+  an overlapping reopen gesture (fast double double-click, or a modal button
+  activated twice before unmount) cannot fire `reopenSession` twice and spawn two
+  terminals. Added tests for the race, Toast timer cleanup on unmount, and a
+  de-circularized generic-message assertion. Skipped (with rationale): clearing
+  `pendingBypass` on folder switch (the modal backdrop blocks folder switching and
+  the pending session captures cwd+sessionId, so a reopen stays correct); the
+  late-arriving-bridge case (matches the `useSessionScan` convention; the preload
+  injects the bridge before the renderer loads); modal focus-trap (deferred to
+  #70).
+
 ## Out of scope (later slices)
 
 - Keyboard `Enter`-to-open + full modal focus-trap/`aria` traversal → #70.
