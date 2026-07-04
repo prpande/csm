@@ -15,16 +15,23 @@ export function FolderBrowser() {
   const { tree, status, refresh } = useSessionScan();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  // Auto-expand the drive roots once, the first time a scan yields any. A ref
-  // gates it so a later refresh (which re-streams the same roots) does not undo
-  // the user's manual collapses by re-seeding.
-  const seededRoots = useRef(false);
+  // Auto-expand each drive root once, the first time it appears — including a
+  // root first seen in a later streaming tier. The ref tracks which roots have
+  // already been seeded so a re-streamed root (a refresh, or a root that spans
+  // tiers) does not undo the user's manual collapses by re-expanding.
+  const seededRoots = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!seededRoots.current && tree.roots.length > 0) {
-      seededRoots.current = true;
-      setExpanded(new Set(tree.roots.map((r) => r.path)));
-    }
+    const fresh = tree.roots
+      .map((r) => r.path)
+      .filter((p) => !seededRoots.current.has(p));
+    if (fresh.length === 0) return;
+    fresh.forEach((p) => seededRoots.current.add(p));
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      fresh.forEach((p) => next.add(p));
+      return next;
+    });
   }, [tree.roots]);
 
   const toggle = useCallback((path: string) => {
@@ -41,7 +48,13 @@ export function FolderBrowser() {
   }, []);
 
   const scanning = status === "scanning";
-  const selected = selectedPath ? findFolder(tree, selectedPath) : null;
+  // Resolve the selection against the live tree. Null it out when the folder is
+  // gone OR is no longer selectable (its own sessions aged out, leaving a
+  // 0-session intermediate) — only ownCount>0 folders are selectable, matching
+  // TreeNode — so the pane self-clears to the empty state instead of showing a
+  // stale "0 sessions" header the tree can't highlight or clear.
+  const resolved = selectedPath ? findFolder(tree, selectedPath) : null;
+  const selected = resolved && resolved.ownCount > 0 ? resolved : null;
 
   return (
     <div className={styles.layout}>

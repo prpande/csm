@@ -183,4 +183,38 @@ describe("FolderBrowser", () => {
     // The literal was inserted as text, so no real <img> element exists.
     expect(document.querySelector("img")).toBe(null);
   });
+
+  it("clears a stale selection when a refresh makes the folder a 0-session intermediate", () => {
+    const bridge = fakeBridge();
+    render(<FolderBrowser />);
+    act(() => bridge.emit().onBatch([sess("a", "D:\\proj")]));
+    act(() => bridge.emit().onDone());
+    fireEvent.click(screen.getByText("proj"));
+    expect(screen.getByText("D:\\proj")).toBeTruthy(); // header shown
+
+    // Refresh; this time the folder has no own sessions, only a deeper child,
+    // so buildTree keeps it as an ownCount=0 intermediate.
+    fireEvent.click(
+      screen.getByRole("button", { name: /refresh all sessions/i }),
+    );
+    act(() => bridge.emit().onBatch([sess("b", "D:\\proj\\sub")]));
+    act(() => bridge.emit().onDone());
+
+    // Selection self-clears: empty state, not a stale "0 sessions" header.
+    expect(
+      screen.getByText(/select a folder to view its sessions/i),
+    ).toBeTruthy();
+    expect(screen.queryByText("D:\\proj")).toBe(null);
+  });
+
+  it("auto-expands a drive root that first appears in a later streaming tier", () => {
+    const bridge = fakeBridge();
+    render(<FolderBrowser />);
+    act(() => bridge.emit().onBatch([sess("a", "D:\\proj")])); // tier 1: only D:
+    act(() => bridge.emit().onBatch([sess("b", "C:\\work")])); // later tier: C: appears
+    act(() => bridge.emit().onDone());
+    // Both roots auto-expand once seen, so both leaves are mounted.
+    expect(screen.getByText("proj")).toBeTruthy();
+    expect(screen.getByText("work")).toBeTruthy();
+  });
 });
