@@ -86,17 +86,20 @@ const splitSegments = (s: string, sep: string): string[] =>
 const joinPath = (base: string, sep: string, seg: string): string =>
   base.endsWith(sep) ? base + seg : base + sep + seg;
 
-// Newest-first by lastActivity (ISO); null/absent sinks to the bottom. Ties break
-// by sessionId for a deterministic order independent of dedup/input ordering.
-function byRecencyThenId(a: SessionMetadata, b: SessionMetadata): number {
-  const ta = a.lastActivity ? Date.parse(a.lastActivity) : -Infinity;
-  const tb = b.lastActivity ? Date.parse(b.lastActivity) : -Infinity;
-  if (ta !== tb) return tb - ta;
-  return a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0;
-}
+// Epoch ms for sorting; null or an unparseable timestamp sinks to the bottom.
+// Mirrors sessionStore.activityEpoch — kept local because sessionStore is
+// node-coupled (node:fs) and this module stays renderer-safe.
+const activityEpoch = (lastActivity: string | null): number => {
+  if (!lastActivity) return -Infinity;
+  const t = Date.parse(lastActivity);
+  return Number.isNaN(t) ? -Infinity : t;
+};
 
+// One collator reused across every folder sort — constructing an Intl.Collator
+// per comparison is the slow path. Case-insensitive by name.
+const collator = new Intl.Collator(undefined, { sensitivity: "base" });
 const byNameCaseInsensitive = (a: FolderNode, b: FolderNode): number =>
-  a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  collator.compare(a.name, b.name);
 
 // Recursively freeze a Building into a FolderNode: sort sessions and children,
 // compute counts bottom-up.
@@ -104,7 +107,21 @@ function finalize(node: Building): FolderNode {
   const children = [...node.children.values()]
     .map(finalize)
     .sort(byNameCaseInsensitive);
-  const sessions = [...node.sessions].sort(byRecencyThenId);
+  // Decorate-sort-undecorate: compute each session's epoch once (not on every
+  // O(n log n) comparison), sort newest-first, tie-break by sessionId for a
+  // deterministic order independent of dedup/input ordering.
+  const sessions = node.sessions
+    .map((s) => ({ s, t: activityEpoch(s.lastActivity) }))
+    .sort((a, b) =>
+      a.t !== b.t
+        ? b.t - a.t
+        : a.s.sessionId < b.s.sessionId
+          ? -1
+          : a.s.sessionId > b.s.sessionId
+            ? 1
+            : 0,
+    )
+    .map((w) => w.s);
   const ownCount = sessions.length;
   const totalCount =
     ownCount + children.reduce((sum, c) => sum + c.totalCount, 0);
