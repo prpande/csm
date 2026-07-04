@@ -146,6 +146,34 @@ test("a missing bridge fails soft to a toast without throwing", async () => {
   expect(result.current.toast).not.toBe(null);
 });
 
+test("an in-flight reopen ignores a concurrent second request (no double launch)", async () => {
+  // One shared deferred so the first reopen is still pending when the second
+  // gesture arrives — the busy guard must drop the second.
+  let release!: () => void;
+  const pending = new Promise<{ ok: true }>((resolve) => {
+    release = () => resolve({ ok: true });
+  });
+  const reopen = vi.fn(() => pending);
+  window.csm!.reopenSession = reopen;
+  const { result } = renderHook(() => useReopen());
+  const session = makeSession({ permissionMode: "plan" });
+
+  await act(async () => {
+    // First fire is left pending (not awaited); the second overlaps it.
+    void result.current.requestReopen(session);
+    await result.current.requestReopen(session);
+  });
+
+  // Only the first launch happened; the overlapping one was dropped.
+  expect(reopen).toHaveBeenCalledTimes(1);
+
+  // Resolve the in-flight call so the guard clears cleanly.
+  await act(async () => {
+    release();
+  });
+  expect(reopen).toHaveBeenCalledTimes(1);
+});
+
 test("dismissToast clears the toast", async () => {
   window.csm!.reopenSession = vi.fn(async () => ({
     ok: false as const,

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { SessionMetadata } from "../../sessionParser";
 import type { CsmBridge } from "../types/csm";
 import { currentBridge } from "../bridge";
@@ -40,23 +40,35 @@ export function useReopen(
     null,
   );
   const [toast, setToast] = useState<ReopenToast | null>(null);
+  // Guards against overlapping launches: a reopen is an async round-trip to the
+  // bridge, so a fast repeat gesture (double double-click, or a modal button
+  // activated twice before it unmounts) could otherwise fire reopenSession twice
+  // and spawn two terminals. A ref (not state) so the check is synchronous and
+  // doesn't depend on a re-render landing first.
+  const inFlight = useRef(false);
 
   // Reopen `session` with `mode` (passed through unchanged, §4.1). Never throws:
   // the bridge resolves a discriminated result, and an absent bridge (a plain
   // browser without the preload) fails soft to the generic toast.
   const run = useCallback(
     async (session: SessionMetadata, mode: string) => {
-      if (!bridge) {
-        setToast({ message: GENERIC_REOPEN_MESSAGE });
-        return;
-      }
-      const result = await bridge.reopenSession({
-        cwd: session.cwd,
-        sessionId: session.sessionId,
-        mode,
-      });
-      if (!result.ok) {
-        setToast({ message: reopenErrorMessage(result.code) });
+      if (inFlight.current) return;
+      inFlight.current = true;
+      try {
+        if (!bridge) {
+          setToast({ message: GENERIC_REOPEN_MESSAGE });
+          return;
+        }
+        const result = await bridge.reopenSession({
+          cwd: session.cwd,
+          sessionId: session.sessionId,
+          mode,
+        });
+        if (!result.ok) {
+          setToast({ message: reopenErrorMessage(result.code) });
+        }
+      } finally {
+        inFlight.current = false;
       }
     },
     [bridge],

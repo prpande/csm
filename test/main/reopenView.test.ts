@@ -3,6 +3,7 @@ import {
   needsBypassConfirm,
   reopenErrorMessage,
   DOWNGRADE_MODE,
+  GENERIC_REOPEN_MESSAGE,
 } from "../../src/reopenView";
 import { REOPEN_ERROR_CODES } from "../../src/ipcTypes";
 import type { PermissionMode } from "../../src/sessionParser";
@@ -36,14 +37,17 @@ test("FOLDER_MISSING maps to a specific folder-gone message", () => {
   expect(msg.toLowerCase()).toContain("no longer");
 });
 
-test("every other error code maps to a generic reopen-failed message", () => {
-  const generic = reopenErrorMessage("SPAWN_FAILED");
+test("every other error code maps to the shared generic reopen-failed message", () => {
   for (const code of REOPEN_ERROR_CODES) {
     const msg = reopenErrorMessage(code);
     expect(typeof msg).toBe("string");
     expect(msg.length).toBeGreaterThan(0);
     if (code !== "FOLDER_MISSING") {
-      expect(msg).toBe(generic);
+      // Assert against the exported constant, not a value re-derived from the
+      // function under test, so wrong-but-consistent copy would still fail.
+      expect(msg).toBe(GENERIC_REOPEN_MESSAGE);
+    } else {
+      expect(msg).not.toBe(GENERIC_REOPEN_MESSAGE);
     }
   }
 });

@@ -33,6 +33,20 @@ test("auto-dismisses after its timeout", () => {
   expect(onDismiss).toHaveBeenCalledTimes(1);
 });
 
+test("unmounting clears the timer so onDismiss never fires afterward", () => {
+  vi.useFakeTimers();
+  const onDismiss = vi.fn();
+  const { unmount } = render(
+    <Toast message="transient" onDismiss={onDismiss} />,
+  );
+  unmount();
+  act(() => {
+    vi.advanceTimersByTime(10000);
+  });
+  // The effect cleanup cleared the timeout — no stray dismiss after unmount.
+  expect(onDismiss).not.toHaveBeenCalled();
+});
+
 test("the message is inserted as text, never HTML", () => {
   const evil = '<img src=x onerror="alert(1)">';
   const { container } = render(<Toast message={evil} onDismiss={vi.fn()} />);
