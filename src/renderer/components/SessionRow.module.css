@@ -73,6 +73,6 @@
 }
 
 .chip[data-variant="default"] {
-  background: var(--chip-default-bg);
-  color: var(--chip-default-text);
+  background: var(--count-bg);
+  color: var(--count-text);
 }

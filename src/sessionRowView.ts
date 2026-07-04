@@ -5,12 +5,13 @@
  *  so the row never crashes on an unexpected value (AC 3). */
 export type ChipVariant = "bypass" | "info" | "plan" | "default";
 
+// `default` (and any unrecognized/absent mode) falls through the `?? "default"`
+// below, so it needs no explicit entry here.
 const CHIP_VARIANTS: Record<string, ChipVariant> = {
   bypassPermissions: "bypass",
   acceptEdits: "info",
   auto: "info",
   plan: "plan",
-  default: "default",
 };
 
 export function chipVariant(mode: string): ChipVariant {
