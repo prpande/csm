@@ -45,10 +45,16 @@ Key details:
 ### Renderer
 
 `compactTree` emits the **full joined path** as `name` (lossless — the data
-layer bakes in no pixel-width truncation). `TreeNode` already truncates long
-names with CSS end-ellipsis; add `title={node.name}` so the full path is
-discoverable on hover. Selection/expansion semantics are unchanged.
-Middle-truncation, if wanted, is a cosmetic follow-up (not in these criteria).
+layer bakes in no pixel-width truncation). A render-layer helper
+`truncatePathLabel` (`src/renderer/pathLabel.ts`) **middle-truncates** the label
+so the drive/root head and the leaf both stay visible in the fixed-width sidebar
+("C:\Users\…\42-hotfix"), rather than a plain end-ellipsis that would hide the
+leaf. `TreeNode` renders the truncated label with `title={node.name}` (the full
+path) for hover, and the existing CSS end-ellipsis backstops the rare label
+still too wide after truncation. Selection/expansion semantics are unchanged.
+
+(Label style was the one open sub-decision in the issue; the maintainer chose
+middle-truncation over plain end-ellipsis.)
 
 ## Tests (`test/main/sessionTree.test.ts`)
 
