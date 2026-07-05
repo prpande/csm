@@ -63,8 +63,9 @@ export function TreeNode({
         )}
         {/* A #77-compacted chain label can be a long path. Middle-truncate it so
             the drive head and the leaf both stay visible; the tooltip carries the
-            full label, and the CSS end-ellipsis backstops the rare overflow. */}
-        <span className={styles.name} title={node.name}>
+            full absolute path (`node.path` — always absolute, unlike a sub-chain's
+            relative `name`), and the CSS end-ellipsis backstops the rare overflow. */}
+        <span className={styles.name} title={node.path}>
           {truncatePathLabel(node.name)}
         </span>
         {isSelectable && <span className={styles.count}>{node.ownCount}</span>}

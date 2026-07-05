@@ -216,6 +216,11 @@ export function buildTree(sessions: SessionMetadata[]): SessionTree {
 // drive, a relative segment join for a chain below a branch).
 function compact(node: FolderNode): FolderNode {
   if (node.children.length === 0) return node; // a leaf can't collapse further
+  // Children keep finalize's order — sorted by each folder's own (first-segment)
+  // name. A merged child's label gains a collapsed-path suffix ("app" -> "app\\src"),
+  // but that suffix is display decoration and deliberately does NOT re-sort it: the
+  // node still represents the "app" folder and should sit where "app" sorts among
+  // its siblings, not get bumped past "app-v2" by the trailing "\\src".
   const children = node.children.map(compact);
   if (node.ownCount === 0 && children.length === 1) {
     const only = children[0];

@@ -255,6 +255,20 @@ describe("compactTree", () => {
     expect(abc.sessions.map((x) => x.sessionId)).toEqual(["deep"]);
   });
 
+  test("a drive that branches immediately keeps the bare drive as the root", () => {
+    // The drive owns no sessions but has two immediate children, so it branches
+    // at the root — it is NOT absorbed and its label stays the bare drive.
+    const { roots } = compactTree(
+      buildTree([s("a", "C:\\work"), s("b", "C:\\play")]),
+    );
+    expect(roots).toHaveLength(1);
+    const drive = roots[0];
+    expect(drive.name).toBe("C:");
+    expect(drive.path).toBe("C:");
+    expect(drive.ownCount).toBe(0);
+    expect(drive.children.map((c) => c.name)).toEqual(["play", "work"]);
+  });
+
   test("cross-drive / disjoint sessions produce multiple compact roots", () => {
     const { roots } = compactTree(
       buildTree([s("c", "C:\\work\\proj"), s("d", "D:\\src\\csm")]),
