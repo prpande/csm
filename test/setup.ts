@@ -6,7 +6,11 @@ import { cleanup } from "@testing-library/react";
 // that reassigns it can't leak that value into later tests. CSM's renderer talks
 // to main only through this IPC bridge (there is no HTTP layer, so no MSW) —
 // tests mock it directly, and may override window.csm within a test as needed.
+// Node-environment tests (e.g. the esbuild-driven preload-bundle guard, which
+// opts out of jsdom) have no `window`; the DOM bridge stub is meaningless there,
+// so skip it rather than crash the shared setup.
 beforeEach(() => {
+  if (typeof window === "undefined") return;
   window.csm = {
     isDesktop: true,
     platform: "darwin",

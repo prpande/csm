@@ -8,8 +8,9 @@
   "scripts": {
     "dev": "vite",
     "build:main": "tsc -p tsconfig.json",
+    "build:preload": "node scripts/build-preload.mjs",
     "build:renderer": "vite build",
-    "build": "npm run build:main && npm run build:renderer",
+    "build": "npm run build:main && npm run build:preload && npm run build:renderer",
     "start": "npm run build && electron .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json && tsc -p tsconfig.node.json",
     "lint": "eslint . && prettier --check .",
