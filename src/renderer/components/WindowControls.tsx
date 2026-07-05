@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import styles from "./WindowControls.module.css";
 
 // Custom traffic-light window controls for the frameless shell (#86). Glyphs are
@@ -7,27 +7,35 @@ import styles from "./WindowControls.module.css";
 // in a plain browser or a unit test without the preload it renders nothing, so the
 // app degrades to the host chrome instead of showing dead buttons.
 
-const MinimizeGlyph = () => (
+// Shared SVG frame for the caption glyphs — the viewBox/aria/class wrapper lives
+// once here; each glyph below supplies only its own strokes.
+const Glyph = ({ children }: { children: ReactNode }) => (
   <svg viewBox="0 0 10 10" aria-hidden="true" className={styles.glyph}>
-    <line x1="2" y1="5" x2="8" y2="5" />
+    {children}
   </svg>
+);
+
+const MinimizeGlyph = () => (
+  <Glyph>
+    <line x1="2" y1="5" x2="8" y2="5" />
+  </Glyph>
 );
 const MaximizeGlyph = () => (
-  <svg viewBox="0 0 10 10" aria-hidden="true" className={styles.glyph}>
+  <Glyph>
     <rect x="2" y="2" width="6" height="6" />
-  </svg>
+  </Glyph>
 );
 const RestoreGlyph = () => (
-  <svg viewBox="0 0 10 10" aria-hidden="true" className={styles.glyph}>
+  <Glyph>
     <rect x="2" y="3.5" width="4.5" height="4.5" />
     <path d="M3.75 3.5 V2 H8 V6.25 H6.5" />
-  </svg>
+  </Glyph>
 );
 const CloseGlyph = () => (
-  <svg viewBox="0 0 10 10" aria-hidden="true" className={styles.glyph}>
+  <Glyph>
     <line x1="2.5" y1="2.5" x2="7.5" y2="7.5" />
     <line x1="7.5" y1="2.5" x2="2.5" y2="7.5" />
-  </svg>
+  </Glyph>
 );
 
 export function WindowControls() {

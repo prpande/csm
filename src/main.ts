@@ -89,8 +89,13 @@ if (!gotLock) {
   // may call (fromMainWindow), (2) only https: URLs pass (isOpenableUrl rejects
   // file:/javascript:/data:/…), (3) the handler never throws to the renderer —
   // returns true on success, false on a rejected URL or a thrown open.
+  // The single trust predicate for the main window's renderer: every privileged
+  // IPC path (shell.openExternal, the scan/reopen bridge, window controls) gates
+  // on it, so it is defined once and can't drift between call sites.
+  const isMainWindowSender = (sender: unknown): boolean =>
+    mainWindow !== null && sender === mainWindow.webContents;
   const fromMainWindow = (e: Electron.IpcMainInvokeEvent): boolean =>
-    mainWindow !== null && e.sender === mainWindow.webContents;
+    isMainWindowSender(e.sender);
 
   ipcMain.handle(CH.shellOpenExternal, async (e, url: string) => {
     if (!fromMainWindow(e)) return false;
@@ -109,8 +114,7 @@ if (!gotLock) {
   // settings deps are the shipped units, injected here with real I/O.
   registerIpcHandlers({
     ipcMain,
-    isTrustedSender: (sender) =>
-      mainWindow !== null && sender === mainWindow.webContents,
+    isTrustedSender: isMainWindowSender,
     createSessionStore,
     settingsStore: createSettingsStore(app.getPath("userData")),
     reopen: reopenSession,
@@ -123,8 +127,7 @@ if (!gotLock) {
   // getWindow resolves the live window so it survives the macOS activate recreate.
   registerWindowControls({
     ipcMain,
-    isTrustedSender: (sender) =>
-      mainWindow !== null && sender === mainWindow.webContents,
+    isTrustedSender: isMainWindowSender,
     getWindow: () => mainWindow,
   });
 
@@ -177,17 +180,6 @@ async function createWindow(devServerUrl: string | undefined): Promise<void> {
   if (process.platform === "darwin") {
     mainWindow.setWindowButtonVisibility(false);
   }
-
-  // Tell the renderer it's running in the desktop shell so the drag region and
-  // window controls activate. Set from the main process on dom-ready, NOT the
-  // preload: the preload runs at document-start when document.documentElement can
-  // be null, and a throwing DOM write there would abort the bridge before it
-  // exposes window.csm — leaving the window-control dots permanently absent.
-  mainWindow.webContents.on("dom-ready", () => {
-    mainWindow?.webContents
-      .executeJavaScript(`document.documentElement.dataset.shell = "desktop";`)
-      .catch(() => {});
-  });
 
   // Keep the renderer's maximize/restore glyph in sync with OS-driven state changes
   // (double-click the title bar, snap-maximize) as well as our own toggle button.
