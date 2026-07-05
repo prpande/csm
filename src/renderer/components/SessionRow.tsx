@@ -61,6 +61,10 @@ export function SessionRow({ session, rowHeight, onOpen }: SessionRowProps) {
             e.stopPropagation();
             onOpen(session);
           }}
+          // Swallow a double-click on the button so it can't also bubble to the
+          // row's double-click reopen — the button owns its own gesture,
+          // independent of the reopen consumer being idempotent.
+          onDoubleClick={(e) => e.stopPropagation()}
         >
           Open
         </button>

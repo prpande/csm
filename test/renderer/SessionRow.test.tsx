@@ -69,6 +69,16 @@ test("clicking the Open button does not double-fire via the row (stopPropagation
   expect(onOpen).toHaveBeenCalledTimes(1);
 });
 
+test("a double-click on the Open button does not bubble to the row's reopen gesture", () => {
+  // The button swallows its own dblclick, so it can't also trigger the row's
+  // double-click reopen — the row stays self-consistent regardless of whether
+  // the reopen consumer collapses duplicate launches.
+  const onOpen = vi.fn();
+  render(<SessionRow session={makeSession()} rowHeight={56} onOpen={onOpen} />);
+  fireEvent.doubleClick(screen.getByRole("button", { name: /open session:/i }));
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
 test("double-click fires onOpen with the session (the reopen gesture)", () => {
   const onOpen = vi.fn();
   const session = makeSession();
