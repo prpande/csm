@@ -1,4 +1,12 @@
-import { app, BrowserWindow, ipcMain, Menu, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  session,
+  shell,
+} from "electron";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -123,12 +131,20 @@ if (!gotLock) {
   // (ipcMain.handle is process-global); the sender guard resolves mainWindow
   // lazily, so it correctly rejects until the window exists. The scan/reopen/
   // settings deps are the shipped units, injected here with real I/O.
+  const settingsStore = createSettingsStore(app.getPath("userData"));
+
   registerIpcHandlers({
     ipcMain,
     isTrustedSender: isMainWindowSender,
     createSessionStore,
-    settingsStore: createSettingsStore(app.getPath("userData")),
+    settingsStore,
     reopen: reopenSession,
+    // The theme switch (#86) drives Electron's nativeTheme, which forces the
+    // renderer's prefers-color-scheme (and native menus/dialogs) to the chosen
+    // mode; injected here so ipc.ts stays Electron-free for unit tests.
+    setNativeTheme: (source) => {
+      nativeTheme.themeSource = source;
+    },
     projectsRoot: defaultProjectsRoot(),
     platform: process.platform,
     now: () => Date.now(),
@@ -142,12 +158,17 @@ if (!gotLock) {
     getWindow: () => mainWindow,
   });
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     // macOS dock icon for a dev run — app.dock is only populated post-ready and is
     // undefined off macOS, so this must run inside whenReady. No-ops when the .icns
     // isn't present (a packaged .app uses its baked bundle icon).
     const dockIcon = macDockIconPath(iconEnv());
     if (dockIcon && app.dock) app.dock.setIcon(dockIcon);
+
+    // Apply the saved theme (#86) BEFORE the window loads so the first paint uses
+    // the chosen mode — nativeTheme.themeSource forces the renderer's
+    // prefers-color-scheme. Absent/unknown → 'system' (getTheme's default).
+    nativeTheme.themeSource = await settingsStore.getTheme();
 
     const devServerUrl = resolveDevServerUrl();
     // Frameless shell (#86): drop the default menu bar so the SPA title bar is the

@@ -1,4 +1,5 @@
 import { WindowControls } from "./WindowControls";
+import { ThemeToggle } from "./ThemeToggle";
 import brandIcon from "../../../assets/icons/png/icon_32.png";
 import styles from "./TitleBar.module.css";
 
@@ -10,9 +11,9 @@ interface TitleBarProps {
   refreshing: boolean;
 }
 
-// Full-width app title bar (spec §9): brand + global controls. Only refresh is
-// wired in this slice; search (phase C), settings (#68), and the theme toggle are
-// greyed disabled placeholders that establish the layout.
+// Full-width app title bar (spec §9): brand + global controls. Refresh and the
+// theme toggle (#86) are wired; search (phase C) and settings (#68) remain greyed
+// disabled placeholders that establish the layout.
 export function TitleBar({ onRefresh, refreshing }: TitleBarProps) {
   return (
     <header className={styles.titleBar}>
@@ -55,15 +56,7 @@ export function TitleBar({ onRefresh, refreshing }: TitleBarProps) {
         >
           ⚙
         </button>
-        <button
-          type="button"
-          className={styles.iconButton}
-          disabled
-          aria-label="Toggle theme (coming soon)"
-          title="Toggle theme (coming soon)"
-        >
-          ◐
-        </button>
+        <ThemeToggle />
         <WindowControls />
       </div>
     </header>

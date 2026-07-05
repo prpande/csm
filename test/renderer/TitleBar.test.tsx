@@ -38,4 +38,12 @@ describe("TitleBar", () => {
     render(<TitleBar onRefresh={vi.fn()} refreshing={false} />);
     expect(screen.queryByLabelText("Minimize")).toBe(null);
   });
+
+  it("shows the theme control as a disabled placeholder when the bridge is absent", () => {
+    render(<TitleBar onRefresh={vi.fn()} refreshing={false} />);
+    const toggle = screen.getByLabelText(
+      /toggle theme \(unavailable\)/i,
+    ) as HTMLButtonElement;
+    expect(toggle.disabled).toBe(true);
+  });
 });

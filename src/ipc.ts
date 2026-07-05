@@ -19,8 +19,9 @@ import type {
   ReopenResult,
   ReopenRequestDto,
 } from "./ipcTypes";
-import { REOPEN_ERROR_CODES } from "./ipcTypes";
-import { DEFAULT_CLAUDE_PATH } from "./settingsStore";
+import { REOPEN_ERROR_CODES, THEME_PREFERENCES } from "./ipcTypes";
+import type { ThemePreference } from "./ipcTypes";
+import { DEFAULT_CLAUDE_PATH, DEFAULT_THEME } from "./settingsStore";
 import { CH } from "./ipcChannels";
 
 /** The minimal renderer target the streaming scan pushes to (WebContents.send). */
@@ -42,8 +43,13 @@ export interface IpcHandlerDeps {
   settingsStore: {
     getClaudePath(): Promise<string>;
     setClaudePath(value: string): Promise<void>;
+    getTheme(): Promise<ThemePreference>;
+    setTheme(value: ThemePreference): Promise<void>;
   };
   reopen: (req: ReopenRequest) => Promise<void>;
+  /** Apply a theme to Electron's nativeTheme.themeSource. Injected (not imported)
+   * so the handlers stay unit-testable without an Electron runtime. */
+  setNativeTheme: (source: ThemePreference) => void;
   projectsRoot: string;
   platform: NodeJS.Platform;
   now: () => number;
@@ -66,6 +72,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     createSessionStore,
     settingsStore,
     reopen,
+    setNativeTheme,
     projectsRoot,
     platform,
     now,
@@ -144,5 +151,26 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(CH.settingsSet, async (event, value) => {
     if (!isTrustedSender(event.sender) || typeof value !== "string") return;
     await settingsStore.setClaudePath(value);
+  });
+
+  // theme: get seeds the title-bar control; set validates against the allowlist,
+  // persists, AND applies nativeTheme.themeSource so the renderer's
+  // prefers-color-scheme follows. An untrusted frame gets the default (get) / a
+  // no-op (set), and an out-of-allowlist value is dropped (never reaches disk or
+  // nativeTheme) — same defense-in-depth as the settings handlers above.
+  ipcMain.handle(CH.themeGet, async (event) => {
+    if (!isTrustedSender(event.sender)) return DEFAULT_THEME;
+    return settingsStore.getTheme();
+  });
+
+  ipcMain.handle(CH.themeSet, async (event, value) => {
+    if (
+      !isTrustedSender(event.sender) ||
+      !(THEME_PREFERENCES as readonly unknown[]).includes(value)
+    )
+      return;
+    const theme = value as ThemePreference;
+    await settingsStore.setTheme(theme);
+    setNativeTheme(theme);
   });
 }

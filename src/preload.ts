@@ -6,6 +6,7 @@ import type {
   SessionsBatchMessage,
   SessionsListener,
   SessionsSignalMessage,
+  ThemePreference,
 } from "./ipcTypes";
 
 // Preload for the hardened CSM renderer. This is the ONLY bridge between the
@@ -99,4 +100,14 @@ contextBridge.exposeInMainWorld("csm", {
 
   setClaudePath: (value: string): Promise<void> =>
     ipcRenderer.invoke(CH.settingsSet, value),
+
+  // Theme preference (#86). get seeds the title-bar control; set persists the
+  // choice and drives nativeTheme.themeSource in main (an out-of-allowlist value
+  // is dropped there). Main applies the visual change — the renderer's
+  // prefers-color-scheme updates on its own, so there is no push channel.
+  theme: {
+    get: (): Promise<ThemePreference> => ipcRenderer.invoke(CH.themeGet),
+    set: (value: ThemePreference): Promise<void> =>
+      ipcRenderer.invoke(CH.themeSet, value),
+  },
 });

@@ -22,6 +22,14 @@ export const REOPEN_ERROR_CODES = [
 
 export type ReopenErrorCode = (typeof REOPEN_ERROR_CODES)[number];
 
+/** User theme preference (#86 theme switch). 'system' follows the OS theme via
+ * Electron's nativeTheme.themeSource; 'light'/'dark' pin it. A runtime `as const`
+ * array (not just a union) so the main-side bridge validates an untrusted renderer
+ * value against the SAME source the renderer/preload type is derived from. */
+export const THEME_PREFERENCES = ["system", "light", "dark"] as const;
+
+export type ThemePreference = (typeof THEME_PREFERENCES)[number];
+
 /** Discriminated result of a reopen attempt — plain, structured-clone safe. */
 export type ReopenResult = { ok: true } | { ok: false; code: ReopenErrorCode };
 

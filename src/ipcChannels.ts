@@ -15,6 +15,11 @@ export const CH = {
   sessionReopen: "session:reopen",
   settingsGet: "settings:getClaudePath",
   settingsSet: "settings:setClaudePath",
+  // Theme preference (#86 theme switch). get seeds the title-bar control; set
+  // persists the choice AND drives Electron's nativeTheme.themeSource, so the
+  // renderer's prefers-color-scheme (and native menus/dialogs) follow it.
+  themeGet: "settings:getTheme",
+  themeSet: "settings:setTheme",
   // https-only external-link egress (shipped in the scaffold).
   shellOpenExternal: "shell:open-external",
   // Custom window-control chrome (#86 frameless shell). minimize/toggle/close are

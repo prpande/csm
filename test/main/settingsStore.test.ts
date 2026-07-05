@@ -101,3 +101,43 @@ test("setClaudePath creates settings.json when the dir starts empty", async () =
   expect(readdirSync(dir)).toContain(SETTINGS_FILE);
   expect(await store.getClaudePath()).toBe("claude-x");
 });
+
+test("getTheme() defaults to 'system' when settings.json is absent", async () => {
+  expect(await createSettingsStore(dir).getTheme()).toBe("system");
+});
+
+test("setTheme then getTheme round-trips through disk for every mode", async () => {
+  const store = createSettingsStore(dir);
+  for (const mode of ["light", "dark", "system"] as const) {
+    await store.setTheme(mode);
+    expect(await store.getTheme()).toBe(mode);
+    // A fresh instance reads the same persisted value (no in-memory reliance).
+    expect(await createSettingsStore(dir).getTheme()).toBe(mode);
+  }
+});
+
+test("an unrecognized / non-string stored theme falls back to 'system'", async () => {
+  const store = createSettingsStore(dir);
+  for (const contents of [
+    JSON.stringify({ theme: "solarized" }),
+    JSON.stringify({ theme: "Dark" }), // wrong case — exact match only
+    JSON.stringify({ theme: 42 }),
+    JSON.stringify({ theme: null }),
+  ]) {
+    writeSettings(contents);
+    await expect(store.getTheme()).resolves.toBe("system");
+  }
+});
+
+test("setTheme preserves unknown keys and the stored claudePath", async () => {
+  writeSettings(
+    JSON.stringify({ claudePath: "keep-me", terminalPreference: "iterm" }),
+  );
+  const store = createSettingsStore(dir);
+  await store.setTheme("dark");
+
+  const persisted = JSON.parse(readFileSync(join(dir, SETTINGS_FILE), "utf8"));
+  expect(persisted.theme).toBe("dark");
+  expect(persisted.claudePath).toBe("keep-me");
+  expect(persisted.terminalPreference).toBe("iterm");
+});

@@ -12,12 +12,16 @@
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { THEME_PREFERENCES, type ThemePreference } from "./ipcTypes";
 
 const SETTINGS_FILENAME = "settings.json";
 // The product-wide default Claude executable (spec §8). Exported so the IPC
 // bridge's untrusted-sender fallback returns the same default instead of
 // re-hardcoding the literal.
 export const DEFAULT_CLAUDE_PATH = "claude";
+// Default theme when none is stored (or a stored value is unrecognized): follow
+// the OS. Exported so the IPC bridge's untrusted fallback returns the same value.
+export const DEFAULT_THEME: ThemePreference = "system";
 
 // Local minimal guard: JSON.parse can yield any type; `null`/array/primitive must
 // not be spread or property-accessed as settings. (A shared type-guard util with
@@ -59,5 +63,22 @@ export function createSettingsStore(dir: string) {
     await writeFile(file, JSON.stringify(next, null, 2) + "\n", "utf8");
   }
 
-  return { getClaudePath, setClaudePath };
+  async function getTheme(): Promise<ThemePreference> {
+    const v = (await readSettings()).theme;
+    // Honor only a value in the allowlist; anything else (absent, a stale/unknown
+    // string, a hand-edited typo, a non-string) → default 'system'. The value
+    // reaches nativeTheme.themeSource, so it must be exactly one of the three.
+    return (THEME_PREFERENCES as readonly string[]).includes(v as string)
+      ? (v as ThemePreference)
+      : DEFAULT_THEME;
+  }
+
+  async function setTheme(value: ThemePreference): Promise<void> {
+    // Spread-merge so unknown keys (e.g. claudePath) are preserved.
+    const next = { ...(await readSettings()), theme: value };
+    await mkdir(dir, { recursive: true });
+    await writeFile(file, JSON.stringify(next, null, 2) + "\n", "utf8");
+  }
+
+  return { getClaudePath, setClaudePath, getTheme, setTheme };
 }
