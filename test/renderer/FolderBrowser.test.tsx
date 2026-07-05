@@ -63,25 +63,30 @@ const rowFor = (name: string): HTMLElement => {
 
 describe("FolderBrowser", () => {
   it("shows the empty-state prompt and no folder header before any selection", () => {
-    renderScanned([sess("a", "D:\\proj")]);
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
     expect(
       screen.getByText(/select a folder to view its sessions/i),
     ).toBeTruthy();
-    // The folder header renders the full cwd path; absent until a folder is picked.
-    expect(screen.queryByText("D:\\proj")).toBe(null);
+    // The folder header renders a selected folder's full cwd path. "D:\\src\\csm"
+    // is a header path, never a tree-row label (the row shows the leaf "csm"), so
+    // its absence proves no header is shown before a selection.
+    expect(screen.queryByText("D:\\src\\csm")).toBe(null);
   });
 
-  it("renders the drive root with its auto-expanded child folder", () => {
-    renderScanned([sess("a", "D:\\proj")]);
-    expect(screen.getByText("D:")).toBeTruthy();
-    // Roots auto-expand, so the leaf under the drive is mounted.
-    expect(screen.getByText("proj")).toBeTruthy();
+  it("renders the compacted branch root with its auto-expanded children", () => {
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    // D: has one child and no sessions, so #77 collapses it into src; the tree
+    // starts at the compacted branch root "D:\\src".
+    expect(screen.getByText("D:\\src")).toBeTruthy();
+    // Roots auto-expand, so both leaves under the branch are mounted.
+    expect(screen.getByText("csm")).toBeTruthy();
+    expect(screen.getByText("prism")).toBeTruthy();
   });
 
   it("selecting a folder with sessions shows the folder header with path and count", () => {
-    renderScanned([sess("a", "D:\\proj")]);
-    fireEvent.click(screen.getByText("proj"));
-    expect(screen.getByText("D:\\proj")).toBeTruthy();
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    fireEvent.click(screen.getByText("csm"));
+    expect(screen.getByText("D:\\src\\csm")).toBeTruthy(); // pane header = full cwd
     expect(screen.getByText(/1 session/i)).toBeTruthy();
     expect(screen.queryByText(/select a folder to view its sessions/i)).toBe(
       null,
@@ -89,13 +94,19 @@ describe("FolderBrowser", () => {
   });
 
   it("clicking an intermediate nav node expands it without selecting", () => {
-    renderScanned([sess("a", "D:\\src\\csm")]);
-    // D: auto-expanded -> "src" (nav) visible; its child "csm" not yet mounted.
-    expect(screen.getByText("src")).toBeTruthy();
-    expect(screen.queryByText("csm")).toBe(null);
-
-    fireEvent.click(screen.getByText("src"));
+    renderScanned([
+      sess("a", "D:\\src\\csm\\x"),
+      sess("b", "D:\\src\\csm\\y"),
+      sess("c", "D:\\src\\prism"),
+    ]);
+    // Compacted root "D:\\src" auto-expands -> its children "csm" (a nested nav
+    // branch) and "prism" are visible; csm is collapsed, so x/y aren't mounted.
     expect(screen.getByText("csm")).toBeTruthy();
+    expect(screen.queryByText("x")).toBe(null);
+
+    fireEvent.click(screen.getByText("csm"));
+    expect(screen.getByText("x")).toBeTruthy();
+    expect(screen.getByText("y")).toBeTruthy();
     // Nav click expands, never selects: still no header, empty state remains.
     expect(
       screen.getByText(/select a folder to view its sessions/i),
@@ -106,20 +117,20 @@ describe("FolderBrowser", () => {
     renderScanned([sess("a", "D:\\proj"), sess("u", "(unknown)")]);
     const tree = screen.getByRole("tree");
     const text = tree.textContent ?? "";
-    expect(text.indexOf("(unknown)")).toBeGreaterThan(text.indexOf("D:"));
+    expect(text.indexOf("(unknown)")).toBeGreaterThan(text.indexOf("D:\\proj"));
 
     fireEvent.click(screen.getByText("(unknown)"));
     expect(screen.getByText(/1 session/i)).toBeTruthy();
   });
 
   it("collapsing a root unmounts its subtree", () => {
-    renderScanned([sess("a", "D:\\proj")]);
-    expect(screen.getByText("proj")).toBeTruthy();
-    // D: is a pure nav node -> a row click toggles it.
-    fireEvent.click(screen.getByText("D:"));
-    expect(screen.queryByText("proj")).toBe(null);
-    fireEvent.click(screen.getByText("D:"));
-    expect(screen.getByText("proj")).toBeTruthy();
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    expect(screen.getByText("csm")).toBeTruthy();
+    // "D:\\src" is a pure nav node (no own sessions) -> a row click toggles it.
+    fireEvent.click(screen.getByText("D:\\src"));
+    expect(screen.queryByText("csm")).toBe(null);
+    fireEvent.click(screen.getByText("D:\\src"));
+    expect(screen.getByText("csm")).toBeTruthy();
   });
 
   it("title-bar refresh restarts the scan and is disabled while scanning", () => {
@@ -145,7 +156,7 @@ describe("FolderBrowser", () => {
     render(<FolderBrowser />);
     // Batch in (folder present) but scan still in flight, then select it.
     act(() => bridge.emit().onBatch([sess("a", "D:\\proj")]));
-    fireEvent.click(screen.getByText("proj"));
+    fireEvent.click(screen.getByText("D:\\proj"));
     const folderRefresh = screen.getByRole("button", {
       name: /refresh this folder/i,
     });
@@ -169,52 +180,84 @@ describe("FolderBrowser", () => {
   });
 
   it("shows a count on a leaf folder but not on an intermediate nav folder", () => {
-    renderScanned([sess("a", "D:\\src\\csm")]);
-    fireEvent.click(screen.getByText("src"));
-    // Intermediate nav folder carries no count.
-    expect(within(rowFor("src")).queryByText("1")).toBe(null);
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    // "D:\\src" is the compacted branch root (auto-expanded); csm/prism are leaves.
+    // The nav folder carries no count (children counts live in a sibling <ul>,
+    // not the row).
+    expect(within(rowFor("D:\\src")).queryByText("1")).toBe(null);
     // Leaf folder shows its own-session count.
     expect(within(rowFor("csm")).getByText("1")).toBeTruthy();
   });
 
   it("renders folder names as text, never as HTML", () => {
     renderScanned([sess("a", "D:\\<img src=x>")]);
-    expect(screen.getByText("<img src=x>")).toBeTruthy();
+    // D: collapses into its single child, so the compacted label is the full path.
+    expect(screen.getByText("D:\\<img src=x>")).toBeTruthy();
     // The literal was inserted as text, so no real <img> element exists.
     expect(document.querySelector("img")).toBe(null);
   });
 
-  it("clears a stale selection when a refresh makes the folder a 0-session intermediate", () => {
+  it("clears a stale selection when a refresh makes the selected folder unselectable", () => {
     const bridge = fakeBridge();
     render(<FolderBrowser />);
     act(() => bridge.emit().onBatch([sess("a", "D:\\proj")]));
     act(() => bridge.emit().onDone());
-    fireEvent.click(screen.getByText("proj"));
-    expect(screen.getByText("D:\\proj")).toBeTruthy(); // header shown
+    // Pre-selection the row is the only "D:\\proj" text, so this click is unambiguous.
+    fireEvent.click(screen.getByText("D:\\proj"));
+    expect(screen.getByText(/1 session/i)).toBeTruthy(); // header shown
 
-    // Refresh; this time the folder has no own sessions, only a deeper child,
-    // so buildTree keeps it as an ownCount=0 intermediate.
+    // Refresh replaces the scan: this time "D:\\proj" owns no sessions (only a
+    // deeper child), so #77 absorbs it into "D:\\proj\\sub" and the old
+    // selectedPath "D:\\proj" no longer resolves -> selection self-clears.
     fireEvent.click(
       screen.getByRole("button", { name: /refresh all sessions/i }),
     );
     act(() => bridge.emit().onBatch([sess("b", "D:\\proj\\sub")]));
     act(() => bridge.emit().onDone());
 
-    // Selection self-clears: empty state, not a stale "0 sessions" header.
+    // Empty state, not a stale "1 session" header.
     expect(
       screen.getByText(/select a folder to view its sessions/i),
     ).toBeTruthy();
-    expect(screen.queryByText("D:\\proj")).toBe(null);
+    expect(screen.queryByText(/1 session/i)).toBe(null);
   });
 
-  it("auto-expands a drive root that first appears in a later streaming tier", () => {
+  it("auto-expands a root that first appears in a later streaming tier", () => {
     const bridge = fakeBridge();
     render(<FolderBrowser />);
-    act(() => bridge.emit().onBatch([sess("a", "D:\\proj")])); // tier 1: only D:
-    act(() => bridge.emit().onBatch([sess("b", "C:\\work")])); // later tier: C: appears
+    // tier 1: only the D: cluster (a branch, so it has children to expand).
+    act(() =>
+      bridge
+        .emit()
+        .onBatch([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]),
+    );
+    // later tier: the C: cluster first appears.
+    act(() =>
+      bridge
+        .emit()
+        .onBatch([sess("c", "C:\\work\\api"), sess("d", "C:\\work\\web")]),
+    );
     act(() => bridge.emit().onDone());
-    // Both roots auto-expand once seen, so both leaves are mounted.
-    expect(screen.getByText("proj")).toBeTruthy();
-    expect(screen.getByText("work")).toBeTruthy();
+    // Both compacted roots auto-expand once seen, so a leaf under each is mounted.
+    expect(screen.getByText("csm")).toBeTruthy();
+    expect(screen.getByText("api")).toBeTruthy();
+  });
+
+  it("re-expands a root whose compacted identity shrinks as a sibling streams in", () => {
+    // tier 1: a lone session fully collapses the chain to a leaf root "D:\\a\\b".
+    const bridge = fakeBridge();
+    render(<FolderBrowser />);
+    act(() => bridge.emit().onBatch([sess("a", "D:\\a\\b")]));
+    expect(screen.getByText("D:\\a\\b")).toBeTruthy();
+    expect(screen.queryByText("b")).toBe(null); // no separate leaf row yet
+
+    // tier 2: a sibling makes "D:\\a" branch, so the root shrinks from the leaf
+    // "D:\\a\\b" to the shallower branch "D:\\a" (a new root path). Auto-expand
+    // seeds that fresh path, so both leaves mount.
+    act(() => bridge.emit().onBatch([sess("c", "D:\\a\\c")]));
+    act(() => bridge.emit().onDone());
+    expect(screen.getByText("D:\\a")).toBeTruthy();
+    expect(screen.getByText("b")).toBeTruthy();
+    expect(screen.getByText("c")).toBeTruthy();
   });
 });

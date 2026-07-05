@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { buildTree, type SessionTree } from "../../sessionTree";
+import { buildTree, compactTree, type SessionTree } from "../../sessionTree";
 import type { SessionMetadata } from "../../sessionParser";
 import type { CsmBridge } from "../types/csm";
 import { currentBridge } from "../bridge";
@@ -59,7 +59,10 @@ export function useSessionScan(
   }, [bridge, nonce]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
-  const tree = useMemo(() => buildTree(sessions), [sessions]);
+  // #77: compact single-child chains as the outermost transform, so the tree
+  // starts at the largest common parent per cluster (and, once #69 lands, runs on
+  // the post-filter tree).
+  const tree = useMemo(() => compactTree(buildTree(sessions)), [sessions]);
 
   return { tree, status, refresh };
 }
