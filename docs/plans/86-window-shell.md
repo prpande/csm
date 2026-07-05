@@ -24,8 +24,7 @@ bridge, `CH` channel constants, sender-guarded IPC, `setWindowOpenHandler` +
 - `src/main.ts` `createWindow`: add `titleBarStyle: "hidden"` (keep OS resize borders +
   shadow; **no** `frame:false`, **no** `titleBarOverlay`). On darwin call
   `setWindowButtonVisibility(false)` (native traffic lights still show under `"hidden"`).
-  Add a `dom-ready` handler that injects `document.documentElement.dataset.shell =
-  "desktop"` (NOT the preload — a preload DOM write races document-start). Wire the two
+  Wire the two
   window→renderer maximize events: `mainWindow.on("maximize"/"unmaximize", …send(
   CH.windowMaximizedChanged, bool))`. Register window-control channels via
   `registerWindowControls`.
@@ -61,6 +60,11 @@ bridge, `CH` channel constants, sender-guarded IPC, `setWindowOpenHandler` +
 - `TitleBar.module.css`: gate `-webkit-app-region: drag` on `:global([data-shell=
   'desktop'])`; reset interactive children to `no-drag` via
   `:where(a,button,input,select,textarea,[role='button'],[tabindex])`.
+- `src/renderer/main.tsx`: set `document.documentElement.dataset.shell = "desktop"`
+  from the renderer entry, gated on the `window.csm?.isDesktop` bridge flag, before
+  `createRoot().render()`. Set here (not the preload, which races document-start; and
+  not a main-process `dom-ready` eval, which is a redundant round-trip) — the renderer
+  already owns the `isDesktop` flag and the write runs before first paint.
 
 ## Tests (TDD)
 - `test/main/menu.test.ts` — null off-darwin; role template on darwin.
@@ -78,7 +82,9 @@ bridge, `CH` channel constants, sender-guarded IPC, `setWindowOpenHandler` +
 - Window size/position persistence — deferred (fixed launch size). Follow-up if wanted.
 
 ## Risks / gotchas (from PRism, mitigated above)
-1. Preload DOM writes race document-start → own `data-shell` from main `dom-ready`.
+1. Preload DOM writes race document-start → set `data-shell` from the renderer entry
+   (`main.tsx`) off the `window.csm.isDesktop` bridge flag, before render. (Avoids both
+   the preload race and a redundant main-process `dom-ready` → `executeJavaScript`.)
 2. Drag region swallows child clicks → reset every interactive child to `no-drag`.
 3. macOS native traffic lights persist under `"hidden"` → `setWindowButtonVisibility(false)`.
 4. Nulling the macOS menu kills ⌘C/⌘V/⌘A/⌘Q → keep a native Edit menu on darwin only.
