@@ -258,9 +258,13 @@ palette swap is a one-file value edit.
   sessions attach only to the actual `cwd` leaf. A "loading older sessions…"
   line shows while lower tiers stream in.
 - **Right (below the title bar)**: a folder header (path + session count +
-  per-folder refresh), then the (virtualized — §6) session list. Each row:
-  **description**, then **permission-mode chip · relative time · short session
-  ID** (`sessionId` shown as the first 8 chars). **Single-click selects** a row
+  per-folder refresh) — the path carries a small **"Folder" eyebrow** and sits
+  on an elevated surface so it reads distinctly from the rows below — then the
+  (virtualized — §6) session list. Each row: **description**, then
+  **permission-mode chip · relative time · short session ID** (`sessionId` shown
+  as the first 8 chars), and a trailing **"Open" button** that makes the reopen
+  action discoverable (it routes through the same reopen path as double-click,
+  including the `bypassPermissions` confirmation). **Single-click selects** a row
   (persistent highlight, distinct from hover, themed for both modes);
   **double-click → reopen**. No B/C placeholder actions in the MVP — the Delete
   (B) and ★ favorite (C) controls are added with the features that back them.
