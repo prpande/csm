@@ -7,7 +7,9 @@
   padding: 0 0.75rem;
   /* Brand-tinted bar (#100): warm terracotta wash + a solid accent underline so
      the title bar reads as brand orange and stays distinct from the pane surfaces
-     in both themes. Child controls keep their own surfaces and stay contrast-safe. */
+     in both themes. The search field keeps its own surface (--bg-sidebar); the
+     transparent brand text and icon buttons stay readable because --text holds
+     contrast on the tint, and icon-button hover uses --titlebar-hover-bg. */
   background: var(--bg-titlebar);
   border-bottom: 3px solid var(--accent);
   flex: 0 0 auto;
@@ -86,7 +88,7 @@
 }
 
 .iconButton:hover:not(:disabled) {
-  background: var(--hover-bg);
+  background: var(--titlebar-hover-bg);
 }
 
 .iconButton:disabled {
