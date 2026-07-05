@@ -1,3 +1,6 @@
+import { WindowControls } from "./WindowControls";
+import { ThemeToggle } from "./ThemeToggle";
+import brandIcon from "../../../assets/icons/png/icon_32.png";
 import styles from "./TitleBar.module.css";
 
 interface TitleBarProps {
@@ -8,13 +11,24 @@ interface TitleBarProps {
   refreshing: boolean;
 }
 
-// Full-width app title bar (spec §9): brand + global controls. Only refresh is
-// wired in this slice; search (phase C), settings (#68), and the theme toggle are
-// greyed disabled placeholders that establish the layout.
+// Full-width app title bar (spec §9): brand + global controls. Refresh and the
+// theme toggle (#86) are wired; search (phase C) and settings (#68) remain greyed
+// disabled placeholders that establish the layout.
 export function TitleBar({ onRefresh, refreshing }: TitleBarProps) {
   return (
     <header className={styles.titleBar}>
-      <div className={styles.brand}>CSM · Claude Session Manager</div>
+      <div className={styles.brand}>
+        {/* Decorative — the adjacent text names the app — so alt="" keeps it out
+            of the a11y tree. Rendered as an <img> asset, never innerHTML. */}
+        <img
+          className={styles.brandIcon}
+          src={brandIcon}
+          alt=""
+          width={18}
+          height={18}
+        />
+        <span className={styles.brandText}>CSM · Claude Session Manager</span>
+      </div>
       <div className={styles.actions}>
         <input
           className={styles.search}
@@ -42,15 +56,8 @@ export function TitleBar({ onRefresh, refreshing }: TitleBarProps) {
         >
           ⚙
         </button>
-        <button
-          type="button"
-          className={styles.iconButton}
-          disabled
-          aria-label="Toggle theme (coming soon)"
-          title="Toggle theme (coming soon)"
-        >
-          ◐
-        </button>
+        <ThemeToggle />
+        <WindowControls />
       </div>
     </header>
   );

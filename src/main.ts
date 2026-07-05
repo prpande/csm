@@ -1,8 +1,20 @@
-import { app, BrowserWindow, ipcMain, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  session,
+  shell,
+} from "electron";
 import * as path from "node:path";
+import * as fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { isOpenableUrl, navigationDecision, windowOpenDecision } from "./urls";
 import { registerIpcHandlers } from "./ipc";
+import { registerWindowControls } from "./windowControls";
+import { applicationMenuTemplate } from "./menu";
+import { windowIconPath, macDockIconPath, type IconEnv } from "./appIcon";
 import { CH } from "./ipcChannels";
 import { createSessionStore } from "./sessionStore";
 import { createSettingsStore } from "./settingsStore";
@@ -10,6 +22,15 @@ import { reopenSession } from "./reopenSession";
 import { defaultProjectsRoot } from "./pathAdapter";
 
 let mainWindow: BrowserWindow | null = null;
+
+// Env for the runtime app-icon resolvers (src/appIcon.ts). __dirname is dist/, so
+// assets/ sits one level up in a dev run; resourcesPath is the packaged fallback.
+const iconEnv = (): IconEnv => ({
+  platform: process.platform,
+  appDir: __dirname,
+  resourcesPath: process.resourcesPath,
+  exists: fs.existsSync,
+});
 
 // Built renderer: dist/renderer/index.html, resolved relative to the compiled
 // main.js in dist/. Loaded via loadFile() in the packaged app.
@@ -87,8 +108,13 @@ if (!gotLock) {
   // may call (fromMainWindow), (2) only https: URLs pass (isOpenableUrl rejects
   // file:/javascript:/data:/…), (3) the handler never throws to the renderer —
   // returns true on success, false on a rejected URL or a thrown open.
+  // The single trust predicate for the main window's renderer: every privileged
+  // IPC path (shell.openExternal, the scan/reopen bridge, window controls) gates
+  // on it, so it is defined once and can't drift between call sites.
+  const isMainWindowSender = (sender: unknown): boolean =>
+    mainWindow !== null && sender === mainWindow.webContents;
   const fromMainWindow = (e: Electron.IpcMainInvokeEvent): boolean =>
-    mainWindow !== null && e.sender === mainWindow.webContents;
+    isMainWindowSender(e.sender);
 
   ipcMain.handle(CH.shellOpenExternal, async (e, url: string) => {
     if (!fromMainWindow(e)) return false;
@@ -105,20 +131,53 @@ if (!gotLock) {
   // (ipcMain.handle is process-global); the sender guard resolves mainWindow
   // lazily, so it correctly rejects until the window exists. The scan/reopen/
   // settings deps are the shipped units, injected here with real I/O.
+  const settingsStore = createSettingsStore(app.getPath("userData"));
+
   registerIpcHandlers({
     ipcMain,
-    isTrustedSender: (sender) =>
-      mainWindow !== null && sender === mainWindow.webContents,
+    isTrustedSender: isMainWindowSender,
     createSessionStore,
-    settingsStore: createSettingsStore(app.getPath("userData")),
+    settingsStore,
     reopen: reopenSession,
+    // The theme switch (#86) drives Electron's nativeTheme, which forces the
+    // renderer's prefers-color-scheme (and native menus/dialogs) to the chosen
+    // mode; injected here so ipc.ts stays Electron-free for unit tests.
+    setNativeTheme: (source) => {
+      nativeTheme.themeSource = source;
+    },
     projectsRoot: defaultProjectsRoot(),
     platform: process.platform,
     now: () => Date.now(),
   });
 
-  void app.whenReady().then(() => {
+  // Custom traffic-light window controls (#86). Same lazy sender guard as above;
+  // getWindow resolves the live window so it survives the macOS activate recreate.
+  registerWindowControls({
+    ipcMain,
+    isTrustedSender: isMainWindowSender,
+    getWindow: () => mainWindow,
+  });
+
+  void app.whenReady().then(async () => {
+    // macOS dock icon for a dev run — app.dock is only populated post-ready and is
+    // undefined off macOS, so this must run inside whenReady. No-ops when the .icns
+    // isn't present (a packaged .app uses its baked bundle icon).
+    const dockIcon = macDockIconPath(iconEnv());
+    if (dockIcon && app.dock) app.dock.setIcon(dockIcon);
+
+    // Apply the saved theme (#86) BEFORE the window loads so the first paint uses
+    // the chosen mode — nativeTheme.themeSource forces the renderer's
+    // prefers-color-scheme. Absent/unknown → 'system' (getTheme's default).
+    nativeTheme.themeSource = await settingsStore.getTheme();
+
     const devServerUrl = resolveDevServerUrl();
+    // Frameless shell (#86): drop the default menu bar so the SPA title bar is the
+    // only chrome — except macOS, which keeps a native menu so ⌘C/⌘V/⌘A/⌘Q work in
+    // inputs. A null template yields no application menu at all.
+    const menuTemplate = applicationMenuTemplate(process.platform);
+    Menu.setApplicationMenu(
+      menuTemplate ? Menu.buildFromTemplate(menuTemplate) : null,
+    );
     // CSP is installed ONCE here (onHeadersReceived is a single-slot, session-wide
     // API) — not inside createWindow, which the macOS `activate` path re-enters.
     installCsp(devServerUrl);
@@ -137,12 +196,19 @@ if (!gotLock) {
 }
 
 async function createWindow(devServerUrl: string | undefined): Promise<void> {
+  // Windows taskbar/window icon for a dev run (undefined → Electron default; a
+  // packaged exe embeds its own icon and assets/ isn't shipped, so it no-ops there).
+  const iconPath = windowIconPath(iconEnv());
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
     show: false,
-    // Native title bar for the scaffold; the custom full-width title bar with our
-    // own window controls is deferred to a later phase.
+    ...(iconPath ? { icon: iconPath } : {}),
+    // Frameless shell (#86): "hidden" drops the native title bar while KEEPING the
+    // OS resize borders + drop shadow (unlike frame:false). We draw the caption
+    // buttons ourselves (WindowControls) for an identical look on every platform,
+    // so there is deliberately NO titleBarOverlay.
+    titleBarStyle: "hidden",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -150,6 +216,19 @@ async function createWindow(devServerUrl: string | undefined): Promise<void> {
       sandbox: true,
     },
   });
+
+  // macOS still shows its native traffic lights under titleBarStyle:"hidden"; hide
+  // them so the SPA's own controls are the only window controls, matching Windows.
+  if (process.platform === "darwin") {
+    mainWindow.setWindowButtonVisibility(false);
+  }
+
+  // Keep the renderer's maximize/restore glyph in sync with OS-driven state changes
+  // (double-click the title bar, snap-maximize) as well as our own toggle button.
+  const sendMaximized = (maximized: boolean): void =>
+    mainWindow?.webContents.send(CH.windowMaximizedChanged, maximized);
+  mainWindow.on("maximize", () => sendMaximized(true));
+  mainWindow.on("unmaximize", () => sendMaximized(false));
 
   // External-link safety net. Under sandbox:true Electron denies window.open by
   // default and would drop renderer-initiated opens silently, so route every one

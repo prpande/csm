@@ -38,6 +38,18 @@
   --chip-info-text: #1d6875;
   --chip-plan-bg: #e6ddef;
   --chip-plan-text: #6a49a0;
+
+  /* Traffic-light window controls (#86). The fixed macOS palette, drawn the same
+     on every OS AND theme so the control reads identically cross-platform (PRism
+     parity) — hence the only color set NOT duplicated in the dark block below. */
+  --wc-minimize: #febc2e;
+  --wc-maximize: #28c840;
+  --wc-close: #ff5f57;
+  --wc-glyph: rgba(0, 0, 0, 0.6);
+
+  /* Keyboard-focus ring — a blue held clear of the warm accent so it stays visible
+     on any surface, including the traffic-light dots. */
+  --focus-ring: #4a9eff;
 }
 
 @media (prefers-color-scheme: dark) {

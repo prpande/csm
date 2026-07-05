@@ -193,8 +193,10 @@ describe("FolderBrowser", () => {
     renderScanned([sess("a", "D:\\<img src=x>")]);
     // D: collapses into its single child, so the compacted label is the full path.
     expect(screen.getByText("D:\\<img src=x>")).toBeTruthy();
-    // The literal was inserted as text, so no real <img> element exists.
-    expect(document.querySelector("img")).toBe(null);
+    // The literal was inserted as text, so it never became a real element: no
+    // <img> with the injected src="x" exists. (The title bar renders its own
+    // legitimate brand <img>, so we key on the injected src, not "any img".)
+    expect(document.querySelector('img[src="x"]')).toBe(null);
   });
 
   it("clears a stale selection when a refresh makes the selected folder unselectable", () => {

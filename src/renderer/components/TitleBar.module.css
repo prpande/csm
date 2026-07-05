@@ -11,11 +11,37 @@
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.brandIcon {
+  flex: 0 0 auto;
+  display: block;
+}
+
+.brandText {
   font-weight: 600;
   font-size: 0.9rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Frameless shell (#86): the title bar doubles as the OS drag handle. Gated on
+   the desktop flag the renderer entry (main.tsx) sets from window.csm.isDesktop
+   before first paint, so in a browser / unit test the region is inert. Every
+   interactive child is reset to no-drag or the drag layer swallows its clicks. */
+:global([data-shell="desktop"]) .titleBar {
+  -webkit-app-region: drag;
+}
+
+:global([data-shell="desktop"])
+  .titleBar
+  :where(a, button, input, select, textarea, [role="button"], [tabindex]) {
+  -webkit-app-region: no-drag;
 }
 
 .actions {

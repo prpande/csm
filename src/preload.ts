@@ -6,6 +6,7 @@ import type {
   SessionsBatchMessage,
   SessionsListener,
   SessionsSignalMessage,
+  ThemePreference,
 } from "./ipcTypes";
 
 // Preload for the hardened CSM renderer. This is the ONLY bridge between the
@@ -74,6 +75,24 @@ contextBridge.exposeInMainWorld("csm", {
     return cleanup;
   },
 
+  // Custom frameless-shell window controls (#86). minimize/toggle/close are
+  // fire-and-forget; isMaximized seeds the button glyph; onMaximizedChange keeps it
+  // in sync with OS-driven maximize/unmaximize (double-click title bar, snap, etc.)
+  // and returns an unsubscribe that detaches the ipcRenderer listener.
+  windowControls: {
+    minimize: (): void => ipcRenderer.send(CH.windowMinimize),
+    toggleMaximize: (): void => ipcRenderer.send(CH.windowToggleMaximize),
+    close: (): void => ipcRenderer.send(CH.windowClose),
+    isMaximized: (): Promise<boolean> =>
+      ipcRenderer.invoke(CH.windowIsMaximized),
+    onMaximizedChange: (cb: (maximized: boolean) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, maximized: boolean): void =>
+        cb(maximized);
+      ipcRenderer.on(CH.windowMaximizedChanged, listener);
+      return () => ipcRenderer.off(CH.windowMaximizedChanged, listener);
+    },
+  },
+
   reopenSession: (req: ReopenRequestDto): Promise<ReopenResult> =>
     ipcRenderer.invoke(CH.sessionReopen, req),
 
@@ -81,4 +100,14 @@ contextBridge.exposeInMainWorld("csm", {
 
   setClaudePath: (value: string): Promise<void> =>
     ipcRenderer.invoke(CH.settingsSet, value),
+
+  // Theme preference (#86). get seeds the title-bar control; set persists the
+  // choice and drives nativeTheme.themeSource in main (an out-of-allowlist value
+  // is dropped there). Main applies the visual change — the renderer's
+  // prefers-color-scheme updates on its own, so there is no push channel.
+  theme: {
+    get: (): Promise<ThemePreference> => ipcRenderer.invoke(CH.themeGet),
+    set: (value: ThemePreference): Promise<void> =>
+      ipcRenderer.invoke(CH.themeSet, value),
+  },
 });

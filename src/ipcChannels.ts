@@ -15,6 +15,20 @@ export const CH = {
   sessionReopen: "session:reopen",
   settingsGet: "settings:getClaudePath",
   settingsSet: "settings:setClaudePath",
+  // Theme preference (#86 theme switch). get seeds the title-bar control; set
+  // persists the choice AND drives Electron's nativeTheme.themeSource, so the
+  // renderer's prefers-color-scheme (and native menus/dialogs) follow it.
+  themeGet: "settings:getTheme",
+  themeSet: "settings:setTheme",
   // https-only external-link egress (shipped in the scaffold).
   shellOpenExternal: "shell:open-external",
+  // Custom window-control chrome (#86 frameless shell). minimize/toggle/close are
+  // fire-and-forget (ipcMain.on); is-maximized is request/response (handle); main
+  // pushes maximized-changed on the window's maximize/unmaximize events so the
+  // renderer's maximize button can swap to a restore glyph.
+  windowMinimize: "window:minimize",
+  windowToggleMaximize: "window:toggle-maximize",
+  windowClose: "window:close",
+  windowIsMaximized: "window:is-maximized",
+  windowMaximizedChanged: "window:maximized-changed",
 } as const;

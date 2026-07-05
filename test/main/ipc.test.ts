@@ -57,14 +57,18 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
   const settingsStore = {
     getClaudePath: vi.fn(async () => "claude-configured"),
     setClaudePath: vi.fn(async () => {}),
+    getTheme: vi.fn(async () => "dark" as const),
+    setTheme: vi.fn(async () => {}),
   };
   const reopen = vi.fn(async () => {});
+  const setNativeTheme = vi.fn();
   const deps: IpcHandlerDeps = {
     ipcMain,
     isTrustedSender: (s: unknown) => s === trusted,
     createSessionStore,
     settingsStore,
     reopen,
+    setNativeTheme,
     projectsRoot: "/root/projects",
     platform: "win32",
     now: () => 1234,
@@ -80,6 +84,7 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
     createSessionStore,
     settingsStore,
     reopen,
+    setNativeTheme,
     call,
   };
 }
@@ -257,4 +262,44 @@ test("settings:setClaudePath delegates when trusted, no-ops for untrusted or non
   await handlers.get(CH.settingsSet)!({ sender: other.sender }, "/evil/claude");
   await call(CH.settingsSet, 42);
   expect(settingsStore.setClaudePath).not.toHaveBeenCalled();
+});
+
+// ---- theme -------------------------------------------------------------------
+
+test("settings:getTheme returns the store value when trusted, default 'system' when not", async () => {
+  const { handlers, call, settingsStore } = setup();
+  expect(await call(CH.themeGet)).toBe("dark");
+
+  settingsStore.getTheme.mockClear();
+  const other = fakeSender();
+  expect(await handlers.get(CH.themeGet)!({ sender: other.sender })).toBe(
+    "system",
+  );
+  expect(settingsStore.getTheme).not.toHaveBeenCalled();
+});
+
+test("settings:setTheme persists and applies nativeTheme for each allowed mode", async () => {
+  const { call, settingsStore, setNativeTheme } = setup();
+  for (const mode of ["light", "dark", "system"] as const) {
+    await call(CH.themeSet, mode);
+    expect(settingsStore.setTheme).toHaveBeenCalledWith(mode);
+    expect(setNativeTheme).toHaveBeenCalledWith(mode);
+  }
+});
+
+test("settings:setTheme drops an out-of-allowlist or non-string value (no disk / no nativeTheme write)", async () => {
+  const { call, settingsStore, setNativeTheme } = setup();
+  for (const bad of ["solarized", "Dark", 1, null, undefined, {}]) {
+    await call(CH.themeSet, bad);
+  }
+  expect(settingsStore.setTheme).not.toHaveBeenCalled();
+  expect(setNativeTheme).not.toHaveBeenCalled();
+});
+
+test("settings:setTheme from an untrusted sender never persists or applies", async () => {
+  const { handlers, settingsStore, setNativeTheme } = setup();
+  const other = fakeSender();
+  await handlers.get(CH.themeSet)!({ sender: other.sender }, "dark");
+  expect(settingsStore.setTheme).not.toHaveBeenCalled();
+  expect(setNativeTheme).not.toHaveBeenCalled();
 });
