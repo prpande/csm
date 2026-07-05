@@ -61,12 +61,17 @@ const makeNode = (name: string, path: string): Building => ({
 //   "D:\\src\\csm"  -> { root: "D:", sep: "\\", segments: ["src", "csm"] }
 //   "/Users/x/proj" -> { root: "/",  sep: "/",  segments: ["Users","x","proj"] }
 // Anything else (relative / UNC / bare) falls back to first-segment-as-root.
+// A cwd/path uses a single separator throughout (buildTree joins with one), so
+// the presence of a backslash identifies the OS convention. Single-sourced here
+// and reused by compact() so the "\\" vs "/" rule lives in one place.
+const sepOf = (path: string): string => (path.includes("\\") ? "\\" : "/");
+
 function splitPath(cwd: string): {
   root: string;
   sep: string;
   segments: string[];
 } {
-  const sep = cwd.includes("\\") ? "\\" : "/";
+  const sep = sepOf(cwd);
   const drive = /^([A-Za-z]:)(.*)$/.exec(cwd);
   if (drive) {
     return { root: drive[1], sep, segments: splitSegments(drive[2], sep) };
@@ -217,7 +222,7 @@ function compact(node: FolderNode): FolderNode {
     // The separator lives in the child's path — a drive root's own path ("D:")
     // carries none — so infer it there. `joinPath` handles the POSIX root, whose
     // path already ends in "/".
-    const sep = only.path.includes("\\") ? "\\" : "/";
+    const sep = sepOf(only.path);
     return { ...only, name: joinPath(node.name, sep, only.name) };
   }
   return { ...node, children };

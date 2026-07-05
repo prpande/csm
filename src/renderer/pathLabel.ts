@@ -12,6 +12,7 @@
 // stays a pure, DOM-free, unit-testable string transform rather than measuring
 // rendered pixels.
 const DEFAULT_MAX = 36;
+const ELLIPSIS = "…";
 
 export function truncatePathLabel(label: string, max = DEFAULT_MAX): string {
   if (label.length <= max) return label;
@@ -22,13 +23,16 @@ export function truncatePathLabel(label: string, max = DEFAULT_MAX): string {
   if (segments.length <= 2) return label;
 
   const leaf = segments[segments.length - 1];
-  // Grow the head one whole segment at a time while "head + sep + … + sep + leaf"
-  // still fits the budget; always keep at least the first (root) segment.
+  // Elide the middle: keep the root head and the leaf, joined by an ellipsis
+  // segment ("C:\\Users\\…\\42-hotfix"). Grow the head one whole segment at a
+  // time while the fully rendered result still fits the budget; measuring the
+  // rendered string keeps the layout defined in exactly one place.
+  const rendered = (head: string) => head + sep + ELLIPSIS + sep + leaf;
   let head = segments[0];
   for (let i = 1; i < segments.length - 1; i++) {
     const candidate = head + sep + segments[i];
-    if (candidate.length + 2 * sep.length + 1 + leaf.length > max) break;
+    if (rendered(candidate).length > max) break;
     head = candidate;
   }
-  return head + sep + "…" + sep + leaf;
+  return rendered(head);
 }
