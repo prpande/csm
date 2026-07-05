@@ -5,6 +5,11 @@
   min-width: 0;
   background: var(--bg);
   overflow: hidden;
+  /* Space between the folder header and the first session row so the header
+     reads as the folder title, not another row (#97). Only applies when a
+     folder is selected — the empty state has a single child. Sits outside the
+     list's scroll container, so the virtualization math is untouched. */
+  gap: 0.5rem;
 }
 
 .empty {
@@ -24,6 +29,9 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.625rem 0.875rem;
+  /* An elevated surface + eyebrow set the header apart from the session rows
+     below, which share the pane's base --bg (#97). */
+  background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
@@ -32,9 +40,20 @@
   min-width: 0;
 }
 
-.path {
-  font-size: 0.9rem;
+.eyebrow {
+  font-size: 0.7rem;
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.1rem;
+}
+
+.path {
+  /* Bolder and a touch larger than a row title (0.9rem/500) so the folder
+     identity dominates. */
+  font-size: 0.95rem;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

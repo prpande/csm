@@ -24,6 +24,31 @@ const makeFolder = (label: string, n: number): FolderNode => {
   };
 };
 
+test("labels the header as a folder so it reads distinctly from the session rows", () => {
+  render(
+    <FolderPane
+      selected={makeFolder("A", 3)}
+      onRefreshFolder={noop}
+      refreshDisabled={false}
+    />,
+  );
+  // An eyebrow label marks the header as the folder identity, not a session row.
+  expect(screen.getByText("Folder")).toBeTruthy();
+  // The folder path is still shown alongside it.
+  expect(screen.getByText("D:\\A")).toBeTruthy();
+});
+
+test("shows no folder label before a selection (empty state has no header)", () => {
+  render(
+    <FolderPane
+      selected={null}
+      onRefreshFolder={noop}
+      refreshDisabled={false}
+    />,
+  );
+  expect(screen.queryByText("Folder")).toBe(null);
+});
+
 test("renders the selected folder's session list", () => {
   render(
     <FolderPane
