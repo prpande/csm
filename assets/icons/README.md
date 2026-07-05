@@ -23,6 +23,13 @@ from the SVG masters in `svg/`.
   - `mono.svg` — a monochrome `currentColor` template (tray / menu-bar / inline).
   - `tile-sm.svg` / `mono-sm.svg` — size-tuned masters for the ≤24 px app-icon and
     tray rasters (mark fills more / thicker stroke).
+
+  **Inlining caveat:** only `tile.svg` namespaces its gradient/mask/filter ids
+  (`csm-o`, `csm-c`, …); the other masters use bare ids (`o`, `c`, `s`, `cut`),
+  so inlining one of them more than once on a page collides ids and mis-renders
+  an instance. Prefer the `react/CsmIcon.jsx` component (it namespaces via
+  `useId()`); namespace the raw masters before direct multi-use inlining. Tracked
+  in #108.
 - `png/tray-<size>.png` — monochrome (black + alpha) template rasters for a
   future system-tray / menu-bar icon. **Source-only — not wired yet** (CSM has no
   tray today).
