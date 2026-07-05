@@ -19,8 +19,11 @@ import type { SessionMetadata } from "./sessionParser";
 export const UNKNOWN_CWD = "(unknown)";
 
 export interface FolderNode {
-  /** Path segment for display ("src", "PRism"); a root node is a drive ("D:")
-   *  or the POSIX root ("/"). */
+  /** Display label. A single path segment ("src", "PRism") as built; a root node
+   *  is a drive ("D:") or the POSIX root ("/"). After #77's `compactTree` a
+   *  collapsed node's label is the joined path of the merged segments — the full
+   *  path for a drive-rooted chain, a relative segment join ("a\\b\\c") below a
+   *  branch. `path` (not `name`) is always the full absolute folder path. */
   name: string;
   /** Full path of this node; a leaf's path equals the session `cwd`. */
   path: string;

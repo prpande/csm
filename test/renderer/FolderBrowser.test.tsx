@@ -242,4 +242,22 @@ describe("FolderBrowser", () => {
     expect(screen.getByText("csm")).toBeTruthy();
     expect(screen.getByText("api")).toBeTruthy();
   });
+
+  it("re-expands a root whose compacted identity shrinks as a sibling streams in", () => {
+    // tier 1: a lone session fully collapses the chain to a leaf root "D:\\a\\b".
+    const bridge = fakeBridge();
+    render(<FolderBrowser />);
+    act(() => bridge.emit().onBatch([sess("a", "D:\\a\\b")]));
+    expect(screen.getByText("D:\\a\\b")).toBeTruthy();
+    expect(screen.queryByText("b")).toBe(null); // no separate leaf row yet
+
+    // tier 2: a sibling makes "D:\\a" branch, so the root shrinks from the leaf
+    // "D:\\a\\b" to the shallower branch "D:\\a" (a new root path). Auto-expand
+    // seeds that fresh path, so both leaves mount.
+    act(() => bridge.emit().onBatch([sess("c", "D:\\a\\c")]));
+    act(() => bridge.emit().onDone());
+    expect(screen.getByText("D:\\a")).toBeTruthy();
+    expect(screen.getByText("b")).toBeTruthy();
+    expect(screen.getByText("c")).toBeTruthy();
+  });
 });
