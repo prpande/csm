@@ -203,7 +203,11 @@ a string:
   **downgrade to `acceptEdits`/`default`**. All other modes reopen directly. This
   guards against an accidental double-click launching an unsupervised agent
   (`bypassPermissions` is the dominant stored mode). Bulk reopen (§10) applies the
-  same gate once for any bypass sessions in the batch.
+  same gate once for any bypass sessions in the batch. **Button treatment:** the
+  safe downgrade is the dominant full-width accent primary and keeps initial
+  focus; the risky bypass and Cancel share a compact second row, with bypass a
+  red **outline that only fills on hover** (never the resting look) and Cancel a
+  quiet ghost. Escape still cancels.
 - **Stale / missing `cwd`:** `stat` the session's `cwd` before launching. If it no
   longer exists (worktrees and Temp dirs are frequently deleted), surface a
   specific "folder no longer exists" error instead of attempting the spawn.
@@ -250,7 +254,10 @@ palette swap is a one-file value edit.
 ```
 
 - **Full-width app title bar** across the top: brand, global search (greyed,
-  phase C), refresh, settings, theme toggle.
+  phase C), refresh, settings, theme toggle. The bar carries a **brand-orange
+  tint** (`--bg-titlebar`, warm per theme) plus a solid `--accent` bottom-border
+  so it reads as branded and stays distinct from the pane surfaces, while the
+  child controls keep their own surfaces and stay contrast-safe.
 - **Left = expandable file tree**: drives → folders → subfolders with chevrons.
   Folders with sessions show a count and load their session list when clicked.
   **Intermediate folders with no sessions of their own** (e.g. `src`, `Users`)

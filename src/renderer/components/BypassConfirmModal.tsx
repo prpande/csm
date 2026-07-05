@@ -58,6 +58,10 @@ export function BypassConfirmModal({
         <p className={styles.session} title={session.title}>
           {session.title}
         </p>
+        {/* #98: the safe downgrade is the dominant full-width primary (and keeps
+            initial focus); the risky bypass and Cancel share a compact second row
+            so the modal no longer stacks three full-height buttons. Bypass uses a
+            red outline that only fills on hover — deliberate, not the default. */}
         <div className={styles.actions}>
           <button
             type="button"
@@ -68,22 +72,24 @@ export function BypassConfirmModal({
           >
             Reopen with edits auto-approved
           </button>
-          <button
-            type="button"
-            className={styles.danger}
-            data-testid="confirm-bypass"
-            onClick={() => onConfirm(session.permissionMode)}
-          >
-            Reopen with bypass
-          </button>
-          <button
-            type="button"
-            className={styles.cancel}
-            data-testid="confirm-cancel"
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
+          <div className={styles.secondaryRow}>
+            <button
+              type="button"
+              className={styles.cancel}
+              data-testid="confirm-cancel"
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className={styles.danger}
+              data-testid="confirm-bypass"
+              onClick={() => onConfirm(session.permissionMode)}
+            >
+              Reopen with bypass
+            </button>
+          </div>
         </div>
       </div>
     </div>

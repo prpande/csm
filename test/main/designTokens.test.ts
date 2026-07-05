@@ -18,6 +18,8 @@ const TOKEN_HOME = join("styles", "global.css");
 const HEX_CLASS = "[0-9a-fA-F]{3,8}";
 const HEX = new RegExp(`#${HEX_CLASS}\\b`);
 const ON_ACCENT = new RegExp(`--on-accent:\\s*#${HEX_CLASS}`);
+const BG_TITLEBAR = new RegExp(`--bg-titlebar:\\s*#${HEX_CLASS}`);
+const TITLEBAR_HOVER = new RegExp(`--titlebar-hover-bg:\\s*#${HEX_CLASS}`);
 const COMMENTS = /\/\*[\s\S]*?\*\//g;
 
 // Every *.css under src/renderer except the token home. Recursive so a new
@@ -38,6 +40,20 @@ describe("design tokens", () => {
     expect(darkIndex).toBeGreaterThan(-1);
     expect(css.slice(0, darkIndex)).toMatch(ON_ACCENT);
     expect(css.slice(darkIndex)).toMatch(ON_ACCENT);
+  });
+
+  test("global.css defines the title-bar tint tokens in both light and dark themes", () => {
+    // #100: the title bar's brand tint and its icon-button hover surface live in
+    // tokens (not component hex) so the no-hardcoded-hex guard stays satisfied.
+    // Asserted per-theme so a light-only definition can't pass — the dark title
+    // bar (or its hover) would silently fall back to the wrong surface.
+    const css = readFileSync(globalCss, "utf8");
+    const darkIndex = css.indexOf("prefers-color-scheme: dark");
+    expect(darkIndex).toBeGreaterThan(-1);
+    for (const token of [BG_TITLEBAR, TITLEBAR_HOVER]) {
+      expect(css.slice(0, darkIndex)).toMatch(token);
+      expect(css.slice(darkIndex)).toMatch(token);
+    }
   });
 
   test("no token-consumer CSS hardcodes a color literal", () => {
