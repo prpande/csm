@@ -19,8 +19,11 @@ import type { SessionMetadata } from "./sessionParser";
 export const UNKNOWN_CWD = "(unknown)";
 
 export interface FolderNode {
-  /** Path segment for display ("src", "PRism"); a root node is a drive ("D:")
-   *  or the POSIX root ("/"). */
+  /** Display label. A single path segment ("src", "PRism") as built; a root node
+   *  is a drive ("D:") or the POSIX root ("/"). After #77's `compactTree` a
+   *  collapsed node's label is the joined path of the merged segments — the full
+   *  path for a drive-rooted chain, a relative segment join ("a\\b\\c") below a
+   *  branch. `path` (not `name`) is always the full absolute folder path. */
   name: string;
   /** Full path of this node; a leaf's path equals the session `cwd`. */
   path: string;
@@ -61,12 +64,17 @@ const makeNode = (name: string, path: string): Building => ({
 //   "D:\\src\\csm"  -> { root: "D:", sep: "\\", segments: ["src", "csm"] }
 //   "/Users/x/proj" -> { root: "/",  sep: "/",  segments: ["Users","x","proj"] }
 // Anything else (relative / UNC / bare) falls back to first-segment-as-root.
+// A cwd/path uses a single separator throughout (buildTree joins with one), so
+// the presence of a backslash identifies the OS convention. Single-sourced here
+// and reused by compact() so the "\\" vs "/" rule lives in one place.
+const sepOf = (path: string): string => (path.includes("\\") ? "\\" : "/");
+
 function splitPath(cwd: string): {
   root: string;
   sep: string;
   segments: string[];
 } {
-  const sep = cwd.includes("\\") ? "\\" : "/";
+  const sep = sepOf(cwd);
   const drive = /^([A-Za-z]:)(.*)$/.exec(cwd);
   if (drive) {
     return { root: drive[1], sep, segments: splitSegments(drive[2], sep) };
@@ -190,5 +198,49 @@ export function buildTree(sessions: SessionMetadata[]): SessionTree {
   return {
     roots: [...roots.values()].map(finalize).sort(byNameCaseInsensitive),
     unknown: unknown ? finalize(unknown) : null,
+  };
+}
+
+// #77: collapse pure single-child pass-through folders so the tree starts at the
+// largest common parent per cluster instead of the drive root. A `C:\…\Temp\
+// worktrees\42-hotfix` chain — seven navigation rows that own nothing — becomes a
+// single node. Kept a separate pure transform over `buildTree`'s output (not
+// folded into buildTree, not in the render layer) so grouping and compaction stay
+// independently DOM-free-unit-testable, matching the sessionTree convention;
+// `useSessionScan` composes them as the outermost transform, so compaction runs
+// on the post-filter tree once #69's temp/worktree filter lands.
+//
+// Rule: merge a folder into its single child iff it owns no sessions
+// (`ownCount === 0`) AND has exactly one child. Stop at the first folder that
+// owns sessions or branches (`> 1` child). The survivor keeps the *deepest*
+// folder's identity — `path`, `sessions`, `children`, and both counts — so
+// selection, expansion, and counts are unchanged; only its `name` becomes the
+// joined path of the absorbed segments (the full path for a chain rooted at the
+// drive, a relative segment join for a chain below a branch).
+function compact(node: FolderNode): FolderNode {
+  if (node.children.length === 0) return node; // a leaf can't collapse further
+  // Children keep finalize's order — sorted by each folder's own (first-segment)
+  // name. A merged child's label gains a collapsed-path suffix ("app" -> "app\\src"),
+  // but that suffix is display decoration and deliberately does NOT re-sort it: the
+  // node still represents the "app" folder and should sit where "app" sorts among
+  // its siblings, not get bumped past "app-v2" by the trailing "\\src".
+  const children = node.children.map(compact);
+  if (node.ownCount === 0 && children.length === 1) {
+    const only = children[0];
+    // The separator lives in the child's path — a drive root's own path ("D:")
+    // carries none — so infer it there. `joinPath` handles the POSIX root, whose
+    // path already ends in "/".
+    const sep = sepOf(only.path);
+    return { ...only, name: joinPath(node.name, sep, only.name) };
+  }
+  return { ...node, children };
+}
+
+// Apply single-child chain compaction across the whole tree. The "(unknown)"
+// group is a childless owning node, so it never collapses and is passed through.
+export function compactTree(tree: SessionTree): SessionTree {
+  return {
+    roots: tree.roots.map(compact),
+    unknown: tree.unknown,
   };
 }

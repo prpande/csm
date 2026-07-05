@@ -55,7 +55,9 @@ describe("useSessionScan", () => {
     expect(result.current.status).toBe("scanning");
 
     act(() => emit().onBatch([session("a", "D:\\src\\csm")]));
-    expect(result.current.tree.roots[0].name).toBe("D:");
+    // The hook composes buildTree with the #77 compactTree, so the single
+    // unbroken chain collapses to one root labelled with the full path.
+    expect(result.current.tree.roots[0].name).toBe("D:\\src\\csm");
     expect(result.current.tree.roots[0].totalCount).toBe(1);
 
     act(() => emit().onDone());
