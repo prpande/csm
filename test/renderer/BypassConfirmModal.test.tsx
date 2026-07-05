@@ -69,6 +69,20 @@ test("the cancel button cancels without confirming", () => {
   expect(onConfirm).not.toHaveBeenCalled();
 });
 
+test("initial focus lands on the safe downgrade action", () => {
+  // #98 AC: after the button restructure, focus must still open on the safe
+  // (acceptEdits downgrade) action, not the risky bypass — guards the ref
+  // surviving the layout change.
+  render(
+    <BypassConfirmModal
+      session={session}
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />,
+  );
+  expect(document.activeElement).toBe(screen.getByTestId("confirm-downgrade"));
+});
+
 test("Escape cancels the modal", () => {
   const onCancel = vi.fn();
   render(

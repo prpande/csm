@@ -5,8 +5,11 @@
   gap: 1rem;
   height: 44px;
   padding: 0 0.75rem;
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border);
+  /* Brand-tinted bar (#100): warm terracotta wash + a solid accent underline so
+     the title bar reads as brand orange and stays distinct from the pane surfaces
+     in both themes. Child controls keep their own surfaces and stay contrast-safe. */
+  background: var(--bg-titlebar);
+  border-bottom: 3px solid var(--accent);
   flex: 0 0 auto;
 }
 

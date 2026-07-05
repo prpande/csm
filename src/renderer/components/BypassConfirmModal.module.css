@@ -49,34 +49,68 @@
   white-space: nowrap;
 }
 
+/* #98: compact layout — the safe primary owns the full top row; the risky bypass
+   and Cancel share a shorter second row, so the footprint is two rows, not three
+   full-height stacked buttons. */
 .actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.actions button {
-  width: 100%;
-  padding: 9px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  cursor: pointer;
+.secondaryRow {
+  display: flex;
+  gap: 8px;
 }
 
+.secondaryRow button {
+  flex: 1 1 0;
+}
+
+.actions button {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 550;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease;
+}
+
+.actions button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actions button {
+    transition: none;
+  }
+}
+
+/* Safe / recommended action: solid accent — the strongest "do this instead" cue. */
 .primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--on-accent);
+  width: 100%;
 }
 
+/* Risky action: red outline idle, fills only on hover — never the resting look. */
 .danger {
-  background: var(--chip-bypass-bg);
+  background: transparent;
   border-color: var(--chip-bypass-text);
   color: var(--chip-bypass-text);
 }
 
+.danger:hover {
+  background: var(--chip-bypass-bg);
+}
+
+/* Demoted dismiss: quiet ghost until hovered. */
 .cancel {
   background: transparent;
   color: var(--text-muted);
