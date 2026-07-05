@@ -47,6 +47,42 @@ test("chip carries the risk-coded variant and the raw mode label", () => {
   }
 });
 
+test("shows an Open button (per-row accessible name) that fires onOpen on click", () => {
+  const onOpen = vi.fn();
+  const session = makeSession();
+  render(<SessionRow session={session} rowHeight={56} onOpen={onOpen} />);
+  // Accessible name is per-row so screen-reader users can tell the buttons apart.
+  const btn = screen.getByRole("button", {
+    name: "Open session: Refactor the parser",
+  });
+  // Visible label stays the short "Open".
+  expect(btn.textContent).toBe("Open");
+  fireEvent.click(btn);
+  expect(onOpen).toHaveBeenCalledTimes(1);
+  expect(onOpen).toHaveBeenCalledWith(session);
+});
+
+test("clicking the Open button does not double-fire via the row (stopPropagation)", () => {
+  const onOpen = vi.fn();
+  render(<SessionRow session={makeSession()} rowHeight={56} onOpen={onOpen} />);
+  fireEvent.click(screen.getByRole("button", { name: /open session:/i }));
+  expect(onOpen).toHaveBeenCalledTimes(1);
+});
+
+test("the Open button's dblclick event is stopped before it reaches the row's reopen handler", () => {
+  // Scope note: fireEvent.doubleClick dispatches only a synthetic `dblclick`,
+  // NOT the real browser sequence (click, click, dblclick). So this asserts
+  // exactly one thing — the button's dblclick handler stops that event from
+  // bubbling to the row's onDoubleClick reopen. It does NOT model a real
+  // double-click, where the two intervening `click`s would each call onOpen
+  // (both collapsed by the reopen consumer's in-flight guard). The button owns
+  // its own gesture regardless of that guard.
+  const onOpen = vi.fn();
+  render(<SessionRow session={makeSession()} rowHeight={56} onOpen={onOpen} />);
+  fireEvent.doubleClick(screen.getByRole("button", { name: /open session:/i }));
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
 test("double-click fires onOpen with the session (the reopen gesture)", () => {
   const onOpen = vi.fn();
   const session = makeSession();

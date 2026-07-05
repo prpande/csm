@@ -36,6 +36,7 @@ export function FolderPane({
     <section className={styles.pane}>
       <header className={styles.header}>
         <div className={styles.headerText}>
+          <div className={styles.eyebrow}>Folder</div>
           <div className={styles.path}>{selected.path}</div>
           <div className={styles.meta}>
             {count} {count === 1 ? "session" : "sessions"} · most recent first
