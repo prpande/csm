@@ -31,9 +31,9 @@
 }
 
 /* Frameless shell (#86): the title bar doubles as the OS drag handle. Gated on
-   the desktop flag main injects on dom-ready, so in a browser / unit test the
-   region is inert. Every interactive child is reset to no-drag or the drag layer
-   swallows its clicks. */
+   the desktop flag the renderer entry (main.tsx) sets from window.csm.isDesktop
+   before first paint, so in a browser / unit test the region is inert. Every
+   interactive child is reset to no-drag or the drag layer swallows its clicks. */
 :global([data-shell="desktop"]) .titleBar {
   -webkit-app-region: drag;
 }
