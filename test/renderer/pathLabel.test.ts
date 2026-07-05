@@ -40,6 +40,20 @@ describe("truncatePathLabel", () => {
     expect(tight).toContain("…");
   });
 
+  it("preserves the leaf even when it alone exceeds the budget (CSS ellipsis backstops)", () => {
+    // A leaf longer than the whole budget can't fit; truncation keeps the root
+    // head + full leaf and lets the row's CSS end-ellipsis clip the overflow,
+    // rather than dropping the one segment the user navigates to. The returned
+    // string is intentionally allowed to exceed `max` here.
+    const label = "D:\\a\\b\\this-leaf-name-is-longer-than-the-whole-budget";
+    const out = truncatePathLabel(label, 20);
+    expect(out.startsWith("D:")).toBe(true);
+    expect(
+      out.endsWith("\\this-leaf-name-is-longer-than-the-whole-budget"),
+    ).toBe(true);
+    expect(out).toContain("…");
+  });
+
   it("does not fabricate an ellipsis when only root and leaf exist", () => {
     // A long two-segment label has no middle segment to drop; leave it for the
     // CSS end-ellipsis rather than emit a misleading "root…leaf".
