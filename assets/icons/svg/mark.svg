@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="CSM">
+  <defs>
+    <linearGradient id="o" x1="0.12" y1="0" x2="0.88" y2="1">
+      <stop offset="0" stop-color="#e8845a"></stop>
+      <stop offset="0.55" stop-color="#e27a48"></stop>
+      <stop offset="1" stop-color="#d9622b"></stop>
+    </linearGradient>
+    <linearGradient id="c" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#342c26"></stop>
+      <stop offset="1" stop-color="#2a2420"></stop>
+    </linearGradient>
+    <filter id="s" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="10" stdDeviation="13" flood-color="#2a2420" flood-opacity="0.22"></feDropShadow>
+    </filter>
+    <mask id="cut">
+      <rect width="512" height="512" fill="#ffffff"></rect>
+      <rect x="259" y="97" width="158" height="158" rx="47" fill="#000000" transform="rotate(-9 338 176)"></rect>
+    </mask>
+  </defs>
+  <path d="M250,140 H206 Q140,140 140,206 V306 Q140,372 206,372 H306 Q372,372 372,306 V262" fill="none" stroke="url(#c)" stroke-width="64" stroke-linecap="round" stroke-linejoin="round" mask="url(#cut)"></path>
+  <rect x="268" y="106" width="140" height="140" rx="40" fill="url(#o)" filter="url(#s)" transform="rotate(-9 338 176)"></rect>
+</svg>

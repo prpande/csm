@@ -11,3 +11,9 @@ package-lock.json
 # tables and rewrites emphasis markers — churn with no value on authored prose.
 # Code, config, and HTML are still formatted.
 *.md
+
+# Vendored icon-kit source (SVG masters + the generator's React component).
+# Externally produced design assets, not app code — kept byte-identical to the
+# kit so they can be re-synced; not worth Prettier churn. The app doesn't import
+# them (the title bar renders png/icon_32.png as an <img>).
+assets/icons/

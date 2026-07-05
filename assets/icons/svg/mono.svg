@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="CSM">
+  <defs>
+    <mask id="cut">
+      <rect width="512" height="512" fill="#ffffff"></rect>
+      <rect x="259" y="97" width="158" height="158" rx="47" fill="#000000" transform="rotate(-9 338 176)"></rect>
+    </mask>
+  </defs>
+  <path d="M250,140 H206 Q140,140 140,206 V306 Q140,372 206,372 H306 Q372,372 372,306 V262" fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round" mask="url(#cut)"></path>
+  <rect x="268" y="106" width="140" height="140" rx="40" fill="currentColor" transform="rotate(-9 338 176)"></rect>
+</svg>
