@@ -69,10 +69,14 @@ test("clicking the Open button does not double-fire via the row (stopPropagation
   expect(onOpen).toHaveBeenCalledTimes(1);
 });
 
-test("a double-click on the Open button does not bubble to the row's reopen gesture", () => {
-  // The button swallows its own dblclick, so it can't also trigger the row's
-  // double-click reopen — the row stays self-consistent regardless of whether
-  // the reopen consumer collapses duplicate launches.
+test("the Open button's dblclick event is stopped before it reaches the row's reopen handler", () => {
+  // Scope note: fireEvent.doubleClick dispatches only a synthetic `dblclick`,
+  // NOT the real browser sequence (click, click, dblclick). So this asserts
+  // exactly one thing — the button's dblclick handler stops that event from
+  // bubbling to the row's onDoubleClick reopen. It does NOT model a real
+  // double-click, where the two intervening `click`s would each call onOpen
+  // (both collapsed by the reopen consumer's in-flight guard). The button owns
+  // its own gesture regardless of that guard.
   const onOpen = vi.fn();
   render(<SessionRow session={makeSession()} rowHeight={56} onOpen={onOpen} />);
   fireEvent.doubleClick(screen.getByRole("button", { name: /open session:/i }));

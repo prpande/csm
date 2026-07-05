@@ -5,11 +5,15 @@
   min-width: 0;
   background: var(--bg);
   overflow: hidden;
-  /* Space between the folder header and the first session row so the header
-     reads as the folder title, not another row (#97). Only applies when a
-     folder is selected — the empty state has a single child. Sits outside the
-     list's scroll container, so the virtualization math is untouched. */
-  gap: 0.5rem;
+}
+
+/* Space between the folder header and the first session row so the header
+   reads as the folder title, not another row (#97). Scoped to the element that
+   follows the header (the session list) rather than a container-wide `gap`, so
+   it can't leak into the empty state or any future sibling of .pane. Sits
+   outside the list's scroll container, so the virtualization math is untouched. */
+.header + * {
+  margin-top: 0.5rem;
 }
 
 .empty {
