@@ -56,7 +56,29 @@ export function TreeNode({
               onToggle(node.path);
             }}
           >
-            {isExpanded ? "▾" : "▸"}
+            {/* A single right-pointing chevron that rotates 90° when open (matches
+                PRism's file tree). Presentational — the button's aria-label
+                carries the state. */}
+            <svg
+              className={
+                isExpanded
+                  ? `${styles.chevronIcon} ${styles.chevronIconOpen}`
+                  : styles.chevronIcon
+              }
+              viewBox="0 0 16 16"
+              width="15"
+              height="15"
+              aria-hidden="true"
+            >
+              <path
+                d="M6 4l4 4-4 4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </button>
         ) : (
           <span className={styles.chevronSpacer} aria-hidden="true" />

@@ -57,13 +57,26 @@
   width: 16px;
   height: 16px;
   padding: 0;
-  font-size: 0.7rem;
-  line-height: 1;
   color: var(--text-muted);
   background: transparent;
   border: none;
   cursor: pointer;
   flex: 0 0 auto;
+}
+
+/* Right-pointing chevron; rotates to point down when the folder is open. */
+.chevronIcon {
+  transition: transform 0.15s ease;
+}
+
+.chevronIconOpen {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevronIcon {
+    transition: none;
+  }
 }
 
 .chevronSpacer {
