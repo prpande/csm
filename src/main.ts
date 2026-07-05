@@ -1,8 +1,10 @@
-import { app, BrowserWindow, ipcMain, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, session, shell } from "electron";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isOpenableUrl, navigationDecision, windowOpenDecision } from "./urls";
 import { registerIpcHandlers } from "./ipc";
+import { registerWindowControls } from "./windowControls";
+import { applicationMenuTemplate } from "./menu";
 import { CH } from "./ipcChannels";
 import { createSessionStore } from "./sessionStore";
 import { createSettingsStore } from "./settingsStore";
@@ -117,8 +119,24 @@ if (!gotLock) {
     now: () => Date.now(),
   });
 
+  // Custom traffic-light window controls (#86). Same lazy sender guard as above;
+  // getWindow resolves the live window so it survives the macOS activate recreate.
+  registerWindowControls({
+    ipcMain,
+    isTrustedSender: (sender) =>
+      mainWindow !== null && sender === mainWindow.webContents,
+    getWindow: () => mainWindow,
+  });
+
   void app.whenReady().then(() => {
     const devServerUrl = resolveDevServerUrl();
+    // Frameless shell (#86): drop the default menu bar so the SPA title bar is the
+    // only chrome — except macOS, which keeps a native menu so ⌘C/⌘V/⌘A/⌘Q work in
+    // inputs. A null template yields no application menu at all.
+    const menuTemplate = applicationMenuTemplate(process.platform);
+    Menu.setApplicationMenu(
+      menuTemplate ? Menu.buildFromTemplate(menuTemplate) : null,
+    );
     // CSP is installed ONCE here (onHeadersReceived is a single-slot, session-wide
     // API) — not inside createWindow, which the macOS `activate` path re-enters.
     installCsp(devServerUrl);
@@ -141,8 +159,11 @@ async function createWindow(devServerUrl: string | undefined): Promise<void> {
     width: 1280,
     height: 860,
     show: false,
-    // Native title bar for the scaffold; the custom full-width title bar with our
-    // own window controls is deferred to a later phase.
+    // Frameless shell (#86): "hidden" drops the native title bar while KEEPING the
+    // OS resize borders + drop shadow (unlike frame:false). We draw the caption
+    // buttons ourselves (WindowControls) for an identical look on every platform,
+    // so there is deliberately NO titleBarOverlay.
+    titleBarStyle: "hidden",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -150,6 +171,30 @@ async function createWindow(devServerUrl: string | undefined): Promise<void> {
       sandbox: true,
     },
   });
+
+  // macOS still shows its native traffic lights under titleBarStyle:"hidden"; hide
+  // them so the SPA's own controls are the only window controls, matching Windows.
+  if (process.platform === "darwin") {
+    mainWindow.setWindowButtonVisibility(false);
+  }
+
+  // Tell the renderer it's running in the desktop shell so the drag region and
+  // window controls activate. Set from the main process on dom-ready, NOT the
+  // preload: the preload runs at document-start when document.documentElement can
+  // be null, and a throwing DOM write there would abort the bridge before it
+  // exposes window.csm — leaving the window-control dots permanently absent.
+  mainWindow.webContents.on("dom-ready", () => {
+    mainWindow?.webContents
+      .executeJavaScript(`document.documentElement.dataset.shell = "desktop";`)
+      .catch(() => {});
+  });
+
+  // Keep the renderer's maximize/restore glyph in sync with OS-driven state changes
+  // (double-click the title bar, snap-maximize) as well as our own toggle button.
+  const sendMaximized = (maximized: boolean): void =>
+    mainWindow?.webContents.send(CH.windowMaximizedChanged, maximized);
+  mainWindow.on("maximize", () => sendMaximized(true));
+  mainWindow.on("unmaximize", () => sendMaximized(false));
 
   // External-link safety net. Under sandbox:true Electron denies window.open by
   // default and would drop renderer-initiated opens silently, so route every one

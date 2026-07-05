@@ -1,0 +1,62 @@
+/* Traffic-light cluster for the frameless shell (#86). Kept out of the OS drag
+   region so the buttons stay clickable inside the draggable title bar. */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 0.25rem;
+  -webkit-app-region: no-drag;
+}
+
+.dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  /* Glyph ink; the dots use the fixed macOS traffic-light palette on every OS so
+     the control reads the same cross-platform (per PRism parity). */
+  color: var(--wc-glyph);
+}
+
+.minimize {
+  background: var(--wc-minimize);
+}
+.maximize {
+  background: var(--wc-maximize);
+}
+.close {
+  background: var(--wc-close);
+}
+
+.glyph {
+  width: 8px;
+  height: 8px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* Reveal glyphs only on cluster hover/focus — dots read as plain lights at rest. */
+  opacity: 0;
+}
+
+.controls:hover .glyph,
+.dot:focus-visible .glyph {
+  opacity: 1;
+}
+
+.dot:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .glyph {
+    transition: opacity 120ms ease;
+  }
+}

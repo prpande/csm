@@ -74,6 +74,24 @@ contextBridge.exposeInMainWorld("csm", {
     return cleanup;
   },
 
+  // Custom frameless-shell window controls (#86). minimize/toggle/close are
+  // fire-and-forget; isMaximized seeds the button glyph; onMaximizedChange keeps it
+  // in sync with OS-driven maximize/unmaximize (double-click title bar, snap, etc.)
+  // and returns an unsubscribe that detaches the ipcRenderer listener.
+  windowControls: {
+    minimize: (): void => ipcRenderer.send(CH.windowMinimize),
+    toggleMaximize: (): void => ipcRenderer.send(CH.windowToggleMaximize),
+    close: (): void => ipcRenderer.send(CH.windowClose),
+    isMaximized: (): Promise<boolean> =>
+      ipcRenderer.invoke(CH.windowIsMaximized),
+    onMaximizedChange: (cb: (maximized: boolean) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, maximized: boolean): void =>
+        cb(maximized);
+      ipcRenderer.on(CH.windowMaximizedChanged, listener);
+      return () => ipcRenderer.off(CH.windowMaximizedChanged, listener);
+    },
+  },
+
   reopenSession: (req: ReopenRequestDto): Promise<ReopenResult> =>
     ipcRenderer.invoke(CH.sessionReopen, req),
 
