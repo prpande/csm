@@ -1,4 +1,5 @@
 import type { FolderNode } from "../../sessionTree";
+import { truncatePathLabel } from "../pathLabel";
 import styles from "./FolderTree.module.css";
 
 interface TreeNodeProps {
@@ -60,7 +61,12 @@ export function TreeNode({
         ) : (
           <span className={styles.chevronSpacer} aria-hidden="true" />
         )}
-        <span className={styles.name}>{node.name}</span>
+        {/* A #77-compacted chain label can be a long path. Middle-truncate it so
+            the drive head and the leaf both stay visible; the tooltip carries the
+            full label, and the CSS end-ellipsis backstops the rare overflow. */}
+        <span className={styles.name} title={node.name}>
+          {truncatePathLabel(node.name)}
+        </span>
         {isSelectable && <span className={styles.count}>{node.ownCount}</span>}
       </div>
       {isExpanded && (

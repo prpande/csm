@@ -1,6 +1,7 @@
-import { test, expect } from "vitest";
+import { test, expect, describe } from "vitest";
 import {
   buildTree,
+  compactTree,
   findFolder,
   UNKNOWN_CWD,
   type FolderNode,
@@ -186,4 +187,127 @@ test("findFolder resolves the pinned (unknown) group", () => {
 test("findFolder returns null when no node has the path", () => {
   const tree = buildTree([s("a", "D:\\src\\csm")]);
   expect(findFolder(tree, "D:\\nope")).toBeNull();
+});
+
+// compactTree — the pure #77 transform over buildTree output. It collapses a
+// folder into its single child when the folder has zero own sessions and exactly
+// one child, stopping at the first folder that owns sessions or branches. The
+// merged node's label is the joined path of the absorbed segments; its identity
+// (path, sessions, children, counts) is the deepest node's, so selection,
+// expansion, and counts survive.
+
+describe("compactTree", () => {
+  test("an unbroken single-child chain collapses to one node labelled with the full path", () => {
+    const cwd = "C:\\Users\\praty\\AppData\\Local\\Temp\\worktrees\\42-hotfix";
+    const { roots, unknown } = compactTree(buildTree([s("a", cwd)]));
+    expect(unknown).toBeNull();
+    expect(roots).toHaveLength(1);
+
+    const node = roots[0];
+    expect(node.name).toBe(cwd); // full path as the single label
+    expect(node.path).toBe(cwd); // deepest node's identity preserved
+    expect(node.children).toEqual([]);
+    expect(node.ownCount).toBe(1); // owns sessions -> selectable
+    expect(node.sessions.map((x) => x.sessionId)).toEqual(["a"]);
+  });
+
+  test("a branch point is preserved and stays expandable", () => {
+    const { roots } = compactTree(
+      buildTree([s("a", "D:\\src\\csm"), s("b", "D:\\src\\prism")]),
+    );
+    // D: -> src collapses (D: has one child, no own sessions), stopping at src,
+    // which branches into two children.
+    expect(roots).toHaveLength(1);
+    const src = roots[0];
+    expect(src.name).toBe("D:\\src");
+    expect(src.path).toBe("D:\\src");
+    expect(src.ownCount).toBe(0); // pure navigation node
+    expect(src.children.map((c) => c.name)).toEqual(["csm", "prism"]);
+  });
+
+  test("a folder that owns sessions is never absorbed, even with a single child", () => {
+    const { roots } = compactTree(
+      buildTree([s("parent", "D:\\src"), s("nested", "D:\\src\\csm")]),
+    );
+    // D: (0 own, 1 child) collapses into src, but src owns a session so the
+    // chain stops there — src is NOT absorbed into csm.
+    expect(roots).toHaveLength(1);
+    const src = roots[0];
+    expect(src.name).toBe("D:\\src");
+    expect(src.ownCount).toBe(1);
+    expect(src.sessions.map((x) => x.sessionId)).toEqual(["parent"]);
+    expect(src.children.map((c) => c.name)).toEqual(["csm"]);
+    expect(child(src, "csm").ownCount).toBe(1);
+  });
+
+  test("a sub-chain below a branch collapses with a relative joined label", () => {
+    const { roots } = compactTree(
+      buildTree([s("flat", "D:\\src\\csm"), s("deep", "D:\\src\\a\\b\\c")]),
+    );
+    const src = roots[0];
+    expect(src.name).toBe("D:\\src");
+    // csm is a plain leaf; the a->b->c chain collapses to one relative-labelled
+    // node whose identity is the deepest folder.
+    expect(src.children.map((c) => c.name)).toEqual(["a\\b\\c", "csm"]);
+    const abc = child(src, "a\\b\\c");
+    expect(abc.path).toBe("D:\\src\\a\\b\\c");
+    expect(abc.ownCount).toBe(1);
+    expect(abc.sessions.map((x) => x.sessionId)).toEqual(["deep"]);
+  });
+
+  test("cross-drive / disjoint sessions produce multiple compact roots", () => {
+    const { roots } = compactTree(
+      buildTree([s("c", "C:\\work\\proj"), s("d", "D:\\src\\csm")]),
+    );
+    expect(roots).toHaveLength(2);
+    expect(roots.map((r) => r.name)).toEqual([
+      "C:\\work\\proj",
+      "D:\\src\\csm",
+    ]);
+    for (const r of roots) {
+      expect(r.ownCount).toBe(1);
+      expect(r.children).toEqual([]);
+    }
+  });
+
+  test("a POSIX single-child chain collapses with a '/'-joined label", () => {
+    const { roots } = compactTree(buildTree([s("a", "/Users/x/proj")]));
+    expect(roots).toHaveLength(1);
+    const node = roots[0];
+    expect(node.name).toBe("/Users/x/proj");
+    expect(node.path).toBe("/Users/x/proj");
+    expect(node.ownCount).toBe(1);
+  });
+
+  test("totalCount and subtree counts survive compaction", () => {
+    const { roots } = compactTree(
+      buildTree([s("deep", "D:\\src\\csm\\sub"), s("side", "D:\\src\\other")]),
+    );
+    const src = roots[0];
+    expect(src.name).toBe("D:\\src"); // D: absorbed, branch at src
+    expect(src.totalCount).toBe(2);
+    expect(src.ownCount).toBe(0);
+    // csm -> sub is a single-child chain: collapses to one "csm\\sub" leaf.
+    expect(src.children.map((c) => c.name)).toEqual(["csm\\sub", "other"]);
+    expect(child(src, "csm\\sub").totalCount).toBe(1);
+    expect(child(src, "csm\\sub").path).toBe("D:\\src\\csm\\sub");
+  });
+
+  test("the (unknown) group passes through unchanged", () => {
+    const { roots, unknown } = compactTree(
+      buildTree([s("u", UNKNOWN_CWD), s("real", "D:\\src\\csm")]),
+    );
+    expect(unknown).not.toBeNull();
+    expect(unknown!.name).toBe(UNKNOWN_CWD);
+    expect(unknown!.ownCount).toBe(1);
+    expect(roots[0].name).toBe("D:\\src\\csm"); // real chain still compacts
+  });
+
+  test("findFolder resolves a selectable leaf by its surviving path after compaction", () => {
+    const tree = compactTree(buildTree([s("a", "D:\\src\\csm")]));
+    // The absorbed intermediate paths (D:, D:\\src) are gone, but the deepest
+    // node's path — the only selectable identity — survives.
+    expect(findFolder(tree, "D:\\src\\csm")?.ownCount).toBe(1);
+    expect(findFolder(tree, "D:")).toBeNull();
+  });
 });

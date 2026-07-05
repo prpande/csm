@@ -192,3 +192,42 @@ export function buildTree(sessions: SessionMetadata[]): SessionTree {
     unknown: unknown ? finalize(unknown) : null,
   };
 }
+
+// #77: collapse pure single-child pass-through folders so the tree starts at the
+// largest common parent per cluster instead of the drive root. A `C:\…\Temp\
+// worktrees\42-hotfix` chain — seven navigation rows that own nothing — becomes a
+// single node. Kept a separate pure transform over `buildTree`'s output (not
+// folded into buildTree, not in the render layer) so grouping and compaction stay
+// independently DOM-free-unit-testable, matching the sessionTree convention;
+// `useSessionScan` composes them as the outermost transform, so compaction runs
+// on the post-filter tree once #69's temp/worktree filter lands.
+//
+// Rule: merge a folder into its single child iff it owns no sessions
+// (`ownCount === 0`) AND has exactly one child. Stop at the first folder that
+// owns sessions or branches (`> 1` child). The survivor keeps the *deepest*
+// folder's identity — `path`, `sessions`, `children`, and both counts — so
+// selection, expansion, and counts are unchanged; only its `name` becomes the
+// joined path of the absorbed segments (the full path for a chain rooted at the
+// drive, a relative segment join for a chain below a branch).
+function compact(node: FolderNode): FolderNode {
+  if (node.children.length === 0) return node; // a leaf can't collapse further
+  const children = node.children.map(compact);
+  if (node.ownCount === 0 && children.length === 1) {
+    const only = children[0];
+    // The separator lives in the child's path — a drive root's own path ("D:")
+    // carries none — so infer it there. `joinPath` handles the POSIX root, whose
+    // path already ends in "/".
+    const sep = only.path.includes("\\") ? "\\" : "/";
+    return { ...only, name: joinPath(node.name, sep, only.name) };
+  }
+  return { ...node, children };
+}
+
+// Apply single-child chain compaction across the whole tree. The "(unknown)"
+// group is a childless owning node, so it never collapses and is passed through.
+export function compactTree(tree: SessionTree): SessionTree {
+  return {
+    roots: tree.roots.map(compact),
+    unknown: tree.unknown,
+  };
+}
