@@ -1,10 +1,12 @@
 import { app, BrowserWindow, ipcMain, Menu, session, shell } from "electron";
 import * as path from "node:path";
+import * as fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { isOpenableUrl, navigationDecision, windowOpenDecision } from "./urls";
 import { registerIpcHandlers } from "./ipc";
 import { registerWindowControls } from "./windowControls";
 import { applicationMenuTemplate } from "./menu";
+import { windowIconPath, macDockIconPath, type IconEnv } from "./appIcon";
 import { CH } from "./ipcChannels";
 import { createSessionStore } from "./sessionStore";
 import { createSettingsStore } from "./settingsStore";
@@ -12,6 +14,15 @@ import { reopenSession } from "./reopenSession";
 import { defaultProjectsRoot } from "./pathAdapter";
 
 let mainWindow: BrowserWindow | null = null;
+
+// Env for the runtime app-icon resolvers (src/appIcon.ts). __dirname is dist/, so
+// assets/ sits one level up in a dev run; resourcesPath is the packaged fallback.
+const iconEnv = (): IconEnv => ({
+  platform: process.platform,
+  appDir: __dirname,
+  resourcesPath: process.resourcesPath,
+  exists: fs.existsSync,
+});
 
 // Built renderer: dist/renderer/index.html, resolved relative to the compiled
 // main.js in dist/. Loaded via loadFile() in the packaged app.
@@ -132,6 +143,12 @@ if (!gotLock) {
   });
 
   void app.whenReady().then(() => {
+    // macOS dock icon for a dev run — app.dock is only populated post-ready and is
+    // undefined off macOS, so this must run inside whenReady. No-ops when the .icns
+    // isn't present (a packaged .app uses its baked bundle icon).
+    const dockIcon = macDockIconPath(iconEnv());
+    if (dockIcon && app.dock) app.dock.setIcon(dockIcon);
+
     const devServerUrl = resolveDevServerUrl();
     // Frameless shell (#86): drop the default menu bar so the SPA title bar is the
     // only chrome — except macOS, which keeps a native menu so ⌘C/⌘V/⌘A/⌘Q work in
@@ -158,10 +175,14 @@ if (!gotLock) {
 }
 
 async function createWindow(devServerUrl: string | undefined): Promise<void> {
+  // Windows taskbar/window icon for a dev run (undefined → Electron default; a
+  // packaged exe embeds its own icon and assets/ isn't shipped, so it no-ops there).
+  const iconPath = windowIconPath(iconEnv());
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
     show: false,
+    ...(iconPath ? { icon: iconPath } : {}),
     // Frameless shell (#86): "hidden" drops the native title bar while KEEPING the
     // OS resize borders + drop shadow (unlike frame:false). We draw the caption
     // buttons ourselves (WindowControls) for an identical look on every platform,
