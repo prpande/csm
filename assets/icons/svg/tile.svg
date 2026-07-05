@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="CSM">
+  <defs>
+    <linearGradient id="csm-o" x1="0.12" y1="0" x2="0.88" y2="1">
+      <stop offset="0" stop-color="#e8845a"></stop>
+      <stop offset="0.55" stop-color="#e27a48"></stop>
+      <stop offset="1" stop-color="#d9622b"></stop>
+    </linearGradient>
+    <linearGradient id="csm-c" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#342c26"></stop>
+      <stop offset="1" stop-color="#2a2420"></stop>
+    </linearGradient>
+    <linearGradient id="csm-p" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7f1e8"></stop>
+      <stop offset="1" stop-color="#ebe2d4"></stop>
+    </linearGradient>
+    <filter id="csm-sf" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="10" stdDeviation="13" flood-color="#2a2420" flood-opacity="0.26"></feDropShadow>
+    </filter>
+    <filter id="csm-lift" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000000" flood-opacity="0.42"></feDropShadow>
+    </filter>
+  </defs>
+  <rect x="40" y="40" width="432" height="432" rx="112" fill="url(#csm-p)" filter="url(#csm-lift)"></rect>
+  <rect x="40.5" y="40.5" width="431" height="431" rx="111.5" fill="none" stroke="#2a2420" stroke-opacity="0.07" stroke-width="1"></rect>
+  <g transform="translate(-6,3)">
+    <path d="M250,140 H206 Q140,140 140,206 V306 Q140,372 206,372 H306 Q372,372 372,306 V262" fill="none" stroke="url(#csm-c)" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"></path>
+    <rect x="259" y="97" width="158" height="158" rx="47" fill="#f2ebe1" transform="rotate(-9 338 176)"></rect>
+    <rect x="268" y="106" width="140" height="140" rx="40" fill="url(#csm-o)" filter="url(#csm-sf)" transform="rotate(-9 338 176)"></rect>
+  </g>
+</svg>
