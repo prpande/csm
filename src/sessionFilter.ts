@@ -25,14 +25,22 @@ function canonPath(p: string): { path: string; sep: string } {
   return { path: win ? s.toLowerCase() : s, sep };
 }
 
-/** True when `cwd` is at or under any of `roots`. The `+ sep` boundary keeps a
- *  shared-prefix sibling (`/tmpfoo` vs root `/tmp`) from matching. */
-export function isUnderAnyRoot(cwd: string, roots: readonly string[]): boolean {
+// Match a cwd against roots that are ALREADY canonicalized — the shared core so
+// the roots are canonicalized once per batch, not once per session. The `+ sep`
+// boundary keeps a shared-prefix sibling (`/tmpfoo` vs root `/tmp`) from matching.
+function isUnderCanonRoots(
+  cwd: string,
+  canonRoots: readonly { path: string; sep: string }[],
+): boolean {
   const c = canonPath(cwd).path;
-  return roots.some((r) => {
-    const { path: root, sep } = canonPath(r);
-    return c === root || c.startsWith(root + sep);
-  });
+  return canonRoots.some(
+    ({ path: root, sep }) => c === root || c.startsWith(root + sep),
+  );
+}
+
+/** True when `cwd` is at or under any of `roots`. */
+export function isUnderAnyRoot(cwd: string, roots: readonly string[]): boolean {
+  return isUnderCanonRoots(cwd, roots.map(canonPath));
 }
 
 /** Drop sessions whose cwd lives under a temp root; empty `roots` is a no-op
@@ -42,5 +50,6 @@ export function filterOutTemp(
   roots: readonly string[],
 ): SessionMetadata[] {
   if (roots.length === 0) return [...sessions];
-  return sessions.filter((s) => !isUnderAnyRoot(s.cwd, roots));
+  const canonRoots = roots.map(canonPath);
+  return sessions.filter((s) => !isUnderCanonRoots(s.cwd, canonRoots));
 }
