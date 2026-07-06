@@ -39,6 +39,9 @@ export interface IpcHandlerDeps {
   isTrustedSender: (sender: unknown) => boolean;
   createSessionStore: (rootDir: string) => {
     scan(opts: ScanOptions): Promise<GroupedSessions>;
+    getFacts(
+      sessionIds: string[],
+    ): Promise<import("./ipcTypes").SessionFactsResult>;
   };
   settingsStore: {
     getClaudePath(): Promise<string>;
@@ -82,6 +85,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     now,
   } = deps;
 
+  // One long-lived store: its sessionId->path map and fact cache must persist
+  // across a scan and the subsequent getFacts calls (a fresh-per-scan store would
+  // discard the path map getFacts needs). The metadata cache is keyed by
+  // path+mtime, so reusing it across re-scans is a strict win.
+  const store = createSessionStore(projectsRoot);
+
   // listSessions: streaming scan. The renderer mints scanId; we push a batch per
   // non-empty tier then a single done. scan is fail-soft (a missing projects root
   // resolves to empty folders), so an empty scan yields done-with-no-batch; error
@@ -101,7 +110,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       }
     };
     try {
-      const store = createSessionStore(projectsRoot);
       await store.scan({
         now: now(),
         onBatch: (sessions) => post(CH.sessionsBatch, { scanId, sessions }),
@@ -144,6 +152,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       }
     },
   );
+
+  // getFacts: batch fact fetch for the enriched-row third line (#115). Untrusted
+  // frame or a non-array arg → {} (the requested ids resolve to the error dash, an
+  // unreachable case for the trusted main window). Non-string elements are filtered
+  // before delegating; store.getFacts does the UUID/path/cache work.
+  ipcMain.handle(CH.sessionGetFacts, async (event, ids) => {
+    if (!isTrustedSender(event.sender) || !Array.isArray(ids)) return {};
+    const valid = ids.filter((x): x is string => typeof x === "string");
+    return store.getFacts(valid);
+  });
 
   // settings: an untrusted frame gets the benign default (get) / a no-op (set) —
   // only the main window's preload can legitimately reach these.

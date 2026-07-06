@@ -35,6 +35,7 @@ function fakeBridge() {
     getClaudePath: vi.fn(async () => "claude"),
     getTempRoots: vi.fn(async () => []),
     setClaudePath: vi.fn(async () => {}),
+    getFacts: vi.fn(async () => ({})),
   };
   return {
     unsubscribe,
@@ -264,6 +265,7 @@ describe("FolderBrowser", () => {
       getClaudePath: vi.fn(async () => "claude"),
       getTempRoots: vi.fn(async () => ["C:\\Temp"]),
       setClaudePath: vi.fn(async () => {}),
+      getFacts: vi.fn(async () => ({})),
     };
     render(<FolderBrowser />);
     await act(async () => {}); // resolve getTempRoots -> tempRoots state

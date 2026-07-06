@@ -1,6 +1,8 @@
 // Pure presentational helpers for a session row (spec §9). No DOM — unit-tested
 // in test/main. The row component is a thin shell over these.
 
+import type { SessionFacts } from "./sessionParser";
+
 /** Risk-coded chip variants (spec §9). Any unrecognized/absent mode is `default`
  *  so the row never crashes on an unexpected value (AC 3). */
 export type ChipVariant = "bypass" | "info" | "plan" | "default";
@@ -51,4 +53,86 @@ export function formatRelativeTime(iso: string | null, nowMs: number): string {
   if (sec < 26 * DAY) return plural(Math.round(sec / DAY), "day");
   if (sec < 320 * DAY) return plural(Math.round(sec / MONTH), "month");
   return plural(Math.round(sec / YEAR), "year");
+}
+
+// Friendly names for known model ids; an unknown id is stripped of its "claude-"
+// prefix and capped so a future id still renders legibly on the row.
+const MODEL_NAMES: Record<string, string> = {
+  "claude-opus-4-8": "Opus 4.8",
+  "claude-sonnet-4-6": "Sonnet 4.6",
+  "claude-haiku-4-5": "Haiku 4.5",
+  "claude-fable-5": "Fable 5",
+};
+const MODEL_MAX = 20;
+
+export function formatModel(
+  firstModel: string | null,
+  distinctModelCount: number,
+): string | null {
+  if (firstModel === null) return null;
+  let name = MODEL_NAMES[firstModel];
+  if (!name) {
+    const stripped = firstModel.replace(/^claude-/, "");
+    name =
+      stripped.length > MODEL_MAX
+        ? stripped.slice(0, MODEL_MAX) + "…"
+        : stripped;
+  }
+  return distinctModelCount > 1 ? `${name} +${distinctModelCount - 1}` : name;
+}
+
+export function formatTokens(n: number): string {
+  let body: string;
+  if (n >= 1_000_000) body = `${(n / 1_000_000).toFixed(1)}M`;
+  else if (n >= 1_000) body = `${Math.floor(n / 1_000)}k`;
+  else body = String(n);
+  return `${body} tok`;
+}
+
+const MIN_MS = 60_000;
+const DAY_MS = 24 * 60 * MIN_MS;
+
+// Wall-clock span first..last, prefixed "span " and capped at >24h so a session
+// reopened across days is not read as effort. Omitted (null) when there is no
+// second timestamp to measure against.
+export function formatSpan(
+  firstActivity: string | null,
+  lastActivity: string | null,
+): string | null {
+  if (!firstActivity || !lastActivity) return null;
+  const a = Date.parse(firstActivity);
+  const b = Date.parse(lastActivity);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  const ms = b - a;
+  if (ms <= 0) return null;
+  if (ms >= DAY_MS) return "span >24h";
+  if (ms < MIN_MS) return "span <1m";
+  const mins = Math.round(ms / MIN_MS);
+  // Rounding a span just under 24h (e.g. 23h59m45s) can push mins to 1440, which
+  // would render "24h 0m"; treat that as the >24h cap so the boundary is airtight.
+  if (mins >= 24 * 60) return "span >24h";
+  if (mins >= 60) return `span ${Math.floor(mins / 60)}h ${mins % 60}m`;
+  return `span ${mins}m`;
+}
+
+export function formatEdited(editedFileCount: number): string {
+  return editedFileCount === 0 ? "read-only" : `${editedFileCount} edited`;
+}
+
+export function formatMessages(messageCount: number): string {
+  return `${messageCount} msgs`;
+}
+
+// Ordered, ready-to-render segments: msgs · span · edited · model · tokens.
+// span and model are dropped when null so the row never shows a dangling "·".
+export function factSegments(facts: SessionFacts): string[] {
+  const span = formatSpan(facts.firstActivity, facts.lastActivity);
+  const model = formatModel(facts.firstModel, facts.distinctModelCount);
+  return [
+    formatMessages(facts.messageCount),
+    ...(span ? [span] : []),
+    formatEdited(facts.editedFileCount),
+    ...(model ? [model] : []),
+    formatTokens(facts.outputTokens),
+  ];
 }

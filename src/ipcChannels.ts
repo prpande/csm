@@ -20,6 +20,9 @@ export const CH = {
   // renderer's prefers-color-scheme (and native menus/dialogs) follow it.
   themeGet: "settings:getTheme",
   themeSet: "settings:setTheme",
+  // Batch fact fetch for the enriched-row third line (#115). Renderer sends the
+  // visible-window sessionIds; main returns per-id facts or { error: true }.
+  sessionGetFacts: "session:getFacts",
   // Resolved system temp roots (request/response). The renderer prefix-matches
   // cwds against these to hide throwaway temp sessions by default (#69) without
   // re-implementing os-dependent root discovery.

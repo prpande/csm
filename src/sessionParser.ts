@@ -244,3 +244,119 @@ export function parseSession(
   if (messageCount !== undefined) meta.messageCount = messageCount;
   return meta;
 }
+
+export interface SessionFacts {
+  sessionId: string;
+  messageCount: number;
+  firstActivity: string | null;
+  lastActivity: string | null;
+  editedFileCount: number;
+  firstModel: string | null;
+  distinctModelCount: number;
+  outputTokens: number;
+}
+
+// Tools that MUTATE a file. editedFileCount counts distinct paths from these only
+// (a read tool touching a file is not an edit). NotebookEdit carries notebook_path.
+const MUTATING_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
+// tool_use blocks on an assistant message (content is a block array), else [].
+function toolUseBlocks(rec: Record_): Record_[] {
+  const message = rec.message;
+  if (!isRecord(message) || !Array.isArray(message.content)) return [];
+  return message.content.filter(
+    (b): b is Record_ => isRecord(b) && b.type === "tool_use",
+  );
+}
+
+// An assistant record counts as a conversational turn only if it emitted text
+// (a pure tool-use turn is plumbing, not a message the user reads).
+function hasAssistantText(rec: Record_): boolean {
+  const message = rec.message;
+  if (!isRecord(message)) return false;
+  const content = message.content;
+  if (typeof content === "string") return content.trim().length > 0;
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (b) =>
+      isRecord(b) &&
+      b.type === "text" &&
+      asNonEmptyString(b.text) !== undefined,
+  );
+}
+
+/**
+ * Extract the heavier per-session facts for the enriched row (spec §4). Shares the
+ * record-walk with parseSession but is a SEPARATE entry point so the light list
+ * path stays cheap. Pure and fail-soft: a junk file yields an all-fallback object.
+ */
+export function extractSessionFacts(
+  sessionId: string,
+  content: string,
+): SessionFacts {
+  const records = parseRecords(content);
+
+  let messageCount = 0;
+  let firstActivity: string | null = null;
+  let lastActivity: string | null = null;
+  let firstModel: string | null = null;
+  let outputTokens = 0;
+  const editedPaths = new Set<string>();
+  const models = new Set<string>();
+
+  for (const r of records) {
+    // Genuine conversational turns only.
+    if (r.type === "user") {
+      if (eligiblePromptText(r) !== undefined) messageCount++;
+    } else if (r.type === "assistant" && hasAssistantText(r)) {
+      messageCount++;
+    }
+
+    // First/last record carrying a timestamp.
+    const ts = asString(r.timestamp);
+    if (ts) {
+      if (firstActivity === null) firstActivity = ts;
+      lastActivity = ts;
+    }
+
+    if (r.type !== "assistant") continue;
+    const message = isRecord(r.message) ? r.message : undefined;
+    if (!message) continue;
+
+    // Model: first REAL id wins; a placeholder (<synthetic> / any "<"-prefixed) is skipped.
+    const model = asNonEmptyString(message.model);
+    if (model && !model.startsWith("<")) {
+      if (firstModel === null) firstModel = model;
+      models.add(model);
+    }
+
+    // Output tokens: sum, cache-read excluded (we read only output_tokens).
+    const usage = isRecord(message.usage) ? message.usage : undefined;
+    if (usage && typeof usage.output_tokens === "number") {
+      outputTokens += usage.output_tokens;
+    }
+
+    // Distinct mutated file paths.
+    for (const block of toolUseBlocks(r)) {
+      if (typeof block.name !== "string" || !MUTATING_TOOLS.has(block.name))
+        continue;
+      const input = isRecord(block.input) ? block.input : undefined;
+      const path = input
+        ? (asNonEmptyString(input.file_path) ??
+          asNonEmptyString(input.notebook_path))
+        : undefined;
+      if (path) editedPaths.add(path);
+    }
+  }
+
+  return {
+    sessionId,
+    messageCount,
+    firstActivity,
+    lastActivity,
+    editedFileCount: editedPaths.size,
+    firstModel,
+    distinctModelCount: models.size,
+    outputTokens,
+  };
+}

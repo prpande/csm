@@ -6,6 +6,7 @@ import type {
   ReopenRequestDto,
   ReopenResult,
   SessionsListener,
+  SessionFactsResult,
   ThemePreference,
 } from "../../ipcTypes";
 
@@ -47,6 +48,9 @@ export interface CsmBridge {
   /** Reopen a closed session; resolves to a discriminated result (never throws
    * an untrusted error message across IPC). */
   reopenSession(req: ReopenRequestDto): Promise<ReopenResult>;
+  /** Batch fact fetch for enriched rows (#115). Always wired under the preload,
+   *  like listSessions/reopenSession. */
+  getFacts(ids: string[]): Promise<SessionFactsResult>;
   getClaudePath(): Promise<string>;
   setClaudePath(value: string): Promise<void>;
   /** Resolved system temp roots, for the renderer's default-on hide filter

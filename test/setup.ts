@@ -20,6 +20,7 @@ beforeEach(() => {
     getClaudePath: vi.fn(async () => "claude"),
     getTempRoots: vi.fn(async () => []),
     setClaudePath: vi.fn(async () => {}),
+    getFacts: vi.fn(async () => ({})),
   };
 });
 

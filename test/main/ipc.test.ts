@@ -1,4 +1,4 @@
-import { test, expect, vi } from "vitest";
+import { describe, test, expect, vi } from "vitest";
 import { registerIpcHandlers, type IpcHandlerDeps } from "../../src/ipc";
 import { CH } from "../../src/ipcChannels";
 import {
@@ -48,7 +48,7 @@ const emptyScan: ScanImpl = async () => ({ folders: [] });
 // Zero-arg impl is assignable to the (rootDir) => … dep type; vi.fn still records
 // the actual call args, so `toHaveBeenCalledWith(projectsRoot)` holds.
 const makeCreateStore = (scan: ScanImpl) =>
-  vi.fn(() => ({ scan: vi.fn(scan) }));
+  vi.fn(() => ({ scan: vi.fn(scan), getFacts: vi.fn(async () => ({})) }));
 
 function setup(overrides: Partial<IpcHandlerDeps> = {}) {
   const { ipcMain, handlers } = fakeIpc();
@@ -141,17 +141,25 @@ test("a scan that throws sends error, not done", async () => {
 });
 
 test("sessions:scan from an untrusted sender runs no scan and sends nothing", async () => {
-  const createSessionStore = makeCreateStore(emptyScan);
+  const scanSpy = vi.fn(emptyScan);
+  const createSessionStore = vi.fn(() => ({
+    scan: scanSpy,
+    getFacts: vi.fn(async () => ({})),
+  }));
   const { handlers } = setup({ createSessionStore });
   const other = fakeSender();
   await handlers.get(CH.sessionsScan)!({ sender: other.sender }, "scan-x");
-  expect(createSessionStore).not.toHaveBeenCalled();
+  // store is created once at registration (hoisted); the scan itself must not run
+  expect(scanSpy).not.toHaveBeenCalled();
   expect(other.sent).toEqual([]);
 });
 
 test("sessions:scan resolves projectsRoot and injects now() into the scan", async () => {
   const scanSpy = vi.fn(emptyScan);
-  const createSessionStore = vi.fn(() => ({ scan: scanSpy }));
+  const createSessionStore = vi.fn(() => ({
+    scan: scanSpy,
+    getFacts: vi.fn(async () => ({})),
+  }));
   const { call } = setup({
     createSessionStore,
     projectsRoot: "/root/projects",
@@ -163,10 +171,15 @@ test("sessions:scan resolves projectsRoot and injects now() into the scan", asyn
 });
 
 test("sessions:scan ignores a non-string scanId", async () => {
-  const createSessionStore = makeCreateStore(emptyScan);
+  const scanSpy = vi.fn(emptyScan);
+  const createSessionStore = vi.fn(() => ({
+    scan: scanSpy,
+    getFacts: vi.fn(async () => ({})),
+  }));
   const { call, sent } = setup({ createSessionStore });
   await call(CH.sessionsScan, 42);
-  expect(createSessionStore).not.toHaveBeenCalled();
+  // store is created once at registration (hoisted); the scan itself must not run
+  expect(scanSpy).not.toHaveBeenCalled();
   expect(sent).toEqual([]);
 });
 
@@ -320,4 +333,47 @@ test("settings:setTheme from an untrusted sender never persists or applies", asy
   await handlers.get(CH.themeSet)!({ sender: other.sender }, "dark");
   expect(settingsStore.setTheme).not.toHaveBeenCalled();
   expect(setNativeTheme).not.toHaveBeenCalled();
+});
+
+// ---- session:getFacts --------------------------------------------------------
+
+describe("session:getFacts handler", () => {
+  test("delegates valid ids to store.getFacts for a trusted sender", async () => {
+    const getFacts = vi.fn(async (ids: string[]) =>
+      Object.fromEntries(ids.map((id) => [id, { error: true as const }])),
+    );
+    const createSessionStore = vi.fn(() => ({
+      scan: vi.fn(emptyScan),
+      getFacts,
+    }));
+    const { handlers, trusted } = setup({ createSessionStore });
+    const res = await handlers.get(CH.sessionGetFacts)!({ sender: trusted }, [
+      "a",
+      5,
+      "b",
+    ]);
+    expect(getFacts).toHaveBeenCalledWith(["a", "b"]); // non-strings filtered out
+    expect(res).toEqual({ a: { error: true }, b: { error: true } });
+  });
+
+  test("returns {} for an untrusted sender without calling the store", async () => {
+    const getFacts = vi.fn();
+    const createSessionStore = vi.fn(() => ({
+      scan: vi.fn(emptyScan),
+      getFacts,
+    }));
+    const { handlers } = setup({ createSessionStore });
+    const other = fakeSender();
+    expect(
+      await handlers.get(CH.sessionGetFacts)!({ sender: other.sender }, ["a"]),
+    ).toEqual({});
+    expect(getFacts).not.toHaveBeenCalled();
+  });
+
+  test("returns {} when args is not an array", async () => {
+    const { handlers, trusted } = setup();
+    expect(
+      await handlers.get(CH.sessionGetFacts)!({ sender: trusted }, "nope"),
+    ).toEqual({});
+  });
 });

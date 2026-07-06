@@ -9,7 +9,13 @@
 
 import { readdir, stat, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { parseSession, type SessionMetadata } from "./sessionParser";
+import {
+  parseSession,
+  extractSessionFacts,
+  type SessionMetadata,
+  type SessionFacts,
+} from "./sessionParser";
+import { isValidSessionId } from "./terminalLauncher";
 
 export interface SessionFolder {
   cwd: string;
@@ -33,6 +39,8 @@ export interface ScanOptions {
 // without ESM module-mocking; defaults to the real pure parser.
 export interface StoreDeps {
   parse?: (sessionId: string, content: string) => SessionMetadata;
+  /** Injectable so tests can spy fact-parse call counts (cache behaviour). */
+  extractFacts?: (sessionId: string, content: string) => SessionFacts;
 }
 
 // Session files. The match is case-sensitive: Claude always writes lowercase
@@ -125,6 +133,14 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   // Cache key: `filepath\0mtimeMs`. A changed file gets a new key (its stale
   // entry is simply never read again), so an unchanged file resolves instantly.
   const cache = new Map<string, SessionMetadata>();
+  const extractFacts = deps.extractFacts ?? extractSessionFacts;
+  // sessionId -> absolute path, captured during scan. The on-disk path is grouped
+  // by ENCODED cwd, not the authoritative in-file cwd, so it is not derivable from
+  // a session's cwd — it must be remembered here. Populated in scan(), read by getFacts().
+  const pathById = new Map<string, string>();
+  // Fact cache keyed by sessionId; value carries the mtime:size freshness key.
+  // SUCCESS entries only — an error is returned transiently so it retries.
+  const factCache = new Map<string, { key: string; facts: SessionFacts }>();
 
   async function readMetadata(
     entry: FileEntry,
@@ -154,6 +170,10 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   async function scan(opts: ScanOptions): Promise<GroupedSessions> {
     const { now, onBatch } = opts;
     const files = await collectFiles(rootDir);
+    // Rebuild the id->path map each scan so sessions deleted between scans
+    // don't linger as stale entries (the map is exactly one scan's worth).
+    pathById.clear();
+    for (const f of files) pathById.set(sessionIdOf(f.path), f.path);
 
     // Bucket by tier; within a tier, newest file first.
     const tiers: FileEntry[][] = Array.from({ length: TIER_COUNT }, () => []);
@@ -194,5 +214,46 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
     return { folders };
   }
 
-  return { scan };
+  // Per-id worker. Returns the cached/fresh facts, or { error: true } for any
+  // validation or I/O failure. Errors are never cached so transient failures retry.
+  async function getOneFacts(
+    id: string,
+  ): Promise<SessionFacts | { error: true }> {
+    // UUID gate BEFORE any path use — a hostile id can never reach the filesystem.
+    if (!isValidSessionId(id)) return { error: true };
+    const path = pathById.get(id);
+    if (!path) return { error: true };
+
+    let st;
+    try {
+      st = await stat(path);
+    } catch {
+      return { error: true };
+    }
+
+    const key = `${st.mtimeMs}:${st.size}`;
+    const cached = factCache.get(id);
+    if (cached && cached.key === key) return cached.facts;
+
+    let content: string;
+    try {
+      content = await readFile(path, "utf8");
+    } catch {
+      return { error: true }; // NOT cached: a transient failure retries next call.
+    }
+
+    const facts = extractFacts(id, content);
+    factCache.set(id, { key, facts });
+    return facts;
+  }
+
+  async function getFacts(
+    sessionIds: string[],
+  ): Promise<Record<string, SessionFacts | { error: true }>> {
+    const out: Record<string, SessionFacts | { error: true }> = {};
+    for (const id of sessionIds) out[id] = await getOneFacts(id);
+    return out;
+  }
+
+  return { scan, getFacts };
 }

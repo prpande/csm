@@ -28,6 +28,13 @@ export type LaunchOS = "win32" | "darwin";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// Boolean form of the UUID gate for callers that validate without throwing (e.g.
+// the getFacts IPC path). Reuses the SAME regex as assertLaunchInputs so the two
+// can never drift.
+export function isValidSessionId(id: string): boolean {
+  return UUID_RE.test(id);
+}
+
 // Control + exotic separators: C0 (U+0000–U+001F), DEL + C1 (U+007F–U+009F, which
 // includes NEL U+0085), and the Unicode line/paragraph separators (U+2028/U+2029).
 // A C0 newline cannot live inside a macOS AppleScript double-quoted literal at all;
