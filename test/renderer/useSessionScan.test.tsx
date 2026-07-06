@@ -17,6 +17,7 @@ const session = (id: string, cwd: string): SessionMetadata => ({
   title: id,
   permissionMode: "default",
   lastActivity: null,
+  gitBranch: null,
 });
 
 function fakeBridge() {

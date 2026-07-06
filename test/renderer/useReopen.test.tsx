@@ -10,6 +10,7 @@ const makeSession = (over: Partial<SessionMetadata> = {}): SessionMetadata => ({
   title: "Refactor the parser",
   permissionMode: "default",
   lastActivity: null,
+  gitBranch: null,
   ...over,
 });
 

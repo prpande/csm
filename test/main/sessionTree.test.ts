@@ -26,6 +26,7 @@ const s = (
   title: sessionId,
   permissionMode: "default",
   lastActivity,
+  gitBranch: null,
   ...extra,
 });
 

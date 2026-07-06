@@ -232,6 +232,7 @@ test("cache: second scan re-parses only changed files", async () => {
       title: id,
       permissionMode: "default" as const,
       lastActivity: "2026-06-30T10:00:00.000Z",
+      gitBranch: null,
     } satisfies SessionMetadata;
   });
   const store = createSessionStore(root, { parse });

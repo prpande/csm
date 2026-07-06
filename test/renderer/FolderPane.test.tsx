@@ -13,6 +13,7 @@ const makeFolder = (label: string, n: number): FolderNode => {
     title: `${label} session ${i}`,
     permissionMode: "default" as const,
     lastActivity: null,
+    gitBranch: null,
   }));
   return {
     name: label,
