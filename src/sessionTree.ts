@@ -300,13 +300,19 @@ function recount(node: FolderNode): FolderNode {
   return { ...node, ownCount, totalCount };
 }
 
-// Drain every session under one `worktrees` node into `rolled` + `branches`,
-// tagging each with its gitBranch (or the `<name>` folder as fallback).
+// Drain every session under one `worktrees` node's `<name>` children into
+// `rolled` + `branches`, tagging each with its gitBranch (or the `<name>` folder
+// as fallback). Returns the `worktrees` node rebuilt with its children removed,
+// or null when nothing remains. It survives (childless) only if it carries its
+// OWN sessions — a session whose cwd is literally `<repo>/.claude/worktrees`,
+// with no `<name>` segment. Such a session is not inside a named worktree (no
+// branch to tag), so it is kept in place rather than rolled up; dropping it would
+// be silent data loss, the same class as the `.claude`-self case in drainClaudeDir.
 function drainWorktreesDir(
   worktreesNode: FolderNode,
   rolled: SessionMetadata[],
   branches: Map<string, string>,
-): void {
+): FolderNode | null {
   for (const worktree of worktreesNode.children) {
     const wtSessions: SessionMetadata[] = [];
     collectSessions(worktree, wtSessions);
@@ -315,6 +321,9 @@ function drainWorktreesDir(
       branches.set(sess.sessionId, sess.gitBranch ?? worktree.name);
     }
   }
+  return worktreesNode.sessions.length > 0
+    ? recount({ ...worktreesNode, children: [] })
+    : null;
 }
 
 // Process one `.claude` node: drain its `worktrees` child into `rolled`/`branches`
@@ -328,7 +337,8 @@ function drainClaudeDir(
   const kept: FolderNode[] = [];
   for (const grandchild of claudeNode.children) {
     if (grandchild.name === WORKTREES_DIR) {
-      drainWorktreesDir(grandchild, rolled, branches);
+      const keptWorktrees = drainWorktreesDir(grandchild, rolled, branches);
+      if (keptWorktrees) kept.push(keptWorktrees);
     } else {
       kept.push(rollUpNode(grandchild));
     }
