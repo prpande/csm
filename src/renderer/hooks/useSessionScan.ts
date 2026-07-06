@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { buildTree, compactTree, type SessionTree } from "../../sessionTree";
+import {
+  buildTree,
+  compactTree,
+  rollUpWorktrees,
+  type SessionTree,
+} from "../../sessionTree";
 import type { SessionMetadata } from "../../sessionParser";
 import type { CsmBridge } from "../types/csm";
 import { currentBridge } from "../bridge";
@@ -59,10 +64,16 @@ export function useSessionScan(
   }, [bridge, nonce]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
-  // #77: compact single-child chains as the outermost transform, so the tree
-  // starts at the largest common parent per cluster (and, once #69 lands, runs on
-  // the post-filter tree).
-  const tree = useMemo(() => compactTree(buildTree(sessions)), [sessions]);
+  // Transform pipeline (innermost first):
+  //   buildTree        — group flat sessions into the drive/folder tree
+  //   rollUpWorktrees  — fold .claude/worktrees sessions into their owning
+  //                      project and prune the worktree nodes (#101/#69)
+  //   compactTree      — collapse single-child chains (#77), outermost so it runs
+  //                      on the post-roll-up tree
+  const tree = useMemo(
+    () => compactTree(rollUpWorktrees(buildTree(sessions))),
+    [sessions],
+  );
 
   return { tree, status, refresh };
 }

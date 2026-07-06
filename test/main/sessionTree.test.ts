@@ -3,8 +3,10 @@ import {
   buildTree,
   compactTree,
   findFolder,
+  rollUpWorktrees,
   UNKNOWN_CWD,
   type FolderNode,
+  type SessionTree,
 } from "../../src/sessionTree";
 import type { SessionMetadata } from "../../src/sessionParser";
 
@@ -324,5 +326,95 @@ describe("compactTree", () => {
     // node's path — the only selectable identity — survives.
     expect(findFolder(tree, "D:\\src\\csm")?.ownCount).toBe(1);
     expect(findFolder(tree, "D:")).toBeNull();
+  });
+});
+
+// rollUpWorktrees — folds each `<repo>/.claude/worktrees/<name>` session into the
+// owning project node (the node before `.claude`), tagged with its branch, and
+// prunes the worktree subtree. Runs BEFORE compactTree. Pure, node-safe.
+describe("rollUpWorktrees", () => {
+  const WT = "D:\\src\\csm\\.claude\\worktrees\\icon-rebrand";
+  // The owning project node in an un-compacted D:\src\<name> tree.
+  const csmOf = (tree: SessionTree): FolderNode =>
+    child(child(tree.roots[0], "src"), "csm");
+
+  test("folds a .claude/worktrees session into the owning project node", () => {
+    const tree = rollUpWorktrees(
+      buildTree([
+        s("own", "D:\\src\\csm", "2026-07-01T00:00:00.000Z"),
+        s("wt", WT, "2026-07-02T00:00:00.000Z", { gitBranch: "feature-x" }),
+      ]),
+    );
+    const csm = csmOf(tree);
+    // worktree subtree removed
+    expect(csm.children.find((c) => c.name === ".claude")).toBeUndefined();
+    // both sessions belong to the owning node, newest-first
+    expect(csm.sessions.map((x) => x.sessionId)).toEqual(["wt", "own"]);
+    expect(csm.ownCount).toBe(2);
+    // provenance: only the worktree session is tagged, with its gitBranch
+    expect(csm.worktreeBranches.get("wt")).toBe("feature-x");
+    expect(csm.worktreeBranches.has("own")).toBe(false);
+  });
+
+  test("branch label falls back to the worktree folder name when gitBranch is null", () => {
+    const csm = csmOf(rollUpWorktrees(buildTree([s("wt", WT)])));
+    expect(csm.worktreeBranches.get("wt")).toBe("icon-rebrand");
+  });
+
+  test("synthesizes a selectable owning node for a worktree-only project", () => {
+    const csm = csmOf(
+      rollUpWorktrees(buildTree([s("wt", WT, null, { gitBranch: "b" })])),
+    );
+    expect(csm.ownCount).toBe(1); // now selectable
+    expect(csm.sessions[0].sessionId).toBe("wt");
+    expect(csm.children).toHaveLength(0); // .claude chain gone
+  });
+
+  test("a deeper worktree cwd (subdir) still rolls up under the folder-name branch", () => {
+    const csm = csmOf(
+      rollUpWorktrees(buildTree([s("wt", WT + "\\packages\\app")])),
+    );
+    expect(csm.sessions.map((x) => x.sessionId)).toEqual(["wt"]);
+    expect(csm.worktreeBranches.get("wt")).toBe("icon-rebrand");
+  });
+
+  test("prunes only the worktrees subtree, keeping other .claude children", () => {
+    const tree = rollUpWorktrees(
+      buildTree([s("wt", WT), s("o", "D:\\src\\csm\\.claude\\projects\\p")]),
+    );
+    const csm = csmOf(tree);
+    const claude = csm.children.find((c) => c.name === ".claude");
+    expect(claude).toBeDefined();
+    expect(claude!.children.map((c) => c.name)).toEqual(["projects"]);
+    expect(csm.worktreeBranches.get("wt")).toBe("icon-rebrand");
+  });
+
+  test("leaves a non-worktree tree structurally unchanged with empty provenance", () => {
+    const tree = rollUpWorktrees(
+      buildTree([s("a", "D:\\src\\csm"), s("b", "D:\\src\\other\\sub")]),
+    );
+    expect(csmOf(tree).worktreeBranches.size).toBe(0);
+    expect(csmOf(tree).ownCount).toBe(1);
+    expect(child(child(tree.roots[0], "src"), "other").totalCount).toBe(1);
+  });
+
+  test("conserves the total count and composes under compactTree", () => {
+    const built = buildTree([
+      s("own", "D:\\src\\csm"),
+      s("wt", WT, null, { gitBranch: "b" }),
+    ]);
+    const before = built.roots[0].totalCount; // own + wt = 2
+    const rolled = rollUpWorktrees(built);
+    expect(rolled.roots[0].totalCount).toBe(before);
+    // compaction then collapses D: -> src -> csm to one node, provenance intact
+    const top = compactTree(rolled).roots[0];
+    expect(top.name).toBe("D:\\src\\csm");
+    expect(top.ownCount).toBe(2);
+    expect(top.worktreeBranches.get("wt")).toBe("b");
+  });
+
+  test("the (unknown) group passes through unchanged", () => {
+    const tree = rollUpWorktrees(buildTree([s("u", UNKNOWN_CWD)]));
+    expect(tree.unknown?.ownCount).toBe(1);
   });
 });

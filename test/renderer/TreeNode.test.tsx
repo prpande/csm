@@ -15,6 +15,7 @@ const leaf = (name: string, path: string): FolderNode => ({
   children: [],
   ownCount: 1,
   totalCount: 1,
+  worktreeBranches: new Map(),
 });
 
 const branch = (): FolderNode => ({
@@ -24,6 +25,7 @@ const branch = (): FolderNode => ({
   children: [leaf("csm", "D:\\src\\csm")],
   ownCount: 0,
   totalCount: 1,
+  worktreeBranches: new Map(),
 });
 
 const noop = () => {};

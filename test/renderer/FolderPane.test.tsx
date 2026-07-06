@@ -22,6 +22,7 @@ const makeFolder = (label: string, n: number): FolderNode => {
     children: [],
     ownCount: n,
     totalCount: n,
+    worktreeBranches: new Map(),
   };
 };
 
