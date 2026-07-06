@@ -2,7 +2,8 @@ import { test, expect, describe } from "vitest";
 import { extractSessionFacts } from "../../src/sessionParser";
 
 // Build a JSONL body from record objects (one JSON per line).
-const jsonl = (...recs: unknown[]) => recs.map((r) => JSON.stringify(r)).join("\n");
+const jsonl = (...recs: unknown[]) =>
+  recs.map((r) => JSON.stringify(r)).join("\n");
 
 const userPrompt = (text: string, ts?: string) => ({
   type: "user",
@@ -14,13 +15,20 @@ const toolResult = (ts?: string) => ({
   ...(ts ? { timestamp: ts } : {}),
   message: { role: "user", content: [{ type: "tool_result", content: "ok" }] },
 });
-const assistant = (
-  opts: { text?: string; model?: string; out?: number; edits?: string[]; reads?: string[]; ts?: string },
-) => {
+const assistant = (opts: {
+  text?: string;
+  model?: string;
+  out?: number;
+  edits?: string[];
+  reads?: string[];
+  ts?: string;
+}) => {
   const content: unknown[] = [];
   if (opts.text) content.push({ type: "text", text: opts.text });
-  for (const p of opts.edits ?? []) content.push({ type: "tool_use", name: "Edit", input: { file_path: p } });
-  for (const p of opts.reads ?? []) content.push({ type: "tool_use", name: "Read", input: { file_path: p } });
+  for (const p of opts.edits ?? [])
+    content.push({ type: "tool_use", name: "Edit", input: { file_path: p } });
+  for (const p of opts.reads ?? [])
+    content.push({ type: "tool_use", name: "Read", input: { file_path: p } });
   return {
     type: "assistant",
     ...(opts.ts ? { timestamp: opts.ts } : {}),
@@ -28,7 +36,9 @@ const assistant = (
       role: "assistant",
       ...(opts.model ? { model: opts.model } : {}),
       content,
-      ...(opts.out !== undefined ? { usage: { output_tokens: opts.out, cache_read_input_tokens: 999 } } : {}),
+      ...(opts.out !== undefined
+        ? { usage: { output_tokens: opts.out, cache_read_input_tokens: 999 } }
+        : {}),
     },
   };
 };
@@ -59,18 +69,35 @@ describe("extractSessionFacts", () => {
   test("editedFileCount dedupes mutating tools and ignores reads", () => {
     const content = jsonl(
       assistant({ edits: ["/a.ts", "/a.ts"], reads: ["/b.ts"] }),
-      { type: "assistant", message: { content: [{ type: "tool_use", name: "NotebookEdit", input: { notebook_path: "/n.ipynb" } }] } },
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              name: "NotebookEdit",
+              input: { notebook_path: "/n.ipynb" },
+            },
+          ],
+        },
+      },
     );
     expect(extractSessionFacts("s", content).editedFileCount).toBe(2);
   });
 
   test("read-only session reports zero edited", () => {
-    const content = jsonl(userPrompt("hi"), assistant({ text: "hi", reads: ["/a.ts"] }));
+    const content = jsonl(
+      userPrompt("hi"),
+      assistant({ text: "hi", reads: ["/a.ts"] }),
+    );
     expect(extractSessionFacts("s", content).editedFileCount).toBe(0);
   });
 
   test("sums output_tokens excluding cache-read", () => {
-    const content = jsonl(assistant({ text: "a", out: 100 }), assistant({ text: "b", out: 250 }));
+    const content = jsonl(
+      assistant({ text: "a", out: 100 }),
+      assistant({ text: "b", out: 250 }),
+    );
     expect(extractSessionFacts("s", content).outputTokens).toBe(350);
   });
 
@@ -87,8 +114,14 @@ describe("extractSessionFacts", () => {
   test("junk/malformed file yields a well-formed fallback, no throw", () => {
     const f = extractSessionFacts("s", "not json\n{bad\n");
     expect(f).toEqual({
-      sessionId: "s", messageCount: 0, firstActivity: null, lastActivity: null,
-      editedFileCount: 0, firstModel: null, distinctModelCount: 0, outputTokens: 0,
+      sessionId: "s",
+      messageCount: 0,
+      firstActivity: null,
+      lastActivity: null,
+      editedFileCount: 0,
+      firstModel: null,
+      distinctModelCount: 0,
+      outputTokens: 0,
     });
   });
 });

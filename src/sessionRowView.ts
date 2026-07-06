@@ -65,12 +65,18 @@ const MODEL_NAMES: Record<string, string> = {
 };
 const MODEL_MAX = 20;
 
-export function formatModel(firstModel: string | null, distinctModelCount: number): string | null {
+export function formatModel(
+  firstModel: string | null,
+  distinctModelCount: number,
+): string | null {
   if (firstModel === null) return null;
   let name = MODEL_NAMES[firstModel];
   if (!name) {
     const stripped = firstModel.replace(/^claude-/, "");
-    name = stripped.length > MODEL_MAX ? stripped.slice(0, MODEL_MAX) + "…" : stripped;
+    name =
+      stripped.length > MODEL_MAX
+        ? stripped.slice(0, MODEL_MAX) + "…"
+        : stripped;
   }
   return distinctModelCount > 1 ? `${name} +${distinctModelCount - 1}` : name;
 }
@@ -89,7 +95,10 @@ const DAY_MS = 24 * 60 * MIN_MS;
 // Wall-clock span first..last, prefixed "span " and capped at >24h so a session
 // reopened across days is not read as effort. Omitted (null) when there is no
 // second timestamp to measure against.
-export function formatSpan(firstActivity: string | null, lastActivity: string | null): string | null {
+export function formatSpan(
+  firstActivity: string | null,
+  lastActivity: string | null,
+): string | null {
   if (!firstActivity || !lastActivity) return null;
   const a = Date.parse(firstActivity);
   const b = Date.parse(lastActivity);

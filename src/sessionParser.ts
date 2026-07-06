@@ -278,7 +278,10 @@ function hasAssistantText(rec: Record_): boolean {
   if (typeof content === "string") return content.trim().length > 0;
   if (!Array.isArray(content)) return false;
   return content.some(
-    (b) => isRecord(b) && b.type === "text" && asNonEmptyString(b.text) !== undefined,
+    (b) =>
+      isRecord(b) &&
+      b.type === "text" &&
+      asNonEmptyString(b.text) !== undefined,
   );
 }
 
@@ -287,7 +290,10 @@ function hasAssistantText(rec: Record_): boolean {
  * record-walk with parseSession but is a SEPARATE entry point so the light list
  * path stays cheap. Pure and fail-soft: a junk file yields an all-fallback object.
  */
-export function extractSessionFacts(sessionId: string, content: string): SessionFacts {
+export function extractSessionFacts(
+  sessionId: string,
+  content: string,
+): SessionFacts {
   const records = parseRecords(content);
 
   let messageCount = 0;
@@ -332,10 +338,12 @@ export function extractSessionFacts(sessionId: string, content: string): Session
 
     // Distinct mutated file paths.
     for (const block of toolUseBlocks(r)) {
-      if (typeof block.name !== "string" || !MUTATING_TOOLS.has(block.name)) continue;
+      if (typeof block.name !== "string" || !MUTATING_TOOLS.has(block.name))
+        continue;
       const input = isRecord(block.input) ? block.input : undefined;
       const path = input
-        ? (asNonEmptyString(input.file_path) ?? asNonEmptyString(input.notebook_path))
+        ? (asNonEmptyString(input.file_path) ??
+          asNonEmptyString(input.notebook_path))
         : undefined;
       if (path) editedPaths.add(path);
     }

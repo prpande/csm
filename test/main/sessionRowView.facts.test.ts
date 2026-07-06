@@ -1,6 +1,11 @@
 import { test, expect, describe } from "vitest";
 import {
-  formatModel, formatTokens, formatSpan, formatEdited, formatMessages, factSegments,
+  formatModel,
+  formatTokens,
+  formatSpan,
+  formatEdited,
+  formatMessages,
+  factSegments,
 } from "../../src/sessionRowView";
 import type { SessionFacts } from "../../src/sessionParser";
 
@@ -8,7 +13,9 @@ describe("fact formatters", () => {
   test("formatModel: known id, unknown strip+cap, +N, null", () => {
     expect(formatModel("claude-opus-4-8", 1)).toBe("Opus 4.8");
     expect(formatModel("claude-opus-4-8", 3)).toBe("Opus 4.8 +2");
-    expect(formatModel("claude-future-xl-experimental-2027", 1)).toBe("future-xl-experiment…");
+    expect(formatModel("claude-future-xl-experimental-2027", 1)).toBe(
+      "future-xl-experiment…",
+    );
     expect(formatModel(null, 0)).toBeNull();
   });
 
@@ -21,11 +28,21 @@ describe("fact formatters", () => {
   });
 
   test("formatSpan: buckets, >24h cap, omitted when missing/single/degenerate", () => {
-    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-01T03:41:00Z")).toBe("span 3h 41m");
-    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-01T00:05:00Z")).toBe("span 5m");
-    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-01T00:00:30Z")).toBe("span <1m");
-    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-16T00:00:00Z")).toBe("span >24h");
-    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-01T00:00:00Z")).toBeNull();
+    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-01T03:41:00Z")).toBe(
+      "span 3h 41m",
+    );
+    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-01T00:05:00Z")).toBe(
+      "span 5m",
+    );
+    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-01T00:00:30Z")).toBe(
+      "span <1m",
+    );
+    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-16T00:00:00Z")).toBe(
+      "span >24h",
+    );
+    expect(
+      formatSpan("2026-07-01T00:00:00Z", "2026-07-01T00:00:00Z"),
+    ).toBeNull();
     expect(formatSpan(null, "2026-07-01T00:00:00Z")).toBeNull();
   });
 
@@ -37,12 +54,28 @@ describe("fact formatters", () => {
 
   test("factSegments omits null model/span without a dangling separator", () => {
     const base: SessionFacts = {
-      sessionId: "s", messageCount: 42, firstActivity: "2026-07-01T00:00:00Z",
-      lastActivity: "2026-07-01T03:41:00Z", editedFileCount: 5,
-      firstModel: "claude-opus-4-8", distinctModelCount: 1, outputTokens: 1200000,
+      sessionId: "s",
+      messageCount: 42,
+      firstActivity: "2026-07-01T00:00:00Z",
+      lastActivity: "2026-07-01T03:41:00Z",
+      editedFileCount: 5,
+      firstModel: "claude-opus-4-8",
+      distinctModelCount: 1,
+      outputTokens: 1200000,
     };
-    expect(factSegments(base)).toEqual(["42 msgs", "span 3h 41m", "5 edited", "Opus 4.8", "1.2M tok"]);
-    const bare: SessionFacts = { ...base, firstModel: null, firstActivity: null, lastActivity: null };
+    expect(factSegments(base)).toEqual([
+      "42 msgs",
+      "span 3h 41m",
+      "5 edited",
+      "Opus 4.8",
+      "1.2M tok",
+    ]);
+    const bare: SessionFacts = {
+      ...base,
+      firstModel: null,
+      firstActivity: null,
+      lastActivity: null,
+    };
     expect(factSegments(bare)).toEqual(["42 msgs", "5 edited", "1.2M tok"]);
   });
 });

@@ -9,7 +9,12 @@
 
 import { readdir, stat, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { parseSession, extractSessionFacts, type SessionMetadata, type SessionFacts } from "./sessionParser";
+import {
+  parseSession,
+  extractSessionFacts,
+  type SessionMetadata,
+  type SessionFacts,
+} from "./sessionParser";
 import { isValidSessionId } from "./terminalLauncher";
 
 export interface SessionFolder {
@@ -208,7 +213,9 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
 
   // Per-id worker. Returns the cached/fresh facts, or { error: true } for any
   // validation or I/O failure. Errors are never cached so transient failures retry.
-  async function getOneFacts(id: string): Promise<SessionFacts | { error: true }> {
+  async function getOneFacts(
+    id: string,
+  ): Promise<SessionFacts | { error: true }> {
     // UUID gate BEFORE any path use — a hostile id can never reach the filesystem.
     if (!isValidSessionId(id)) return { error: true };
     const path = pathById.get(id);

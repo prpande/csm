@@ -11,8 +11,14 @@ const UUID2 = "22222222-2222-4222-8222-222222222222";
 // Minimal session file: one assistant turn on Opus with 100 output tokens.
 const body = (text: string) =>
   JSON.stringify({
-    type: "assistant", timestamp: "2026-07-01T00:00:00Z",
-    message: { role: "assistant", model: "claude-opus-4-8", content: [{ type: "text", text }], usage: { output_tokens: 100 } },
+    type: "assistant",
+    timestamp: "2026-07-01T00:00:00Z",
+    message: {
+      role: "assistant",
+      model: "claude-opus-4-8",
+      content: [{ type: "text", text }],
+      usage: { output_tokens: 100 },
+    },
   });
 
 function fixtureRoot(): string {
@@ -33,9 +39,19 @@ describe("sessionStore.getFacts", () => {
 
   test("returns facts for a scanned session and caches by mtime:size", async () => {
     const root = fixtureRoot();
-    const spy = vi.fn((id: string, c: string) =>
-      ({ sessionId: id, messageCount: 1, firstActivity: null, lastActivity: null,
-         editedFileCount: 0, firstModel: null, distinctModelCount: 0, outputTokens: c.length }) as SessionFacts);
+    const spy = vi.fn(
+      (id: string, c: string) =>
+        ({
+          sessionId: id,
+          messageCount: 1,
+          firstActivity: null,
+          lastActivity: null,
+          editedFileCount: 0,
+          firstModel: null,
+          distinctModelCount: 0,
+          outputTokens: c.length,
+        }) as SessionFacts,
+    );
     const store = createSessionStore(root, { extractFacts: spy });
     await store.scan({ now: Date.parse("2026-07-01T00:00:00Z") });
 
@@ -48,15 +64,28 @@ describe("sessionStore.getFacts", () => {
 
   test("re-parses when the file grows (new size)", async () => {
     const root = fixtureRoot();
-    const spy = vi.fn((id: string) =>
-      ({ sessionId: id, messageCount: 1, firstActivity: null, lastActivity: null,
-         editedFileCount: 0, firstModel: null, distinctModelCount: 0, outputTokens: 0 }) as SessionFacts);
+    const spy = vi.fn(
+      (id: string) =>
+        ({
+          sessionId: id,
+          messageCount: 1,
+          firstActivity: null,
+          lastActivity: null,
+          editedFileCount: 0,
+          firstModel: null,
+          distinctModelCount: 0,
+          outputTokens: 0,
+        }) as SessionFacts,
+    );
     const store = createSessionStore(root, { extractFacts: spy });
     await store.scan({ now: Date.parse("2026-07-01T00:00:00Z") });
     await store.getFacts([UUID]);
 
     // Grow the file, then re-scan so the path map re-stats it.
-    writeFileSync(join(root, "encoded-cwd", `${UUID}.jsonl`), body("hello") + "\n" + body("more"));
+    writeFileSync(
+      join(root, "encoded-cwd", `${UUID}.jsonl`),
+      body("hello") + "\n" + body("more"),
+    );
     await store.scan({ now: Date.parse("2026-07-01T00:00:00Z") });
     await store.getFacts([UUID]);
     expect(spy).toHaveBeenCalledTimes(2);
