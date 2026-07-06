@@ -88,10 +88,16 @@ carry no chip. The header count reflects the aggregate.
 - `SessionMetadata.gitBranch: string | null` — legitimate parsed session data,
   resolved last-wins like `permissionMode`. Not a derived classification, so it
   belongs on the DTO.
-- `FolderNode` gains `rolledUp: Array<{ session: SessionMetadata; branch: string }>`
-  (own `sessions` stays own-only, so `ownCount`/`totalCount` and the
-  `ownCount > 0` selection rule are unchanged). `FolderPane` merges + re-sorts for
-  display and decides the chip.
+- `FolderNode` gains `worktreeBranches: ReadonlyMap<string, string>` (session id →
+  branch label). Rolled-up sessions are merged **into** the owning node's `sessions`
+  (newest-first, sorted inside the `rollUpWorktrees` transform) and the drained
+  worktree subtree is removed, so `ownCount`/`totalCount` and the `ownCount > 0`
+  selection rule stay consistent with a normal node. Consumers do no merging or
+  re-sorting: `SessionList`/`SessionRow` render the list as-is and look up
+  `worktreeBranches.get(id)` to decide the chip. (Rationale: keeps sorting a
+  `sessionTree` concern and leaves every downstream count/selection consumer
+  unchanged, rather than pushing a parallel `rolledUp` array and render-time
+  re-sort up into `FolderPane`.)
 - Temp classification input: main injects the **resolved temp-roots list** once
   (renderer lacks `os`); the renderer does pure prefix-matching. No per-session
   wire field.
