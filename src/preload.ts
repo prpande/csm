@@ -6,6 +6,7 @@ import type {
   SessionsBatchMessage,
   SessionsListener,
   SessionsSignalMessage,
+  SessionFactsResult,
   ThemePreference,
 } from "./ipcTypes";
 
@@ -95,6 +96,9 @@ contextBridge.exposeInMainWorld("csm", {
 
   reopenSession: (req: ReopenRequestDto): Promise<ReopenResult> =>
     ipcRenderer.invoke(CH.sessionReopen, req),
+
+  getFacts: (ids: string[]): Promise<SessionFactsResult> =>
+    ipcRenderer.invoke(CH.sessionGetFacts, ids),
 
   getClaudePath: (): Promise<string> => ipcRenderer.invoke(CH.settingsGet),
 
