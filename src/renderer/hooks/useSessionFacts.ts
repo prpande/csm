@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionFacts } from "../../sessionParser";
 import type { CsmBridge } from "../types/csm";
 import { currentBridge } from "../bridge";
@@ -23,6 +23,16 @@ export function useSessionFacts(
   const factsRef = useRef(facts);
   factsRef.current = facts;
   const inFlight = useRef<Set<string>>(new Set());
+  // Goes false after unmount so a getFacts call that resolves after a folder
+  // switch (which remounts a fresh list) doesn't setState on the dead instance.
+  // A harmless no-op in React 19, but keeps the async path explicit.
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
 
   const requestFacts = useCallback(
     (ids: readonly string[]) => {
@@ -35,6 +45,7 @@ export function useSessionFacts(
       need.forEach((id) => inFlight.current.add(id));
       void getFacts([...need])
         .then((res) => {
+          if (!mounted.current) return;
           setFacts((prev) => {
             const next = new Map(prev);
             for (const id of need) {
