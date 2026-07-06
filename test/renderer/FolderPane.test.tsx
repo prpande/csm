@@ -46,7 +46,11 @@ test("tags rolled-up worktree sessions with a branch chip; own sessions get none
     worktreeBranches: new Map([["wt000000", "feature-x"]]),
   };
   render(
-    <FolderPane selected={folder} onRefreshFolder={noop} refreshDisabled={false} />,
+    <FolderPane
+      selected={folder}
+      onRefreshFolder={noop}
+      refreshDisabled={false}
+    />,
   );
   // Exactly one row (the folded-in worktree session) carries the provenance chip.
   const chips = screen.getAllByTestId("worktree-branch");

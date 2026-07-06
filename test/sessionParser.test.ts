@@ -276,16 +276,26 @@ test("empty content -> full-fallback object", () => {
 
 test("gitBranch: last non-empty gitBranch wins; blank does not clobber", () => {
   const content = jsonl(
-    { type: "user", message: { role: "user", content: "a" }, gitBranch: "main" },
+    {
+      type: "user",
+      message: { role: "user", content: "a" },
+      gitBranch: "main",
+    },
     {
       type: "assistant",
       message: { role: "assistant", content: "b" },
       gitBranch: "worktree-81-preload-bundle",
     },
-    { type: "assistant", message: { role: "assistant", content: "c" }, gitBranch: "  " },
+    {
+      type: "assistant",
+      message: { role: "assistant", content: "c" },
+      gitBranch: "  ",
+    },
     { type: "permission-mode", permissionMode: "auto" }, // no gitBranch — must not clobber
   );
-  expect(parseSession(SID, content).gitBranch).toBe("worktree-81-preload-bundle");
+  expect(parseSession(SID, content).gitBranch).toBe(
+    "worktree-81-preload-bundle",
+  );
 });
 
 test("gitBranch: null when no record carries one (or all blank)", () => {
@@ -295,7 +305,11 @@ test("gitBranch: null when no record carries one (or all blank)", () => {
   expect(
     parseSession(
       SID,
-      jsonl({ type: "user", message: { role: "user", content: "a" }, gitBranch: "" }),
+      jsonl({
+        type: "user",
+        message: { role: "user", content: "a" },
+        gitBranch: "",
+      }),
     ).gitBranch,
   ).toBeNull();
 });

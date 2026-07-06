@@ -61,19 +61,15 @@ function canon(
 }
 
 /**
- * True when `cwd` is under (or equal to) a system temp dir — the §10 filter
- * hides such throwaway sessions by default. OS-aware: Windows uses `os.tmpdir()`,
+ * The system temp roots for the target platform, resolved to raw paths (blank/
+ * unset entries dropped, not canonicalized). OS-aware: Windows uses `os.tmpdir()`,
  * `%TEMP%`/`%TMP%`, `%LOCALAPPDATA%\Temp`, and `C:\Windows\Temp`; POSIX uses
  * `os.tmpdir()`, `$TMPDIR`, `/tmp`, `/private/tmp`, `/var/folders`, and
  * `/private/var/folders` (the `/private/*` forms are macOS's canonical symlink
- * targets). Blank/unset roots are dropped so they can't match every path.
- */
-/**
- * The system temp roots for the target platform, resolved to raw paths (blank/
- * unset entries dropped, not canonicalized). `isTempPath` matches against these,
- * and the `csm:getTempRoots` IPC ships them to the renderer so it can apply the
- * §10 hide filter without re-implementing root DISCOVERY (which needs `os`) —
- * the renderer only does pure prefix matching (#69).
+ * targets). `isTempPath` matches against these, and the `csm:getTempRoots` IPC
+ * ships them to the renderer so it applies the §10 hide filter without
+ * re-implementing root DISCOVERY (which needs `os`) — the renderer only does
+ * pure prefix matching (#69).
  */
 export function tempRoots(opts: PathClassOpts = {}): string[] {
   const platform = opts.platform ?? osPlatform();
@@ -98,9 +94,13 @@ export function tempRoots(opts: PathClassOpts = {}): string[] {
           "/var/folders",
           "/private/var/folders",
         ];
-  return raw.filter((r): r is string => typeof r === "string" && r.trim() !== "");
+  return raw.filter(
+    (r): r is string => typeof r === "string" && r.trim() !== "",
+  );
 }
 
+/** True when `cwd` is under (or equal to) any system temp root — the §10 filter
+ *  hides such throwaway sessions by default. Blank/unset roots can't match. */
 export function isTempPath(cwd: string, opts: PathClassOpts = {}): boolean {
   const platform = opts.platform ?? osPlatform();
   const { P, fold } = semantics(platform);
