@@ -19,7 +19,7 @@ import { CH } from "./ipcChannels";
 import { createSessionStore } from "./sessionStore";
 import { createSettingsStore } from "./settingsStore";
 import { reopenSession } from "./reopenSession";
-import { defaultProjectsRoot } from "./pathAdapter";
+import { defaultProjectsRoot, tempRoots } from "./pathAdapter";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -145,6 +145,7 @@ if (!gotLock) {
     setNativeTheme: (source) => {
       nativeTheme.themeSource = source;
     },
+    tempRoots: () => tempRoots(),
     projectsRoot: defaultProjectsRoot(),
     platform: process.platform,
     now: () => Date.now(),

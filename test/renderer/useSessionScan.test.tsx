@@ -17,6 +17,7 @@ const session = (id: string, cwd: string): SessionMetadata => ({
   title: id,
   permissionMode: "default",
   lastActivity: null,
+  gitBranch: null,
 });
 
 function fakeBridge() {
@@ -34,6 +35,7 @@ function fakeBridge() {
     reopenSession: vi.fn(async () => ({ ok: true as const })),
     getClaudePath: vi.fn(async () => "claude"),
     setClaudePath: vi.fn(async () => {}),
+    getTempRoots: vi.fn(async () => []),
   } satisfies CsmBridge;
   return {
     bridge,

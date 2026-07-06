@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { buildTree, compactTree, type SessionTree } from "../../sessionTree";
+import {
+  buildTree,
+  compactTree,
+  rollUpWorktrees,
+  type SessionTree,
+} from "../../sessionTree";
+import { filterOutTemp } from "../../sessionFilter";
 import type { SessionMetadata } from "../../sessionParser";
 import type { CsmBridge } from "../types/csm";
 import { currentBridge } from "../bridge";
@@ -17,6 +23,12 @@ export interface SessionScan {
   status: ScanStatus;
   /** Restart the scan from scratch (title-bar refresh). */
   refresh: () => void;
+  /** Declutter view (#69): default on — hides temp folders and rolls
+   *  `.claude/worktrees` sessions up into their owning project. Off shows the
+   *  raw folder structure. Purely a view transform over the SAME scanned
+   *  sessions, so toggling never triggers a re-scan. */
+  declutter: boolean;
+  toggleDeclutter: () => void;
 }
 
 export function useSessionScan(
@@ -24,8 +36,28 @@ export function useSessionScan(
 ): SessionScan {
   const [sessions, setSessions] = useState<SessionMetadata[]>([]);
   const [status, setStatus] = useState<ScanStatus>("scanning");
+  const [declutter, setDeclutter] = useState(true);
+  // System temp roots for the hide filter (#69). Resolved by main (renderer lacks
+  // `os`); empty until they arrive and on non-desktop — filterOutTemp treats []
+  // as "hide nothing", so the tree degrades to showing everything.
+  const [tempRoots, setTempRoots] = useState<string[]>([]);
   // Bumped by refresh() to re-run the scan effect without changing `bridge`.
   const [nonce, setNonce] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      ?.getTempRoots?.()
+      .then((roots) => {
+        if (active) setTempRoots(roots);
+      })
+      .catch(() => {
+        /* fail soft: no roots -> nothing hidden */
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
 
   useEffect(() => {
     // Non-desktop / plain browser (no preload): fail soft, don't throw.
@@ -59,10 +91,16 @@ export function useSessionScan(
   }, [bridge, nonce]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
-  // #77: compact single-child chains as the outermost transform, so the tree
-  // starts at the largest common parent per cluster (and, once #69 lands, runs on
-  // the post-filter tree).
-  const tree = useMemo(() => compactTree(buildTree(sessions)), [sessions]);
+  const toggleDeclutter = useCallback(() => setDeclutter((d) => !d), []);
+  // Transform pipeline (innermost first). In declutter mode: drop temp sessions,
+  // build the tree, fold .claude/worktrees sessions into their owning project
+  // (#101/#69), then compact single-child chains (#77). Raw mode skips the filter
+  // and the roll-up, showing the folder structure as-is; compaction always runs.
+  const tree = useMemo(() => {
+    if (!declutter) return compactTree(buildTree(sessions));
+    const visible = filterOutTemp(sessions, tempRoots);
+    return compactTree(rollUpWorktrees(buildTree(visible)));
+  }, [sessions, declutter, tempRoots]);
 
-  return { tree, status, refresh };
+  return { tree, status, refresh, declutter, toggleDeclutter };
 }

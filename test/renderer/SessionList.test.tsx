@@ -11,6 +11,7 @@ const makeSessions = (n: number): SessionMetadata[] =>
     title: `session ${i}`,
     permissionMode: "default",
     lastActivity: null,
+    gitBranch: null,
   }));
 
 test("virtualizes: a huge folder mounts only a bounded number of rows (spec §11)", () => {

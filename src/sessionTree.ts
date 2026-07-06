@@ -35,7 +35,18 @@ export interface FolderNode {
   ownCount: number;
   /** own + all descendant sessions. */
   totalCount: number;
+  /** For sessions folded in from `<repo>/.claude/worktrees/<name>` by
+   *  `rollUpWorktrees`: `sessionId -> branch label` (the session's `gitBranch`,
+   *  or the worktree folder name when absent). Empty for every node until the
+   *  roll-up runs; consulted by the folder pane to tag worktree provenance. Those
+   *  sessions are ALSO present in `sessions` (so counts / selection are unchanged
+   *  for consumers), and only the ones in this map carry a chip. */
+  worktreeBranches: ReadonlyMap<string, string>;
 }
+
+// Shared empty provenance map — reused for every non-rolled-up node so the common
+// case allocates nothing (the map is read-only by type, safe to share).
+const NO_WORKTREE_BRANCHES: ReadonlyMap<string, string> = new Map();
 
 export interface SessionTree {
   /** Top nodes (drives / POSIX root), sorted case-insensitively by name. */
@@ -109,16 +120,14 @@ const collator = new Intl.Collator(undefined, { sensitivity: "base" });
 const byNameCaseInsensitive = (a: FolderNode, b: FolderNode): number =>
   collator.compare(a.name, b.name);
 
-// Recursively freeze a Building into a FolderNode: sort sessions and children,
-// compute counts bottom-up.
-function finalize(node: Building): FolderNode {
-  const children = [...node.children.values()]
-    .map(finalize)
-    .sort(byNameCaseInsensitive);
-  // Decorate-sort-undecorate: compute each session's epoch once (not on every
-  // O(n log n) comparison), sort newest-first, tie-break by sessionId for a
-  // deterministic order independent of dedup/input ordering.
-  const sessions = node.sessions
+// Decorate-sort-undecorate: compute each session's epoch once (not on every
+// O(n log n) comparison), sort newest-first, tie-break by sessionId for a
+// deterministic order independent of dedup/input ordering. Shared by finalize
+// and rollUpWorktrees (which re-sorts a node's own + folded-in sessions).
+function sortSessionsNewestFirst(
+  sessions: SessionMetadata[],
+): SessionMetadata[] {
+  return sessions
     .map((s) => ({ s, t: activityEpoch(s.lastActivity) }))
     .sort((a, b) =>
       a.t !== b.t
@@ -130,6 +139,15 @@ function finalize(node: Building): FolderNode {
             : 0,
     )
     .map((w) => w.s);
+}
+
+// Recursively freeze a Building into a FolderNode: sort sessions and children,
+// compute counts bottom-up.
+function finalize(node: Building): FolderNode {
+  const children = [...node.children.values()]
+    .map(finalize)
+    .sort(byNameCaseInsensitive);
+  const sessions = sortSessionsNewestFirst(node.sessions);
   const ownCount = sessions.length;
   const totalCount =
     ownCount + children.reduce((sum, c) => sum + c.totalCount, 0);
@@ -140,6 +158,7 @@ function finalize(node: Building): FolderNode {
     children,
     ownCount,
     totalCount,
+    worktreeBranches: NO_WORKTREE_BRANCHES,
   };
 }
 
@@ -241,6 +260,127 @@ function compact(node: FolderNode): FolderNode {
 export function compactTree(tree: SessionTree): SessionTree {
   return {
     roots: tree.roots.map(compact),
+    unknown: tree.unknown,
+  };
+}
+
+// #101/#69: fold worktree sessions into their owning project. A session under
+// `<repo>/.claude/worktrees/<name>/...` belongs, logically, to `<repo>` — the
+// node that owns the `.claude` directory. This transform re-homes every such
+// session onto that node (so selecting the project surfaces its worktree work
+// without drilling in) and prunes the `.claude/worktrees` subtree from the tree,
+// which is the display half of #69's default hide-worktree filter. Recognizes
+// only the `.claude/worktrees` path convention (pure, no I/O) — generic git
+// worktrees need a git-common-dir probe and are deferred to #56/#91.
+//
+// Provenance rides in `worktreeBranches` (sessionId -> branch), the branch taken
+// from the session's own `gitBranch` (historical, accurate even for a since-
+// deleted worktree) and falling back to the `<name>` worktree folder. Folded
+// sessions are also merged into the owner's `sessions` so counts, selectability,
+// and the tree row are unchanged; only the mapped ones carry a chip.
+//
+// Run BEFORE `compactTree`: it operates on the un-collapsed `.claude` ->
+// `worktrees` -> `<name>` chain, and the owning node it produces then compacts
+// normally.
+const CLAUDE_DIR = ".claude";
+const WORKTREES_DIR = "worktrees";
+
+// All sessions in a subtree (this node plus every descendant), order-agnostic.
+function collectSessions(node: FolderNode, out: SessionMetadata[]): void {
+  out.push(...node.sessions);
+  for (const c of node.children) collectSessions(c, out);
+}
+
+// Recompute counts after a subtree edit; other fields (path/name/sessions/
+// worktreeBranches) are carried through by the caller's spread.
+function recount(node: FolderNode): FolderNode {
+  const ownCount = node.sessions.length;
+  const totalCount =
+    ownCount + node.children.reduce((sum, c) => sum + c.totalCount, 0);
+  return { ...node, ownCount, totalCount };
+}
+
+// Drain every session under one `worktrees` node's `<name>` children into
+// `rolled` + `branches`, tagging each with its gitBranch (or the `<name>` folder
+// as fallback). Returns the `worktrees` node rebuilt with its children removed,
+// or null when nothing remains. It survives (childless) only if it carries its
+// OWN sessions — a session whose cwd is literally `<repo>/.claude/worktrees`,
+// with no `<name>` segment. Such a session is not inside a named worktree (no
+// branch to tag), so it is kept in place rather than rolled up; dropping it would
+// be silent data loss, the same class as the `.claude`-self case in drainClaudeDir.
+function drainWorktreesDir(
+  worktreesNode: FolderNode,
+  rolled: SessionMetadata[],
+  branches: Map<string, string>,
+): FolderNode | null {
+  for (const worktree of worktreesNode.children) {
+    const wtSessions: SessionMetadata[] = [];
+    collectSessions(worktree, wtSessions);
+    for (const sess of wtSessions) {
+      rolled.push(sess);
+      branches.set(sess.sessionId, sess.gitBranch ?? worktree.name);
+    }
+  }
+  return worktreesNode.sessions.length > 0
+    ? recount({ ...worktreesNode, children: [] })
+    : null;
+}
+
+// Process one `.claude` node: drain its `worktrees` child into `rolled`/`branches`
+// and return the `.claude` node rebuilt with its OTHER children (e.g. `projects`)
+// kept, or null when nothing remains under it.
+function drainClaudeDir(
+  claudeNode: FolderNode,
+  rolled: SessionMetadata[],
+  branches: Map<string, string>,
+): FolderNode | null {
+  const kept: FolderNode[] = [];
+  for (const grandchild of claudeNode.children) {
+    if (grandchild.name === WORKTREES_DIR) {
+      const keptWorktrees = drainWorktreesDir(grandchild, rolled, branches);
+      if (keptWorktrees) kept.push(keptWorktrees);
+    } else {
+      kept.push(rollUpNode(grandchild));
+    }
+  }
+  // Prune the `.claude` node only when nothing remains under it. It survives if
+  // it keeps a non-worktrees child OR carries its own sessions (a session whose
+  // cwd is literally `<repo>/.claude`) — dropping it then would lose those.
+  return kept.length > 0 || claudeNode.sessions.length > 0
+    ? recount({ ...claudeNode, children: kept })
+    : null;
+}
+
+function rollUpNode(node: FolderNode): FolderNode {
+  const keptChildren: FolderNode[] = [];
+  const branches = new Map<string, string>();
+  const rolled: SessionMetadata[] = [];
+
+  for (const childNode of node.children) {
+    if (childNode.name === CLAUDE_DIR) {
+      const keptClaude = drainClaudeDir(childNode, rolled, branches);
+      if (keptClaude) keptChildren.push(keptClaude);
+    } else {
+      keptChildren.push(rollUpNode(childNode));
+    }
+  }
+
+  if (branches.size === 0) {
+    // Nothing rolled up here; just carry the (possibly rewritten) children.
+    return recount({ ...node, children: keptChildren });
+  }
+  return recount({
+    ...node,
+    sessions: sortSessionsNewestFirst([...node.sessions, ...rolled]),
+    children: keptChildren,
+    worktreeBranches: branches,
+  });
+}
+
+export function rollUpWorktrees(tree: SessionTree): SessionTree {
+  // The "(unknown)" group holds no `.claude` chain, so pass it through untouched.
+  return {
+    roots: tree.roots.map(rollUpNode),
     unknown: tree.unknown,
   };
 }

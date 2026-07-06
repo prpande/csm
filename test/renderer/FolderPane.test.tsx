@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { FolderPane } from "../../src/renderer/components/FolderPane";
 import { ROW_HEIGHT } from "../../src/sessionListWindow";
 import type { FolderNode } from "../../src/sessionTree";
+import type { SessionMetadata } from "../../src/sessionParser";
 
 const noop = () => {};
 
@@ -13,6 +14,7 @@ const makeFolder = (label: string, n: number): FolderNode => {
     title: `${label} session ${i}`,
     permissionMode: "default" as const,
     lastActivity: null,
+    gitBranch: null,
   }));
   return {
     name: label,
@@ -21,8 +23,40 @@ const makeFolder = (label: string, n: number): FolderNode => {
     children: [],
     ownCount: n,
     totalCount: n,
+    worktreeBranches: new Map(),
   };
 };
+
+test("tags rolled-up worktree sessions with a branch chip; own sessions get none", () => {
+  const mk = (id: string, branch: string | null): SessionMetadata => ({
+    sessionId: id,
+    cwd: "D:\\src\\csm",
+    title: `session ${id}`,
+    permissionMode: "default",
+    lastActivity: null,
+    gitBranch: branch,
+  });
+  const folder: FolderNode = {
+    name: "csm",
+    path: "D:\\src\\csm",
+    sessions: [mk("wt000000", "feature-x"), mk("own00000", null)],
+    children: [],
+    ownCount: 2,
+    totalCount: 2,
+    worktreeBranches: new Map([["wt000000", "feature-x"]]),
+  };
+  render(
+    <FolderPane
+      selected={folder}
+      onRefreshFolder={noop}
+      refreshDisabled={false}
+    />,
+  );
+  // Exactly one row (the folded-in worktree session) carries the provenance chip.
+  const chips = screen.getAllByTestId("worktree-branch");
+  expect(chips).toHaveLength(1);
+  expect(chips[0].textContent).toContain("feature-x");
+});
 
 test("labels the header as a folder so it reads distinctly from the session rows", () => {
   render(

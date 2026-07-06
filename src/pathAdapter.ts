@@ -61,40 +61,51 @@ function canon(
 }
 
 /**
- * True when `cwd` is under (or equal to) a system temp dir — the §10 filter
- * hides such throwaway sessions by default. OS-aware: Windows uses `os.tmpdir()`,
+ * The system temp roots for the target platform, resolved to raw paths (blank/
+ * unset entries dropped, not canonicalized). OS-aware: Windows uses `os.tmpdir()`,
  * `%TEMP%`/`%TMP%`, `%LOCALAPPDATA%\Temp`, and `C:\Windows\Temp`; POSIX uses
  * `os.tmpdir()`, `$TMPDIR`, `/tmp`, `/private/tmp`, `/var/folders`, and
  * `/private/var/folders` (the `/private/*` forms are macOS's canonical symlink
- * targets). Blank/unset roots are dropped so they can't match every path.
+ * targets). `isTempPath` matches against these, and the `paths:getTempRoots` IPC
+ * ships them to the renderer so it applies the §10 hide filter without
+ * re-implementing root DISCOVERY (which needs `os`) — the renderer only does
+ * pure prefix matching (#69).
  */
-export function isTempPath(cwd: string, opts: PathClassOpts = {}): boolean {
+export function tempRoots(opts: PathClassOpts = {}): string[] {
   const platform = opts.platform ?? osPlatform();
   const tmp = opts.tmpdir ?? osTmpdir();
   const env = opts.env ?? process.env;
-  const isWin = platform === "win32";
+  const { P } = semantics(platform);
+
+  const raw =
+    platform === "win32"
+      ? [
+          tmp,
+          env.TEMP,
+          env.TMP,
+          env.LOCALAPPDATA && P.join(env.LOCALAPPDATA, "Temp"),
+          "C:\\Windows\\Temp",
+        ]
+      : [
+          tmp,
+          env.TMPDIR,
+          "/tmp",
+          "/private/tmp",
+          "/var/folders",
+          "/private/var/folders",
+        ];
+  return raw.filter(
+    (r): r is string => typeof r === "string" && r.trim() !== "",
+  );
+}
+
+/** True when `cwd` is under (or equal to) any system temp root — the §10 filter
+ *  hides such throwaway sessions by default. Blank/unset roots can't match. */
+export function isTempPath(cwd: string, opts: PathClassOpts = {}): boolean {
+  const platform = opts.platform ?? osPlatform();
   const { P, fold } = semantics(platform);
-
-  const rawRoots = isWin
-    ? [
-        tmp,
-        env.TEMP,
-        env.TMP,
-        env.LOCALAPPDATA && P.join(env.LOCALAPPDATA, "Temp"),
-        "C:\\Windows\\Temp",
-      ]
-    : [
-        tmp,
-        env.TMPDIR,
-        "/tmp",
-        "/private/tmp",
-        "/var/folders",
-        "/private/var/folders",
-      ];
-
   const cwdN = canon(P, fold, cwd);
-  return rawRoots
-    .filter((r): r is string => typeof r === "string" && r.trim() !== "")
+  return tempRoots(opts)
     .map((r) => canon(P, fold, r))
     .some((root) => cwdN === root || cwdN.startsWith(root + P.sep));
 }

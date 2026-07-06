@@ -128,3 +128,33 @@
   background: var(--count-bg);
   color: var(--count-text);
 }
+
+/* Worktree-provenance chip (#101): a calm, informational tag — outlined and
+   muted so it never competes with the risk-coded permission chips or the
+   danger-red bypass chip. Caps its width and ellipsizes long branch names so a
+   verbose branch can't push the row's time/id out of view. */
+.branch {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 0;
+  max-width: 11rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.branchIcon {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+.branchName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

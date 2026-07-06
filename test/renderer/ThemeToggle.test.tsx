@@ -29,6 +29,7 @@ function installBridge(initial: ThemePreference = "system") {
     listSessions: vi.fn(() => vi.fn()),
     reopenSession: vi.fn(async () => ({ ok: true as const })),
     getClaudePath: vi.fn(async () => "claude"),
+    getTempRoots: vi.fn(async () => []),
     setClaudePath: vi.fn(async () => {}),
   };
   return theme;

@@ -10,6 +10,7 @@ const makeSession = (over: Partial<SessionMetadata> = {}): SessionMetadata => ({
   title: "Refactor the parser",
   permissionMode: "default",
   lastActivity: null,
+  gitBranch: null,
   ...over,
 });
 
@@ -97,6 +98,33 @@ test("a row with no onOpen handler does not crash on double-click", () => {
   // No throw when the optional handler is absent.
   fireEvent.doubleClick(screen.getByText("Refactor the parser"));
   expect(screen.getByText("Refactor the parser")).toBeTruthy();
+});
+
+test("shows a worktree branch chip only when a branch is provided", () => {
+  const { rerender } = render(
+    <SessionRow session={makeSession()} rowHeight={56} />,
+  );
+  expect(screen.queryByTestId("worktree-branch")).toBeNull();
+
+  rerender(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      worktreeBranch="feature-x"
+    />,
+  );
+  expect(screen.getByTestId("worktree-branch").textContent).toContain(
+    "feature-x",
+  );
+});
+
+test("worktree branch is inserted as text, never as HTML", () => {
+  const evil = "<img src=x onerror=alert(1)>";
+  const { container } = render(
+    <SessionRow session={makeSession()} rowHeight={56} worktreeBranch={evil} />,
+  );
+  expect(screen.getByText(evil)).toBeTruthy();
+  expect(container.querySelector("img")).toBe(null);
 });
 
 test("title is inserted as text, never as HTML (spec §9)", () => {

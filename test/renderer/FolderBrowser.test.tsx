@@ -16,6 +16,7 @@ const sess = (id: string, cwd: string): SessionMetadata => ({
   title: id,
   permissionMode: "default",
   lastActivity: null,
+  gitBranch: null,
 });
 
 function fakeBridge() {
@@ -32,6 +33,7 @@ function fakeBridge() {
     listSessions,
     reopenSession: vi.fn(async () => ({ ok: true as const })),
     getClaudePath: vi.fn(async () => "claude"),
+    getTempRoots: vi.fn(async () => []),
     setClaudePath: vi.fn(async () => {}),
   };
   return {
@@ -243,6 +245,47 @@ describe("FolderBrowser", () => {
     // Both compacted roots auto-expand once seen, so a leaf under each is mounted.
     expect(screen.getByText("csm")).toBeTruthy();
     expect(screen.getByText("api")).toBeTruthy();
+  });
+
+  it("declutter switch hides temp folders by default and reveals them when toggled off", async () => {
+    // A bridge whose temp roots include C:\Temp, so the filter has something to
+    // hide. getTempRoots is async, so flush it before streaming the batch.
+    const unsubscribe = vi.fn();
+    let listener: SessionsListener | undefined;
+    window.csm = {
+      isDesktop: true,
+      platform: "win32",
+      openExternal: vi.fn(async () => true),
+      listSessions: vi.fn((l: SessionsListener) => {
+        listener = l;
+        return unsubscribe;
+      }),
+      reopenSession: vi.fn(async () => ({ ok: true as const })),
+      getClaudePath: vi.fn(async () => "claude"),
+      getTempRoots: vi.fn(async () => ["C:\\Temp"]),
+      setClaudePath: vi.fn(async () => {}),
+    };
+    render(<FolderBrowser />);
+    await act(async () => {}); // resolve getTempRoots -> tempRoots state
+    act(() =>
+      listener!.onBatch([
+        sess("keep", "D:\\src\\csm"),
+        sess("tmp", "C:\\Temp\\junk"),
+      ]),
+    );
+    act(() => listener!.onDone());
+
+    const sw = screen.getByRole("switch");
+    // Default: declutter ON -> temp cluster hidden, normal project shown.
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("D:\\src\\csm")).toBeTruthy();
+    expect(screen.queryByText("C:\\Temp\\junk")).toBe(null);
+
+    // Toggle OFF -> raw structure, temp cluster reappears (no re-scan).
+    fireEvent.click(sw);
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText("C:\\Temp\\junk")).toBeTruthy();
+    expect(window.csm!.listSessions).toHaveBeenCalledTimes(1);
   });
 
   it("re-expands a root whose compacted identity shrinks as a sibling streams in", () => {

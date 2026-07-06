@@ -19,6 +19,7 @@ const bypassSession: SessionMetadata = {
   title: "Bypass session title",
   permissionMode: "bypassPermissions",
   lastActivity: null,
+  gitBranch: null,
 };
 
 // Click the selectable folder in the sidebar tree (the one carrying sessions).

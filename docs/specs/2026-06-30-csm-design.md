@@ -77,6 +77,7 @@ Sessions live at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`.
 | `title` (description) | `ai-title` record → `aiTitle` | `summary` → first non-meta `user` prompt (truncated) → `"(untitled)"` |
 | `permissionMode` | **last** `permission-mode` record → `permissionMode` | `"default"` |
 | `lastActivity` (time) | last record `timestamp` | file mtime |
+| `gitBranch` | **last** record `gitBranch` field | `null` when absent |
 | `version`, `messageCount` | `system` / record fields | optional, shown subtly |
 
 **Decisions / gotchas:**
@@ -95,6 +96,13 @@ Sessions live at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`.
   value is not in the known CLI set — never silently coerce a recognized value.
 - The prompt fallback for `title` must **skip meta / `<system-reminder>` /
   command-wrapper** user messages — otherwise titles leak injected text.
+- **`gitBranch`** is the branch the session ran on, captured in-file per record;
+  **last non-null wins** (a session can switch branches mid-run), `null` when no
+  record carries it. Historical and available even when the folder was later
+  deleted, so it is the correct source for a worktree's branch label — better
+  than reading live `git HEAD` (which fails for removed worktrees). Powers the
+  worktree roll-up label (§9) and the row-branch / repo-marker features (#110,
+  #111).
 - Malformed JSONL lines are skipped, not fatal.
 
 ## 5. Architecture
@@ -284,6 +292,15 @@ palette swap is a one-file value edit.
   centered "Select a folder to view its sessions" prompt and **no** folder header.
   Clicking an intermediate navigation node (e.g. `src`, `Users`) expands it and
   leaves the same empty state — it does not aggregate descendant sessions.
+- **Worktree roll-up + declutter toggle** (#101/#69, see
+  `2026-07-06-worktree-rollup-and-filter.md`): by default the tree hides
+  temp-rooted folders and `.../.claude/worktrees/<name>` nodes, and folds each
+  worktree session into its **owning project** node (the path before `.claude`),
+  where the folder pane shows it alongside the project's own sessions with a
+  branch/name chip (from `gitBranch`). A single global toggle switches to the raw
+  structure (temp + worktree nodes shown, roll-up suppressed). This worktree fold
+  is the one deliberate exception to "does not aggregate descendant sessions" —
+  scoped to worktrees, never generic recursion.
 - **The `(unknown)` folder group is pinned to the bottom** of the tree, after all
   named entries, so it never interrupts drive-based navigation.
 - **Keyboard navigation:** Up/Down move within the focused pane (tree nodes or
@@ -308,7 +325,11 @@ palette swap is a one-file value edit.
   filter** (sessions whose `cwd` is under a system temp dir or inside a
   `.../.claude/worktrees/` or git-worktree path are hidden, with a toggle to show
   them). The filter ships in the MVP because the tree is otherwise dominated by
-  thousands of throwaway sessions on day one.
+  thousands of throwaway sessions on day one. Co-designed with the worktree
+  roll-up as one declutter/raw toggle — see §9 and
+  `2026-07-06-worktree-rollup-and-filter.md`. This slice covers the
+  `.claude/worktrees` convention purely; generic (I/O-probed) worktrees are
+  deferred to #56/#91.
 - **B:** per-row **Delete** (deletes the `.jsonl`, with confirmation). The
   main-process `deleteSession` handler MUST resolve the target path and verify it
   stays within `~/.claude/projects/` before `fs.unlink` (no path traversal).

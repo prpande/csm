@@ -9,13 +9,21 @@ interface SessionListProps {
   sessions: SessionMetadata[];
   /** Row open gesture (double-click → reopen, #67). */
   onOpen?: (session: SessionMetadata) => void;
+  /** Provenance for sessions folded in from git worktrees (#101):
+   *  `sessionId -> branch label`. A row whose id is present renders a branch
+   *  chip; own sessions are absent from the map and render none. */
+  worktreeBranches?: ReadonlyMap<string, string>;
 }
 
 // Windowed / virtualized session list (spec §6/§11). A folder can hold thousands
 // of sessions, so only the rows in (and just around) the viewport are mounted:
 // the scroll container reserves the full height via a spacer, and the visible
 // slice — chosen by the pure `computeWindow` — is offset with translateY.
-export function SessionList({ sessions, onOpen }: SessionListProps) {
+export function SessionList({
+  sessions,
+  onOpen,
+  worktreeBranches,
+}: SessionListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -71,6 +79,7 @@ export function SessionList({ sessions, onOpen }: SessionListProps) {
               session={session}
               rowHeight={ROW_HEIGHT}
               onOpen={onOpen}
+              worktreeBranch={worktreeBranches?.get(session.sessionId)}
             />
           ))}
         </div>

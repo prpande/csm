@@ -60,6 +60,7 @@ export function FolderPane({
         key={selected.path}
         sessions={selected.sessions}
         onOpen={onOpen}
+        worktreeBranches={selected.worktreeBranches}
       />
     </section>
   );

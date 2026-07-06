@@ -61,6 +61,9 @@ export interface SessionMetadata {
   title: string;
   permissionMode: PermissionMode;
   lastActivity: string | null;
+  /** Branch the session ran on (in-file `gitBranch`, last non-empty wins);
+   *  `null` when no record carries one (e.g. a non-git cwd). */
+  gitBranch: string | null;
   version?: string;
   messageCount?: number;
 }
@@ -209,6 +212,7 @@ export function parseSession(
 
   let cwd: string | undefined;
   let lastActivity: string | null = null;
+  let gitBranch: string | null = null;
   let version: string | undefined;
   let messageCount: number | undefined;
 
@@ -222,6 +226,10 @@ export function parseSession(
     // one (e.g. a trailing permission-mode) must not clobber it.
     const ts = asString(r.timestamp);
     if (ts) lastActivity = ts;
+    // Last non-empty gitBranch wins (a session can switch branches mid-run); a
+    // blank/absent value is treated as "no info" and must not clobber a real one.
+    const branch = asNonEmptyString(r.gitBranch);
+    if (branch) gitBranch = branch;
   }
 
   const meta: SessionMetadata = {
@@ -230,6 +238,7 @@ export function parseSession(
     title: extractTitle(records),
     permissionMode: extractPermissionMode(records),
     lastActivity,
+    gitBranch,
   };
   if (version !== undefined) meta.version = version;
   if (messageCount !== undefined) meta.messageCount = messageCount;

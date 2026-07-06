@@ -24,6 +24,7 @@ test("happy path: extracts every field", () => {
       version: "2.1.153",
       messageCount: 124,
       timestamp: "2026-05-29T02:00:16.047Z",
+      gitBranch: "main",
       sessionId: SID,
     },
     { type: "ai-title", aiTitle: "Align UI with design", sessionId: SID },
@@ -46,6 +47,7 @@ test("happy path: extracts every field", () => {
     title: "Align UI with design",
     permissionMode: "bypassPermissions",
     lastActivity: "2026-05-29T02:05:00.000Z",
+    gitBranch: "main",
     version: "2.1.153",
     messageCount: 124,
   });
@@ -251,6 +253,7 @@ test("malformed/blank lines are skipped; all-junk file -> full-fallback object",
     title: "(untitled)",
     permissionMode: "default",
     lastActivity: null,
+    gitBranch: null,
   });
 });
 
@@ -267,5 +270,46 @@ test("empty content -> full-fallback object", () => {
     title: "(untitled)",
     permissionMode: "default",
     lastActivity: null,
+    gitBranch: null,
   });
+});
+
+test("gitBranch: last non-empty gitBranch wins; blank does not clobber", () => {
+  const content = jsonl(
+    {
+      type: "user",
+      message: { role: "user", content: "a" },
+      gitBranch: "main",
+    },
+    {
+      type: "assistant",
+      message: { role: "assistant", content: "b" },
+      gitBranch: "worktree-81-preload-bundle",
+    },
+    {
+      type: "assistant",
+      message: { role: "assistant", content: "c" },
+      gitBranch: "  ",
+    },
+    { type: "permission-mode", permissionMode: "auto" }, // no gitBranch — must not clobber
+  );
+  expect(parseSession(SID, content).gitBranch).toBe(
+    "worktree-81-preload-bundle",
+  );
+});
+
+test("gitBranch: null when no record carries one (or all blank)", () => {
+  expect(
+    parseSession(SID, jsonl({ type: "ai-title", aiTitle: "x" })).gitBranch,
+  ).toBeNull();
+  expect(
+    parseSession(
+      SID,
+      jsonl({
+        type: "user",
+        message: { role: "user", content: "a" },
+        gitBranch: "",
+      }),
+    ).gitBranch,
+  ).toBeNull();
 });

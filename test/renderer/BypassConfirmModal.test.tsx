@@ -9,6 +9,7 @@ const session: SessionMetadata = {
   title: "Dangerous session",
   permissionMode: "bypassPermissions",
   lastActivity: null,
+  gitBranch: null,
 };
 
 test("renders as a dialog that names the bypass consequence", () => {
