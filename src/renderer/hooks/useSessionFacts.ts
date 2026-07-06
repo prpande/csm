@@ -45,10 +45,10 @@ export function useSessionFacts(
                   ? { status: "loaded", facts: r }
                   : { status: "error" },
               );
-              inFlight.current.delete(id);
             }
             return next;
           });
+          need.forEach((id) => inFlight.current.delete(id)); // outside the updater — updaters must be pure
         })
         .catch(() => {
           need.forEach((id) => inFlight.current.delete(id)); // allow a later retry

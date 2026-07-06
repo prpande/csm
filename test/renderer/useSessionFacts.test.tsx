@@ -53,4 +53,24 @@ describe("useSessionFacts", () => {
     act(() => result.current.requestFacts(["a"]));
     expect(getFacts).toHaveBeenCalledTimes(1);
   });
+
+  test("allows retry after a rejected fetch", async () => {
+    let callCount = 0;
+    const getFacts = vi.fn(async (ids: string[]) => {
+      callCount++;
+      if (callCount === 1) throw new Error("network");
+      return Object.fromEntries(ids.map((id) => [id, facts(id)]));
+    });
+    const bridge = {
+      isDesktop: true,
+      platform: "win32",
+      getFacts,
+    } as unknown as CsmBridge;
+    const { result } = renderHook(() => useSessionFacts(bridge));
+
+    act(() => result.current.requestFacts(["a"]));
+    await waitFor(() => expect(getFacts).toHaveBeenCalledTimes(1));
+    act(() => result.current.requestFacts(["a"]));
+    await waitFor(() => expect(getFacts).toHaveBeenCalledTimes(2));
+  });
 });
