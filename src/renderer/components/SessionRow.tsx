@@ -36,6 +36,9 @@ export function SessionRow({
   factState,
 }: SessionRowProps) {
   const variant = chipVariant(session.permissionMode);
+  // Non-empty only in the loaded state; the skeleton/error arms don't read it.
+  const factSegs =
+    factState?.status === "loaded" ? factSegments(factState.facts) : [];
   return (
     <div
       className={styles.row}
@@ -94,25 +97,20 @@ export function SessionRow({
         ) : factState.status === "error" ? (
           <div className={styles.facts}>—</div>
         ) : (
-          (() => {
-            const segments = factSegments(factState.facts);
-            return (
-              <div className={styles.facts} aria-label={segments.join(", ")}>
-                <span className={styles.factsText}>
-                  {segments.map((seg, i) => (
-                    <span key={i}>
-                      {i > 0 && (
-                        <span className={styles.sep} aria-hidden="true">
-                          {" · "}
-                        </span>
-                      )}
-                      {seg}
+          <div className={styles.facts} aria-label={factSegs.join(", ")}>
+            <span className={styles.factsText}>
+              {factSegs.map((seg, i) => (
+                <span key={i}>
+                  {i > 0 && (
+                    <span className={styles.sep} aria-hidden="true">
+                      {" · "}
                     </span>
-                  ))}
+                  )}
+                  {seg}
                 </span>
-              </div>
-            );
-          })()
+              ))}
+            </span>
+          </div>
         )}
       </div>
       {/* Rendered only when a reopen handler is wired (always, in the app). The

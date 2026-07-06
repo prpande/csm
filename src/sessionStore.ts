@@ -170,6 +170,9 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   async function scan(opts: ScanOptions): Promise<GroupedSessions> {
     const { now, onBatch } = opts;
     const files = await collectFiles(rootDir);
+    // Rebuild the id->path map each scan so sessions deleted between scans
+    // don't linger as stale entries (the map is exactly one scan's worth).
+    pathById.clear();
     for (const f of files) pathById.set(sessionIdOf(f.path), f.path);
 
     // Bucket by tier; within a tier, newest file first.

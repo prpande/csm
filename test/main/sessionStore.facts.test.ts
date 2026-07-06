@@ -1,5 +1,5 @@
-import { test, expect, describe, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { test, expect, describe, vi, afterEach } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSessionStore } from "../../src/sessionStore";
@@ -21,13 +21,23 @@ const body = (text: string) =>
     },
   });
 
+const createdRoots: string[] = [];
+
 function fixtureRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "csm-facts-"));
+  createdRoots.push(root);
   const sub = join(root, "encoded-cwd");
   mkdirSync(sub);
   writeFileSync(join(sub, `${UUID}.jsonl`), body("hello"));
   return root;
 }
+
+// Remove the temp dirs fixtureRoot created so test runs don't leak them.
+afterEach(() => {
+  while (createdRoots.length > 0) {
+    rmSync(createdRoots.pop()!, { recursive: true, force: true });
+  }
+});
 
 describe("sessionStore.getFacts", () => {
   test("rejects a non-UUID id without touching the filesystem", async () => {

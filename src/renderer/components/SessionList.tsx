@@ -55,12 +55,13 @@ export function SessionList({
   const { facts, requestFacts } = useSessionFacts();
   // Request facts for the rows actually mounted (the window). Keyed on the id list
   // so a scroll into new rows fetches just the newly-visible, uncached ones.
-  const visibleIds = visible.map((s) => s.sessionId).join(",");
+  const visibleIds = visible.map((s) => s.sessionId);
+  const visibleKey = visibleIds.join(",");
   useEffect(() => {
-    if (visible.length > 0) requestFacts(visible.map((s) => s.sessionId));
-    // visibleIds is the stable dependency; `visible`/`requestFacts` identities are derived.
+    if (visibleIds.length > 0) requestFacts(visibleIds);
+    // visibleKey is the stable dependency; the ids array's identity changes each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleIds, requestFacts]);
+  }, [visibleKey, requestFacts]);
 
   return (
     <div
