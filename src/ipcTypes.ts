@@ -4,7 +4,7 @@
 // from the pure sessionParser, so it is safe to import from the DOM-only renderer
 // tsconfig as well as the node main tsconfig.
 
-import type { SessionMetadata } from "./sessionParser";
+import type { SessionMetadata, SessionFacts } from "./sessionParser";
 
 /** Stable reopen failure codes (§3.6). The renderer maps these to display text;
  * `error.message` (which may embed an untrusted path) never crosses IPC. Kept as
@@ -59,3 +59,7 @@ export interface SessionsListener {
   onDone: () => void;
   onError: () => void;
 }
+
+/** Result of a batch getFacts call: per requested id, the facts or an error marker.
+ *  Structured-clone safe (plain objects). */
+export type SessionFactsResult = Record<string, SessionFacts | { error: true }>;
