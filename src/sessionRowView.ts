@@ -1,6 +1,8 @@
 // Pure presentational helpers for a session row (spec §9). No DOM — unit-tested
 // in test/main. The row component is a thin shell over these.
 
+import type { SessionFacts } from "./sessionParser";
+
 /** Risk-coded chip variants (spec §9). Any unrecognized/absent mode is `default`
  *  so the row never crashes on an unexpected value (AC 3). */
 export type ChipVariant = "bypass" | "info" | "plan" | "default";
@@ -52,8 +54,6 @@ export function formatRelativeTime(iso: string | null, nowMs: number): string {
   if (sec < 320 * DAY) return plural(Math.round(sec / MONTH), "month");
   return plural(Math.round(sec / YEAR), "year");
 }
-
-import type { SessionFacts } from "./sessionParser";
 
 // Friendly names for known model ids; an unknown id is stripped of its "claude-"
 // prefix and capped so a future id still renders legibly on the row.
