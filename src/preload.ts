@@ -98,6 +98,8 @@ contextBridge.exposeInMainWorld("csm", {
 
   getClaudePath: (): Promise<string> => ipcRenderer.invoke(CH.settingsGet),
 
+  getTempRoots: (): Promise<string[]> => ipcRenderer.invoke(CH.tempRoots),
+
   setClaudePath: (value: string): Promise<void> =>
     ipcRenderer.invoke(CH.settingsSet, value),
 

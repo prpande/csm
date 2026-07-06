@@ -20,6 +20,10 @@ export const CH = {
   // renderer's prefers-color-scheme (and native menus/dialogs) follow it.
   themeGet: "settings:getTheme",
   themeSet: "settings:setTheme",
+  // Resolved system temp roots (request/response). The renderer prefix-matches
+  // cwds against these to hide throwaway temp sessions by default (#69) without
+  // re-implementing os-dependent root discovery.
+  tempRoots: "paths:getTempRoots",
   // https-only external-link egress (shipped in the scaffold).
   shellOpenExternal: "shell:open-external",
   // Custom window-control chrome (#86 frameless shell). minimize/toggle/close are

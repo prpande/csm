@@ -15,7 +15,7 @@ import styles from "./FolderBrowser.module.css";
 // rebuild between batches/refreshes; the live node is looked up per render and
 // the selection self-clears if that folder disappears.
 export function FolderBrowser() {
-  const { tree, status, refresh } = useSessionScan();
+  const { tree, status, refresh, declutter, toggleDeclutter } = useSessionScan();
   const {
     pendingBypass,
     toast,
@@ -78,6 +78,8 @@ export function FolderBrowser() {
           selectedPath={selectedPath}
           onToggle={toggle}
           onSelect={select}
+          declutter={declutter}
+          onToggleDeclutter={toggleDeclutter}
         />
         <FolderPane
           selected={selected}

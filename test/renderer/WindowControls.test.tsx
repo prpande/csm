@@ -35,6 +35,7 @@ function installBridge(opts?: { maximized?: boolean }) {
     listSessions: vi.fn(() => vi.fn()),
     reopenSession: vi.fn(async () => ({ ok: true as const })),
     getClaudePath: vi.fn(async () => "claude"),
+    getTempRoots: vi.fn(async () => []),
     setClaudePath: vi.fn(async () => {}),
   };
   return { controls, emitMaximized: (m: boolean) => changeCb?.(m) };

@@ -50,6 +50,9 @@ export interface IpcHandlerDeps {
   /** Apply a theme to Electron's nativeTheme.themeSource. Injected (not imported)
    * so the handlers stay unit-testable without an Electron runtime. */
   setNativeTheme: (source: ThemePreference) => void;
+  /** Resolved system temp roots for the renderer's §10 hide filter. Injected
+   * (wraps pathAdapter.tempRoots) so the handler stays testable without `os`. */
+  tempRoots: () => string[];
   projectsRoot: string;
   platform: NodeJS.Platform;
   now: () => number;
@@ -73,6 +76,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     settingsStore,
     reopen,
     setNativeTheme,
+    tempRoots,
     projectsRoot,
     platform,
     now,
@@ -152,6 +156,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!isTrustedSender(event.sender) || typeof value !== "string") return;
     await settingsStore.setClaudePath(value);
   });
+
+  // tempRoots: resolved system temp dirs for the renderer's default hide filter.
+  // Read-only, no untrusted input; an untrusted frame gets an empty list (which
+  // the renderer treats as "hide nothing") rather than leaking host paths.
+  ipcMain.handle(CH.tempRoots, (event) =>
+    isTrustedSender(event.sender) ? tempRoots() : [],
+  );
 
   // theme: get seeds the title-bar control; set validates against the allowlist,
   // persists, AND applies nativeTheme.themeSource so the renderer's

@@ -10,6 +10,10 @@ interface FolderTreeProps {
   selectedPath: string | null;
   onToggle: (path: string) => void;
   onSelect: (node: FolderNode) => void;
+  /** Declutter view state + toggle (#69): on hides temp folders and rolls
+   *  worktree sessions up into their project; off shows the raw structure. */
+  declutter: boolean;
+  onToggleDeclutter: () => void;
 }
 
 // Left sidebar: the expandable folder tree over the #64 view-model. Renders the
@@ -23,12 +27,33 @@ export function FolderTree({
   selectedPath,
   onToggle,
   onSelect,
+  declutter,
+  onToggleDeclutter,
 }: FolderTreeProps) {
   const isEmpty = tree.roots.length === 0 && tree.unknown === null;
 
   return (
     <nav className={styles.sidebar} aria-label="Folders">
-      <div className={styles.sidebarHeader}>Folders</div>
+      <div className={styles.sidebarHeader}>
+        <span>Folders</span>
+        {/* Declutter switch (#69): a custom role="switch" (not a native
+            checkbox) so it inherits the design-system styling and reads its
+            on/off state to assistive tech. On = hide temp + roll up worktrees. */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={declutter}
+          aria-label="Hide temp folders and roll worktree sessions up into their project"
+          className={styles.declutter}
+          onClick={onToggleDeclutter}
+          title="Hide temp folders and roll worktree sessions into their project"
+        >
+          <span className={styles.declutterTrack} aria-hidden="true">
+            <span className={styles.declutterThumb} />
+          </span>
+          <span className={styles.declutterLabel}>Declutter</span>
+        </button>
+      </div>
       <ul className={styles.tree} role="tree" aria-label="Session folders">
         {tree.roots.map((root) => (
           <TreeNode

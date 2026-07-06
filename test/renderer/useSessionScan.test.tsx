@@ -35,6 +35,7 @@ function fakeBridge() {
     reopenSession: vi.fn(async () => ({ ok: true as const })),
     getClaudePath: vi.fn(async () => "claude"),
     setClaudePath: vi.fn(async () => {}),
+    getTempRoots: vi.fn(async () => []),
   } satisfies CsmBridge;
   return {
     bridge,

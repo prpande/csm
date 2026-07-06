@@ -49,6 +49,9 @@ export interface CsmBridge {
   reopenSession(req: ReopenRequestDto): Promise<ReopenResult>;
   getClaudePath(): Promise<string>;
   setClaudePath(value: string): Promise<void>;
+  /** Resolved system temp roots, for the renderer's default-on hide filter
+   *  (#69). The renderer prefix-matches session cwds against these. */
+  getTempRoots(): Promise<string[]>;
 }
 
 declare global {

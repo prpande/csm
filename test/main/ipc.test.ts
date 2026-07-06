@@ -62,6 +62,7 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
   };
   const reopen = vi.fn(async () => {});
   const setNativeTheme = vi.fn();
+  const tempRoots = vi.fn(() => ["C:\\Users\\p\\AppData\\Local\\Temp"]);
   const deps: IpcHandlerDeps = {
     ipcMain,
     isTrustedSender: (s: unknown) => s === trusted,
@@ -69,6 +70,7 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
     settingsStore,
     reopen,
     setNativeTheme,
+    tempRoots,
     projectsRoot: "/root/projects",
     platform: "win32",
     now: () => 1234,
@@ -85,6 +87,7 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
     settingsStore,
     reopen,
     setNativeTheme,
+    tempRoots,
     call,
   };
 }
@@ -262,6 +265,21 @@ test("settings:setClaudePath delegates when trusted, no-ops for untrusted or non
   await handlers.get(CH.settingsSet)!({ sender: other.sender }, "/evil/claude");
   await call(CH.settingsSet, 42);
   expect(settingsStore.setClaudePath).not.toHaveBeenCalled();
+});
+
+test("paths:getTempRoots returns the resolved roots when trusted, [] when not", async () => {
+  const { handlers, call, tempRoots } = setup();
+  expect(await call(CH.tempRoots)).toEqual([
+    "C:\\Users\\p\\AppData\\Local\\Temp",
+  ]);
+  expect(tempRoots).toHaveBeenCalledTimes(1);
+
+  tempRoots.mockClear();
+  const other = fakeSender();
+  expect(await handlers.get(CH.tempRoots)!({ sender: other.sender })).toEqual(
+    [],
+  );
+  expect(tempRoots).not.toHaveBeenCalled();
 });
 
 // ---- theme -------------------------------------------------------------------
