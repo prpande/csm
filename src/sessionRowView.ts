@@ -108,6 +108,9 @@ export function formatSpan(
   if (ms >= DAY_MS) return "span >24h";
   if (ms < MIN_MS) return "span <1m";
   const mins = Math.round(ms / MIN_MS);
+  // Rounding a span just under 24h (e.g. 23h59m45s) can push mins to 1440, which
+  // would render "24h 0m"; treat that as the >24h cap so the boundary is airtight.
+  if (mins >= 24 * 60) return "span >24h";
   if (mins >= 60) return `span ${Math.floor(mins / 60)}h ${mins % 60}m`;
   return `span ${mins}m`;
 }

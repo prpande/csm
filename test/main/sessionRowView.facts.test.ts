@@ -40,8 +40,20 @@ describe("fact formatters", () => {
     expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-16T00:00:00Z")).toBe(
       "span >24h",
     );
+    // A span just under 24h must not round up to "24h 0m" — it caps at >24h.
+    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-01T23:59:45Z")).toBe(
+      "span >24h",
+    );
+    // 59m30s rounds to 60 minutes but renders "1h 0m", never "0h 60m".
+    expect(formatSpan("2026-07-01T00:00:00Z", "2026-07-01T00:59:30Z")).toBe(
+      "span 1h 0m",
+    );
     expect(
       formatSpan("2026-07-01T00:00:00Z", "2026-07-01T00:00:00Z"),
+    ).toBeNull();
+    // Reversed timestamps (last before first) yield no span.
+    expect(
+      formatSpan("2026-07-01T01:00:00Z", "2026-07-01T00:00:00Z"),
     ).toBeNull();
     expect(formatSpan(null, "2026-07-01T00:00:00Z")).toBeNull();
   });
