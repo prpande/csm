@@ -1,4 +1,4 @@
-import { test, expect, vi } from "vitest";
+import { describe, test, expect, vi } from "vitest";
 import { registerIpcHandlers, type IpcHandlerDeps } from "../../src/ipc";
 import { CH } from "../../src/ipcChannels";
 import {
@@ -156,7 +156,10 @@ test("sessions:scan from an untrusted sender runs no scan and sends nothing", as
 
 test("sessions:scan resolves projectsRoot and injects now() into the scan", async () => {
   const scanSpy = vi.fn(emptyScan);
-  const createSessionStore = vi.fn(() => ({ scan: scanSpy }));
+  const createSessionStore = vi.fn(() => ({
+    scan: scanSpy,
+    getFacts: vi.fn(async () => ({})),
+  }));
   const { call } = setup({
     createSessionStore,
     projectsRoot: "/root/projects",
