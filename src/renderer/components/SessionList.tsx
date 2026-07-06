@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SessionMetadata } from "../../sessionParser";
 import { computeWindow, ROW_HEIGHT, OVERSCAN } from "../../sessionListWindow";
+import { useSessionFacts } from "../hooks/useSessionFacts";
 import { SessionRow } from "./SessionRow";
 import styles from "./SessionList.module.css";
 
@@ -51,6 +52,16 @@ export function SessionList({
   );
   const visible = sessions.slice(startIndex, endIndex);
 
+  const { facts, requestFacts } = useSessionFacts();
+  // Request facts for the rows actually mounted (the window). Keyed on the id list
+  // so a scroll into new rows fetches just the newly-visible, uncached ones.
+  const visibleIds = visible.map((s) => s.sessionId).join(",");
+  useEffect(() => {
+    if (visible.length > 0) requestFacts(visible.map((s) => s.sessionId));
+    // visibleIds is the stable dependency; `visible`/`requestFacts` identities are derived.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleIds, requestFacts]);
+
   return (
     <div
       ref={scrollRef}
@@ -80,6 +91,7 @@ export function SessionList({
               rowHeight={ROW_HEIGHT}
               onOpen={onOpen}
               worktreeBranch={worktreeBranches?.get(session.sessionId)}
+              factState={facts.get(session.sessionId)}
             />
           ))}
         </div>

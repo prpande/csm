@@ -1,5 +1,5 @@
-import { test, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { test, expect, vi, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SessionList } from "../../src/renderer/components/SessionList";
 import { ROW_HEIGHT } from "../../src/sessionListWindow";
 import type { SessionMetadata } from "../../src/sessionParser";
@@ -50,4 +50,47 @@ test("renders an empty list without crashing", () => {
   render(<SessionList sessions={[]} />);
   expect(screen.getByRole("list")).toBeTruthy();
   expect(screen.queryAllByRole("listitem").length).toBe(0);
+});
+
+const sampleSession: SessionMetadata = {
+  sessionId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  cwd: "D:\\src\\csm",
+  title: "test session",
+  permissionMode: "default",
+  lastActivity: null,
+  gitBranch: null,
+};
+
+afterEach(() => {
+  (window as unknown as Record<string, unknown>).csm = undefined;
+});
+
+test("requests facts for the visible window and passes them to rows", async () => {
+  const getFacts = vi.fn(async (ids: string[]) =>
+    Object.fromEntries(
+      ids.map((id) => [
+        id,
+        {
+          sessionId: id,
+          messageCount: 7,
+          firstActivity: null,
+          lastActivity: null,
+          editedFileCount: 0,
+          firstModel: null,
+          distinctModelCount: 0,
+          outputTokens: 0,
+        },
+      ]),
+    ),
+  );
+  (window as unknown as { csm: unknown }).csm = {
+    isDesktop: true,
+    platform: "win32",
+    getFacts,
+  };
+
+  render(<SessionList sessions={[sampleSession]} />);
+  await waitFor(() => expect(getFacts).toHaveBeenCalled());
+  expect(getFacts.mock.calls[0][0]).toContain(sampleSession.sessionId);
+  await waitFor(() => expect(screen.getByText(/7 msgs/)).toBeTruthy());
 });

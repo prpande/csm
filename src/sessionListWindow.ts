@@ -4,7 +4,7 @@
 // so a folder with thousands of sessions never mounts every row at once.
 
 /** Fixed row height in px. Fixed height is what makes the window pure math. */
-export const ROW_HEIGHT = 56;
+export const ROW_HEIGHT = 76;
 
 /** Extra rows mounted above/below the viewport to avoid blank flashes on scroll. */
 export const OVERSCAN = 6;
