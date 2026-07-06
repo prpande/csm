@@ -154,8 +154,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   );
 
   // getFacts: batch fact fetch for the enriched-row third line (#115). Untrusted
-  // frame or a non-array arg → {} (renderer shows skeletons). Non-string elements
-  // are filtered before delegating; store.getFacts does the UUID/path/cache work.
+  // frame or a non-array arg → {} (the requested ids resolve to the error dash, an
+  // unreachable case for the trusted main window). Non-string elements are filtered
+  // before delegating; store.getFacts does the UUID/path/cache work.
   ipcMain.handle(CH.sessionGetFacts, async (event, ids) => {
     if (!isTrustedSender(event.sender) || !Array.isArray(ids)) return {};
     const valid = ids.filter((x): x is string => typeof x === "string");
