@@ -66,7 +66,7 @@ function canon(
  * `%TEMP%`/`%TMP%`, `%LOCALAPPDATA%\Temp`, and `C:\Windows\Temp`; POSIX uses
  * `os.tmpdir()`, `$TMPDIR`, `/tmp`, `/private/tmp`, `/var/folders`, and
  * `/private/var/folders` (the `/private/*` forms are macOS's canonical symlink
- * targets). `isTempPath` matches against these, and the `csm:getTempRoots` IPC
+ * targets). `isTempPath` matches against these, and the `paths:getTempRoots` IPC
  * ships them to the renderer so it applies the §10 hide filter without
  * re-implementing root DISCOVERY (which needs `os`) — the renderer only does
  * pure prefix matching (#69).

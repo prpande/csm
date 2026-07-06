@@ -333,7 +333,12 @@ function drainClaudeDir(
       kept.push(rollUpNode(grandchild));
     }
   }
-  return kept.length > 0 ? recount({ ...claudeNode, children: kept }) : null;
+  // Prune the `.claude` node only when nothing remains under it. It survives if
+  // it keeps a non-worktrees child OR carries its own sessions (a session whose
+  // cwd is literally `<repo>/.claude`) — dropping it then would lose those.
+  return kept.length > 0 || claudeNode.sessions.length > 0
+    ? recount({ ...claudeNode, children: kept })
+    : null;
 }
 
 function rollUpNode(node: FolderNode): FolderNode {

@@ -1,6 +1,6 @@
 // Renderer-safe temp-session filter (#69). The main process discovers the system
 // temp roots (`pathAdapter.tempRoots`, which needs `os`) and ships them over the
-// `csm:getTempRoots` IPC; this module — pure string logic, no `os`/`node:path`,
+// `paths:getTempRoots` IPC; this module — pure string logic, no `os`/`node:path`,
 // so it is safe in the DOM-only renderer and unit-testable in the node tsconfig —
 // prefix-matches a session's cwd against them to drop throwaway temp sessions
 // from the default (declutter) view. The toggle simply skips this filter.

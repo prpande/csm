@@ -389,6 +389,27 @@ describe("rollUpWorktrees", () => {
     expect(csm.worktreeBranches.get("wt")).toBe("icon-rebrand");
   });
 
+  test("keeps a session whose cwd is the .claude dir itself while draining its worktrees sibling", () => {
+    // Corner case: a session launched from `<repo>/.claude` gives that node its
+    // own sessions, and if `worktrees` is its ONLY child the drain must not prune
+    // the node out from under those sessions (silent data loss).
+    const CC = "D:\\src\\csm\\.claude";
+    const tree = rollUpWorktrees(
+      buildTree([s("wt", WT, null, { gitBranch: "b" }), s("cc", CC)]),
+    );
+    const csm = csmOf(tree);
+    // The worktree session still rolls up to the owning project node...
+    expect(csm.sessions.map((x) => x.sessionId)).toEqual(["wt"]);
+    expect(csm.worktreeBranches.get("wt")).toBe("b");
+    // ...but the `.claude`-cwd session survives on a kept `.claude` node.
+    const claude = csm.children.find((c) => c.name === ".claude");
+    expect(claude).toBeDefined();
+    expect(claude!.sessions.map((x) => x.sessionId)).toEqual(["cc"]);
+    expect(claude!.children).toHaveLength(0); // worktrees subtree drained
+    // No session dropped: wt + cc = 2.
+    expect(csm.totalCount).toBe(2);
+  });
+
   test("leaves a non-worktree tree structurally unchanged with empty provenance", () => {
     const tree = rollUpWorktrees(
       buildTree([s("a", "D:\\src\\csm"), s("b", "D:\\src\\other\\sub")]),
