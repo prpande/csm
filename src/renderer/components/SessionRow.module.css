@@ -158,3 +158,44 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Third line: lazily-loaded session facts (#115). Reserves a fixed line so the
+   skeleton->text swap never reflows the virtualized list; truncates (never wraps)
+   so a narrow pane can't break the reserved height. */
+.facts {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 1em;
+  line-height: 1;
+}
+
+.factsText {
+  animation: factsFade 0.15s ease;
+}
+
+@keyframes factsFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .factsText {
+    animation: none;
+  }
+}
+
+/* Placeholder bar shown until facts arrive. */
+.skeleton {
+  display: inline-block;
+  width: 60%;
+  height: 0.65em;
+  border-radius: 4px;
+  background: var(--skeleton-bg);
+}

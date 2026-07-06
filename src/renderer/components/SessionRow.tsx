@@ -3,7 +3,9 @@ import {
   chipVariant,
   formatRelativeTime,
   shortSessionId,
+  factSegments,
 } from "../../sessionRowView";
+import type { FactEntry } from "../hooks/useSessionFacts";
 import styles from "./SessionRow.module.css";
 
 interface SessionRowProps {
@@ -17,6 +19,8 @@ interface SessionRowProps {
    * label (its gitBranch, or the worktree folder name). Renders a provenance
    * chip. Undefined for the folder's own (non-worktree) sessions. */
   worktreeBranch?: string;
+  /** Lazily-loaded facts (#115). Undefined = still loading (renders a skeleton). */
+  factState?: FactEntry;
 }
 
 // One presentational session row (spec §9): a text block (title over a
@@ -29,6 +33,7 @@ export function SessionRow({
   rowHeight,
   onOpen,
   worktreeBranch,
+  factState,
 }: SessionRowProps) {
   const variant = chipVariant(session.permissionMode);
   return (
@@ -82,6 +87,33 @@ export function SessionRow({
           </span>
           <span className={styles.id}>{shortSessionId(session.sessionId)}</span>
         </div>
+        {factState === undefined ? (
+          <div className={styles.facts} aria-busy="true">
+            <span className={styles.skeleton} />
+          </div>
+        ) : factState.status === "error" ? (
+          <div className={styles.facts}>—</div>
+        ) : (
+          (() => {
+            const segments = factSegments(factState.facts);
+            return (
+              <div className={styles.facts} aria-label={segments.join(", ")}>
+                <span className={styles.factsText}>
+                  {segments.map((seg, i) => (
+                    <span key={i}>
+                      {i > 0 && (
+                        <span className={styles.sep} aria-hidden="true">
+                          {" · "}
+                        </span>
+                      )}
+                      {seg}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            );
+          })()
+        )}
       </div>
       {/* Rendered only when a reopen handler is wired (always, in the app). The
           accessible name is per-row; stopPropagation keeps a click from also

@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { SessionRow } from "../../src/renderer/components/SessionRow";
 import type { SessionMetadata } from "../../src/sessionParser";
 import type { PermissionMode } from "../../src/sessionParser";
+import type { FactEntry } from "../../src/renderer/hooks/useSessionFacts";
 
 const makeSession = (over: Partial<SessionMetadata> = {}): SessionMetadata => ({
   sessionId: "abcdefgh-1111-2222-3333-444455556666",
@@ -135,4 +136,53 @@ test("title is inserted as text, never as HTML (spec §9)", () => {
   // The angle-bracket string appears literally, and no <img> element is created.
   expect(screen.getByText(evil)).toBeTruthy();
   expect(container.querySelector("img")).toBe(null);
+});
+
+const sampleSession = makeSession();
+
+const loaded: FactEntry = {
+  status: "loaded",
+  facts: {
+    sessionId: "s",
+    messageCount: 42,
+    firstActivity: "2026-07-01T00:00:00Z",
+    lastActivity: "2026-07-01T03:41:00Z",
+    editedFileCount: 5,
+    firstModel: "claude-opus-4-8",
+    distinctModelCount: 1,
+    outputTokens: 1200000,
+  },
+};
+
+test("renders the fact segments when loaded", () => {
+  const { container } = render(
+    <SessionRow session={sampleSession} rowHeight={76} factState={loaded} />,
+  );
+  // The facts div has aria-label with all segments joined; check individual spans too.
+  const factsDiv = container.querySelector("[aria-label]");
+  expect(factsDiv).toBeTruthy();
+  const text = factsDiv!.textContent ?? "";
+  expect(text).toContain("42 msgs");
+  expect(text).toContain("3h 41m");
+  expect(text).toContain("5 edited");
+  expect(text).toContain("Opus 4.8");
+  expect(text).toContain("1.2M tok");
+});
+
+test("shows a skeleton (aria-busy) while facts are loading", () => {
+  const { container } = render(
+    <SessionRow session={sampleSession} rowHeight={76} />,
+  );
+  expect(container.querySelector('[aria-busy="true"]')).toBeTruthy();
+});
+
+test("shows an em-dash on fact error", () => {
+  render(
+    <SessionRow
+      session={sampleSession}
+      rowHeight={76}
+      factState={{ status: "error" }}
+    />,
+  );
+  expect(screen.getByText("—")).toBeTruthy();
 });

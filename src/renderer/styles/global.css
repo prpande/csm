@@ -37,6 +37,9 @@
   --on-accent: #fffaf6;
   --count-bg: #eae0d2;
   --count-text: #786d61;
+  /* Loading-skeleton fill for lazily-loaded row facts (#115): a hair above the
+     count surface so the bar reads as an empty placeholder in both themes. */
+  --skeleton-bg: #e3d8c8;
 
   /* Risk-coded permission-mode chips (spec §9): bypass = red/danger (held clear
      of the warm accent), acceptEdits/auto = teal/info, plan = violet. The
@@ -82,6 +85,7 @@
     --on-accent: #241610;
     --count-bg: #383029;
     --count-text: #b7aa9b;
+    --skeleton-bg: #3f362e;
 
     --chip-bypass-bg: #4b2019;
     --chip-bypass-text: #f0a48d;
