@@ -40,6 +40,18 @@ afterEach(() => {
   }
 });
 
+// A fresh enabled index instance over an existing userData dir.
+function indexOver(dir: string) {
+  return createSessionIndex({ dir, enabled: true, debounceMs: 0 });
+}
+
+// A real enabled index over its own fresh userData temp dir (cleaned in afterEach).
+function enabledIndex(prefix: string) {
+  const userData = mkdtempSync(join(tmpdir(), prefix));
+  createdRoots.push(userData);
+  return { userData, index: indexOver(userData) };
+}
+
 describe("sessionStore.getFacts", () => {
   test("rejects a non-UUID id without touching the filesystem", async () => {
     const store = createSessionStore(fixtureRoot());
@@ -50,13 +62,7 @@ describe("sessionStore.getFacts", () => {
 
   test("returns facts for a scanned session and caches by mtime:size", async () => {
     const root = fixtureRoot();
-    const userData = mkdtempSync(join(tmpdir(), "csm-facts-idx-"));
-    createdRoots.push(userData);
-    const index = createSessionIndex({
-      dir: userData,
-      enabled: true,
-      debounceMs: 0,
-    });
+    const { index } = enabledIndex("csm-facts-idx-");
     const spy = vi.fn(
       (id: string, c: string) =>
         ({
@@ -118,13 +124,7 @@ describe("sessionStore.getFacts", () => {
 
   test("computed facts persist across a fresh store over the same index", async () => {
     const root = fixtureRoot();
-    const userData = mkdtempSync(join(tmpdir(), "csm-facts-persist-"));
-    createdRoots.push(userData);
-    const index = createSessionIndex({
-      dir: userData,
-      enabled: true,
-      debounceMs: 0,
-    });
+    const { userData, index } = enabledIndex("csm-facts-persist-");
 
     const spy1 = vi.fn(
       () =>
@@ -146,11 +146,7 @@ describe("sessionStore.getFacts", () => {
     expect(spy1).toHaveBeenCalledTimes(1);
 
     // A brand-new index instance loads the persisted facts from disk.
-    const index2 = createSessionIndex({
-      dir: userData,
-      enabled: true,
-      debounceMs: 0,
-    });
+    const index2 = indexOver(userData);
     const spy2 = vi.fn(
       () =>
         ({
@@ -178,13 +174,7 @@ describe("sessionStore.getFacts", () => {
 describe("sessionStore.startBackfill (seam — not auto-run in #116)", () => {
   test("computes + persists facts for every scanned session, and is idempotent", async () => {
     const root = fixtureRoot();
-    const userData = mkdtempSync(join(tmpdir(), "csm-backfill-"));
-    createdRoots.push(userData);
-    const index = createSessionIndex({
-      dir: userData,
-      enabled: true,
-      debounceMs: 0,
-    });
+    const { index } = enabledIndex("csm-backfill-");
     const spy = vi.fn(
       (id: string) =>
         ({
@@ -213,13 +203,7 @@ describe("sessionStore.startBackfill (seam — not auto-run in #116)", () => {
 
   test("skips a session already in flight (in-flight Set de-dup)", async () => {
     const root = fixtureRoot();
-    const userData = mkdtempSync(join(tmpdir(), "csm-backfill-inflight-"));
-    createdRoots.push(userData);
-    const index = createSessionIndex({
-      dir: userData,
-      enabled: true,
-      debounceMs: 0,
-    });
+    const { index } = enabledIndex("csm-backfill-inflight-");
     const spy = vi.fn(
       (id: string) =>
         ({

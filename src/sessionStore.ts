@@ -226,7 +226,7 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
       meta.lastActivity ?? new Date(entry.mtimeMs).toISOString();
     // Miss (new or changed key) → write the metadata tier. A changed key drops
     // any stale facts by replacing the whole entry (spec §7.2).
-    index.upsert(id, {
+    const newEntry: IndexEntry = {
       mtime: entry.mtimeMs,
       size: entry.size,
       cwd: meta.cwd,
@@ -235,8 +235,9 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
       lastActivity,
       gitBranch: meta.gitBranch,
       ...(meta.version !== undefined ? { version: meta.version } : {}),
-    });
-    return metaFromEntry(id, index.get(id)!);
+    };
+    index.upsert(id, newEntry);
+    return metaFromEntry(id, newEntry);
   }
 
   async function scan(opts: ScanOptions): Promise<GroupedSessions> {
@@ -320,8 +321,9 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
     // file changed since scan (or has no entry yet), return transiently; the
     // next scan refreshes the entry and a later pull persists (spec §7.3).
     if (keyMatches) {
-      index.upsert(id, { ...entry!, facts: toIndexFacts(facts) });
-      return factsFromEntry(id, index.get(id)!);
+      const updated: IndexEntry = { ...entry!, facts: toIndexFacts(facts) };
+      index.upsert(id, updated);
+      return factsFromEntry(id, updated);
     }
     return facts;
   }
