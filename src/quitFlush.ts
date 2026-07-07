@@ -23,8 +23,13 @@ export function createBeforeQuitHandler(
     event.preventDefault();
     quitting = true;
     // Flush, then quit regardless of flush success — never hang the app on an
-    // index-write error (§11). The re-quit fires before-quit again; `quitting`
+    // index-write error (§11). Swallow the flush rejection BEFORE quit so a
+    // failed index write never surfaces as an unhandled promise rejection in the
+    // main process at shutdown. The re-quit fires before-quit again; `quitting`
     // is now true so it falls through to a real quit.
-    void deps.flush().finally(deps.quit);
+    void deps
+      .flush()
+      .catch(() => {})
+      .finally(deps.quit);
   };
 }
