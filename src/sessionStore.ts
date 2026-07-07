@@ -16,6 +16,11 @@ import {
   type SessionFacts,
 } from "./sessionParser";
 import { isValidSessionId } from "./terminalLauncher";
+import {
+  createSessionIndex,
+  type IndexEntry,
+  type SessionIndex,
+} from "./sessionIndex";
 
 export interface SessionFolder {
   cwd: string;
@@ -41,6 +46,10 @@ export interface StoreDeps {
   parse?: (sessionId: string, content: string) => SessionMetadata;
   /** Injectable so tests can spy fact-parse call counts (cache behaviour). */
   extractFacts?: (sessionId: string, content: string) => SessionFacts;
+  /** The persistent metadata/facts index (spec 2026-07-07). Defaults to a
+   *  disabled in-memory index → today's ephemeral behaviour when none is
+   *  injected (used by the many existing tests that construct a bare store). */
+  index?: SessionIndex;
 }
 
 // Session files. The match is case-sensitive: Claude always writes lowercase
@@ -67,6 +76,7 @@ export function tierIndex(ageMs: number): number {
 interface FileEntry {
   path: string;
   mtimeMs: number;
+  size: number;
 }
 
 // Collect every *.jsonl one directory level below the root (the encoded-cwd
@@ -103,7 +113,8 @@ async function collectFiles(rootDir: string): Promise<FileEntry[]> {
     for (const name of names) {
       const path = join(dir, name);
       try {
-        files.push({ path, mtimeMs: (await stat(path)).mtimeMs });
+        const st = await stat(path);
+        files.push({ path, mtimeMs: st.mtimeMs, size: st.size });
       } catch {
         // Unreadable between readdir and stat (e.g. removed) — skip.
       }
@@ -130,10 +141,10 @@ function activityEpoch(lastActivity: string | null): number {
 
 export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   const parse = deps.parse ?? parseSession;
-  // Cache key: `filepath\0mtimeMs`. A changed file gets a new key (its stale
-  // entry is simply never read again), so an unchanged file resolves instantly.
-  const cache = new Map<string, SessionMetadata>();
   const extractFacts = deps.extractFacts ?? extractSessionFacts;
+  // Disabled in-memory index when none injected: get/upsert work in memory,
+  // load is empty, flush is a no-op — precisely today's ephemeral cache (§7.6).
+  const index = deps.index ?? createSessionIndex({ dir: "", enabled: false });
   // sessionId -> absolute path, captured during scan. The on-disk path is grouped
   // by ENCODED cwd, not the authoritative in-file cwd, so it is not derivable from
   // a session's cwd — it must be remembered here. Populated in scan(), read by getFacts().
@@ -142,12 +153,34 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   // SUCCESS entries only — an error is returned transiently so it retries.
   const factCache = new Map<string, { key: string; facts: SessionFacts }>();
 
+  // Rebuild a SessionMetadata from a persisted entry (the map key is the id, and
+  // messageCount is intentionally not persisted — no consumer; the row uses
+  // SessionFacts.messageCount, spec §5).
+  function metaFromEntry(id: string, e: IndexEntry): SessionMetadata {
+    return {
+      sessionId: id,
+      cwd: e.cwd,
+      title: e.title,
+      permissionMode: e.permissionMode,
+      lastActivity: e.lastActivity,
+      gitBranch: e.gitBranch,
+      ...(e.version !== undefined ? { version: e.version } : {}),
+    };
+  }
+
   async function readMetadata(
     entry: FileEntry,
   ): Promise<SessionMetadata | null> {
-    const key = `${entry.path}\0${entry.mtimeMs}`;
-    const cached = cache.get(key);
-    if (cached) return cached;
+    const id = sessionIdOf(entry.path);
+    const existing = index.get(id);
+    // Hit: mtime AND size match the persisted freshness key → no read, no parse.
+    if (
+      existing &&
+      existing.mtime === entry.mtimeMs &&
+      existing.size === entry.size
+    ) {
+      return metaFromEntry(id, existing);
+    }
 
     let content: string;
     try {
@@ -156,19 +189,29 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
       return null; // vanished/unreadable — skip this file, keep scanning.
     }
 
-    const meta = parse(sessionIdOf(entry.path), content);
+    const meta = parse(id, content);
     // Parser returns null lastActivity when no record carried a timestamp; fall
     // back to the file's mtime so every session has an orderable time (spec §4.1).
-    const withTime: SessionMetadata =
-      meta.lastActivity === null
-        ? { ...meta, lastActivity: new Date(entry.mtimeMs).toISOString() }
-        : meta;
-    cache.set(key, withTime);
-    return withTime;
+    const lastActivity =
+      meta.lastActivity ?? new Date(entry.mtimeMs).toISOString();
+    // Miss (new or changed key) → write the metadata tier. A changed key drops
+    // any stale facts by replacing the whole entry (spec §7.2).
+    index.upsert(id, {
+      mtime: entry.mtimeMs,
+      size: entry.size,
+      cwd: meta.cwd,
+      title: meta.title,
+      permissionMode: meta.permissionMode,
+      lastActivity,
+      gitBranch: meta.gitBranch,
+      ...(meta.version !== undefined ? { version: meta.version } : {}),
+    });
+    return metaFromEntry(id, index.get(id)!);
   }
 
   async function scan(opts: ScanOptions): Promise<GroupedSessions> {
     const { now, onBatch } = opts;
+    await index.load(); // idempotent — reads disk at most once
     const files = await collectFiles(rootDir);
     // Rebuild the id->path map each scan so sessions deleted between scans
     // don't linger as stale entries (the map is exactly one scan's worth).
@@ -211,6 +254,14 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
         activityEpoch(b.sessions[0].lastActivity) -
         activityEpoch(a.sessions[0].lastActivity),
     );
+    // Prune ONLY after a complete scan, and never on a scan that observed no
+    // files (a missing/transiently-unreadable root returns []). This keeps the
+    // persisted map a subset of sessions present at the last complete scan and
+    // avoids wiping the index on a transient failure (spec §7.2, §11).
+    if (files.length > 0) {
+      index.prune(new Set(pathById.keys()));
+    }
+    await index.flush();
     return { folders };
   }
 

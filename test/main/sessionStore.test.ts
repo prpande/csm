@@ -17,6 +17,7 @@ import {
   type GroupedSessions,
 } from "../../src/sessionStore";
 import type { SessionMetadata } from "../../src/sessionParser";
+import { createSessionIndex } from "../../src/sessionIndex";
 
 // sessionStore is the I/O layer: it walks <root>/<encoded-cwd>/<id>.jsonl, feeds
 // each file's TEXT to the pure parser, groups by the authoritative in-file cwd,
@@ -313,4 +314,138 @@ test("empty and missing root -> { folders: [] }, no batches", async () => {
   });
   expect(missing.folders).toEqual([]);
   expect(batches).toEqual([]);
+});
+
+// A real enabled index backed by its own temp userData dir, wired into the store.
+function enabledIndex() {
+  const userData = mkdtempSync(join(tmpdir(), "csm-idx-store-"));
+  const index = createSessionIndex({
+    dir: userData,
+    enabled: true,
+    debounceMs: 0,
+  });
+  return { userData, index };
+}
+
+test("scan persists metadata; a fresh store over the same index skips re-parse", async () => {
+  writeSession(
+    "enc-a",
+    "11111111-1111-4111-8111-111111111111",
+    [{ type: "system", cwd: "/proj", timestamp: "2026-06-30T10:00:00.000Z" }],
+    0,
+  );
+  const { index } = enabledIndex();
+  const parse = vi.fn((id: string) => ({
+    sessionId: id,
+    cwd: "/proj",
+    title: "t",
+    permissionMode: "default" as const,
+    lastActivity: "2026-06-30T10:00:00.000Z",
+    gitBranch: null,
+  }));
+  const store1 = createSessionStore(root, { index, parse });
+  await scanNow(store1);
+  expect(parse).toHaveBeenCalledTimes(1);
+
+  // A new store instance over the SAME loaded index re-scans with no re-parse.
+  parse.mockClear();
+  const store2 = createSessionStore(root, { index, parse });
+  await scanNow(store2);
+  expect(parse).toHaveBeenCalledTimes(0); // mtime:size hit
+});
+
+test("a size-only change (same mtime) still invalidates the metadata entry", async () => {
+  const file = writeSession(
+    "enc-a",
+    "11111111-1111-4111-8111-111111111111",
+    [{ type: "system", cwd: "/proj", timestamp: "2026-06-30T10:00:00.000Z" }],
+    0,
+  );
+  const { index } = enabledIndex();
+  const parse = vi.fn((id: string) => ({
+    sessionId: id,
+    cwd: "/proj",
+    title: "t",
+    permissionMode: "default" as const,
+    lastActivity: "2026-06-30T10:00:00.000Z",
+    gitBranch: null,
+  }));
+  const store = createSessionStore(root, { index, parse });
+  await scanNow(store);
+  expect(parse).toHaveBeenCalledTimes(1);
+
+  // Grow the file but PIN the mtime back to its original value.
+  const original = statSync(file).mtime;
+  writeFileSync(file, readFileSync(file, "utf8") + "\n{}");
+  utimesSync(file, original, original);
+  parse.mockClear();
+  await scanNow(store);
+  expect(parse).toHaveBeenCalledTimes(1); // size changed → miss despite same mtime
+});
+
+test("prune removes a deleted session's entry after a complete scan", async () => {
+  writeSession(
+    "enc-a",
+    "11111111-1111-4111-8111-111111111111",
+    [{ type: "system", cwd: "/p", timestamp: "2026-06-30T10:00:00.000Z" }],
+    0,
+  );
+  const gone = writeSession(
+    "enc-a",
+    "22222222-2222-4222-8222-222222222222",
+    [{ type: "system", cwd: "/p", timestamp: "2026-06-30T10:00:00.000Z" }],
+    0,
+  );
+  const { index } = enabledIndex();
+  const store = createSessionStore(root, { index });
+  await scanNow(store);
+  expect(index.get("22222222-2222-4222-8222-222222222222")).toBeDefined();
+
+  rmSync(gone);
+  await scanNow(store);
+  expect(index.get("22222222-2222-4222-8222-222222222222")).toBeUndefined();
+  expect(index.get("11111111-1111-4111-8111-111111111111")).toBeDefined();
+});
+
+test("an empty/unreadable root does NOT prune the existing index", async () => {
+  writeSession(
+    "enc-a",
+    "11111111-1111-4111-8111-111111111111",
+    [{ type: "system", cwd: "/p", timestamp: "2026-06-30T10:00:00.000Z" }],
+    0,
+  );
+  const { index } = enabledIndex();
+  await scanNow(createSessionStore(root, { index }));
+  expect(index.get("11111111-1111-4111-8111-111111111111")).toBeDefined();
+
+  // Scan a root with zero session files — must not wipe the index (transient
+  // failure guard: a scan that observed nothing never evicts).
+  const emptyRoot = mkdtempSync(join(tmpdir(), "csm-empty-"));
+  await scanNow(createSessionStore(emptyRoot, { index }));
+  expect(index.get("11111111-1111-4111-8111-111111111111")).toBeDefined();
+  rmSync(emptyRoot, { recursive: true, force: true });
+});
+
+test("read-only: fixture dir is byte-identical after an index-backed scan", async () => {
+  writeSession(
+    "e",
+    "11111111-1111-4111-8111-111111111111",
+    [{ type: "system", cwd: "/p", timestamp: "2026-06-30T10:00:00.000Z" }],
+    0,
+  );
+  const { index } = enabledIndex();
+  const snapshot = () =>
+    readdirSync(root, { recursive: true })
+      .map(String)
+      .sort()
+      .map((rel) => {
+        const abs = join(root, rel);
+        const st = statSync(abs);
+        return st.isDirectory()
+          ? `${rel}/`
+          : `${rel}:${st.mtimeMs}:${readFileSync(abs, "utf8")}`;
+      });
+  const before = snapshot();
+  await scanNow(createSessionStore(root, { index }));
+  expect(snapshot()).toEqual(before); // index writes went to userData, not root
 });
