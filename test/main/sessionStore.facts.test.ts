@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSessionStore } from "../../src/sessionStore";
 import type { SessionFacts } from "../../src/sessionParser";
+import { createSessionIndex } from "../../src/sessionIndex";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
 const UUID2 = "22222222-2222-4222-8222-222222222222";
@@ -49,6 +50,13 @@ describe("sessionStore.getFacts", () => {
 
   test("returns facts for a scanned session and caches by mtime:size", async () => {
     const root = fixtureRoot();
+    const userData = mkdtempSync(join(tmpdir(), "csm-facts-idx-"));
+    createdRoots.push(userData);
+    const index = createSessionIndex({
+      dir: userData,
+      enabled: true,
+      debounceMs: 0,
+    });
     const spy = vi.fn(
       (id: string, c: string) =>
         ({
@@ -62,14 +70,14 @@ describe("sessionStore.getFacts", () => {
           outputTokens: c.length,
         }) as SessionFacts,
     );
-    const store = createSessionStore(root, { extractFacts: spy });
+    const store = createSessionStore(root, { extractFacts: spy, index });
     await store.scan({ now: Date.parse("2026-07-01T00:00:00Z") });
 
     const a = await store.getFacts([UUID]);
     const b = await store.getFacts([UUID]);
     expect((a[UUID] as SessionFacts).messageCount).toBe(1);
     expect(spy).toHaveBeenCalledTimes(1); // second call is a cache hit
-    expect(b[UUID]).toBe(a[UUID]);
+    expect(b[UUID]).toEqual(a[UUID]); // value-equal (reconstructed from the entry)
   });
 
   test("re-parses when the file grows (new size)", async () => {
@@ -106,5 +114,63 @@ describe("sessionStore.getFacts", () => {
     await store.scan({ now: Date.parse("2026-07-01T00:00:00Z") });
     const res = await store.getFacts([UUID2]);
     expect(res[UUID2]).toEqual({ error: true });
+  });
+
+  test("computed facts persist across a fresh store over the same index", async () => {
+    const root = fixtureRoot();
+    const userData = mkdtempSync(join(tmpdir(), "csm-facts-persist-"));
+    createdRoots.push(userData);
+    const index = createSessionIndex({
+      dir: userData,
+      enabled: true,
+      debounceMs: 0,
+    });
+
+    const spy1 = vi.fn(
+      () =>
+        ({
+          sessionId: UUID,
+          messageCount: 7,
+          firstActivity: null,
+          lastActivity: null,
+          editedFileCount: 0,
+          firstModel: null,
+          distinctModelCount: 0,
+          outputTokens: 3,
+        }) as SessionFacts,
+    );
+    const store1 = createSessionStore(root, { extractFacts: spy1, index });
+    await store1.scan({ now: Date.parse("2026-07-01T00:00:00Z") });
+    await store1.getFacts([UUID]);
+    await index.flush();
+    expect(spy1).toHaveBeenCalledTimes(1);
+
+    // A brand-new index instance loads the persisted facts from disk.
+    const index2 = createSessionIndex({
+      dir: userData,
+      enabled: true,
+      debounceMs: 0,
+    });
+    const spy2 = vi.fn(
+      () =>
+        ({
+          sessionId: UUID,
+          messageCount: 99,
+          firstActivity: null,
+          lastActivity: null,
+          editedFileCount: 0,
+          firstModel: null,
+          distinctModelCount: 0,
+          outputTokens: 0,
+        }) as SessionFacts,
+    );
+    const store2 = createSessionStore(root, {
+      extractFacts: spy2,
+      index: index2,
+    });
+    await store2.scan({ now: Date.parse("2026-07-01T00:00:00Z") });
+    const res = await store2.getFacts([UUID]);
+    expect((res[UUID] as SessionFacts).messageCount).toBe(7); // from disk, not recomputed
+    expect(spy2).not.toHaveBeenCalled();
   });
 });

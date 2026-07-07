@@ -19,6 +19,7 @@ import { isValidSessionId } from "./terminalLauncher";
 import {
   createSessionIndex,
   type IndexEntry,
+  type IndexFacts,
   type SessionIndex,
 } from "./sessionIndex";
 
@@ -149,9 +150,9 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   // by ENCODED cwd, not the authoritative in-file cwd, so it is not derivable from
   // a session's cwd — it must be remembered here. Populated in scan(), read by getFacts().
   const pathById = new Map<string, string>();
-  // Fact cache keyed by sessionId; value carries the mtime:size freshness key.
-  // SUCCESS entries only — an error is returned transiently so it retries.
-  const factCache = new Map<string, { key: string; facts: SessionFacts }>();
+  // Sessions whose facts are being computed right now. De-dups a lazy getFacts
+  // pull against the startBackfill() seam (Task 7 exposes this set).
+  const inFlight = new Set<string>();
 
   // Rebuild a SessionMetadata from a persisted entry (the map key is the id, and
   // messageCount is intentionally not persisted — no consumer; the row uses
@@ -165,6 +166,35 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
       lastActivity: e.lastActivity,
       gitBranch: e.gitBranch,
       ...(e.version !== undefined ? { version: e.version } : {}),
+    };
+  }
+
+  // SessionFacts reconstructed from a warm entry: firstActivity from facts,
+  // lastActivity from the entry level (de-duped, spec §5).
+  function factsFromEntry(id: string, e: IndexEntry): SessionFacts {
+    const f = e.facts!;
+    return {
+      sessionId: id,
+      messageCount: f.messageCount,
+      firstActivity: f.firstActivity,
+      lastActivity: e.lastActivity,
+      editedFileCount: f.editedFileCount,
+      firstModel: f.firstModel,
+      distinctModelCount: f.distinctModelCount,
+      outputTokens: f.outputTokens,
+    };
+  }
+
+  // The persisted facts subset (drops sessionId → the map key, and lastActivity
+  // → stored once at entry level).
+  function toIndexFacts(f: SessionFacts): IndexFacts {
+    return {
+      messageCount: f.messageCount,
+      firstActivity: f.firstActivity,
+      editedFileCount: f.editedFileCount,
+      firstModel: f.firstModel,
+      distinctModelCount: f.distinctModelCount,
+      outputTokens: f.outputTokens,
     };
   }
 
@@ -265,8 +295,36 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
     return { folders };
   }
 
-  // Per-id worker. Returns the cached/fresh facts, or { error: true } for any
-  // validation or I/O failure. Errors are never cached so transient failures retry.
+  // Read the file, compute facts, and persist them to the index when the
+  // scan-time metadata version still matches (keyMatches). Returns null on I/O
+  // failure so the caller can propagate { error: true } without persisting.
+  async function computeAndPersistFacts(
+    id: string,
+    path: string,
+    entry: IndexEntry | undefined,
+    keyMatches: boolean,
+  ): Promise<SessionFacts | null> {
+    let content: string;
+    try {
+      content = await readFile(path, "utf8");
+    } catch {
+      return null; // NOT persisted: a transient failure retries.
+    }
+    const facts = extractFacts(id, content);
+    // Persist facts ONLY when the scan-time metadata version still matches the
+    // current file — so persisted facts always sit on fresh metadata. If the
+    // file changed since scan (or has no entry yet), return transiently; the
+    // next scan refreshes the entry and a later pull persists (spec §7.3).
+    if (keyMatches) {
+      index.upsert(id, { ...entry!, facts: toIndexFacts(facts) });
+      return factsFromEntry(id, index.get(id)!);
+    }
+    return facts;
+  }
+
+  // Per-id worker. Returns cached/fresh facts, or { error: true } for any
+  // validation or I/O failure. Errors are never persisted so transient failures
+  // retry (the #115 rule).
   async function getOneFacts(
     id: string,
   ): Promise<SessionFacts | { error: true }> {
@@ -282,20 +340,21 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
       return { error: true };
     }
 
-    const key = `${st.mtimeMs}:${st.size}`;
-    const cached = factCache.get(id);
-    if (cached && cached.key === key) return cached.facts;
+    const entry = index.get(id);
+    const keyMatches =
+      entry !== undefined &&
+      entry.mtime === st.mtimeMs &&
+      entry.size === st.size;
+    // Warm hit: fresh entry that already carries facts.
+    if (keyMatches && entry!.facts) return factsFromEntry(id, entry!);
 
-    let content: string;
+    inFlight.add(id);
     try {
-      content = await readFile(path, "utf8");
-    } catch {
-      return { error: true }; // NOT cached: a transient failure retries next call.
+      const facts = await computeAndPersistFacts(id, path, entry, keyMatches);
+      return facts ?? { error: true };
+    } finally {
+      inFlight.delete(id);
     }
-
-    const facts = extractFacts(id, content);
-    factCache.set(id, { key, facts });
-    return facts;
   }
 
   async function getFacts(
