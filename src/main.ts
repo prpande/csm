@@ -17,6 +17,8 @@ import { applicationMenuTemplate } from "./menu";
 import { windowIconPath, macDockIconPath, type IconEnv } from "./appIcon";
 import { CH } from "./ipcChannels";
 import { createSessionStore } from "./sessionStore";
+import { createSessionIndex } from "./sessionIndex";
+import { createBeforeQuitHandler } from "./quitFlush";
 import { createSettingsStore } from "./settingsStore";
 import { reopenSession } from "./reopenSession";
 import { defaultProjectsRoot, tempRoots } from "./pathAdapter";
@@ -133,24 +135,6 @@ if (!gotLock) {
   // settings deps are the shipped units, injected here with real I/O.
   const settingsStore = createSettingsStore(app.getPath("userData"));
 
-  registerIpcHandlers({
-    ipcMain,
-    isTrustedSender: isMainWindowSender,
-    createSessionStore,
-    settingsStore,
-    reopen: reopenSession,
-    // The theme switch (#86) drives Electron's nativeTheme, which forces the
-    // renderer's prefers-color-scheme (and native menus/dialogs) to the chosen
-    // mode; injected here so ipc.ts stays Electron-free for unit tests.
-    setNativeTheme: (source) => {
-      nativeTheme.themeSource = source;
-    },
-    tempRoots: () => tempRoots(),
-    projectsRoot: defaultProjectsRoot(),
-    platform: process.platform,
-    now: () => Date.now(),
-  });
-
   // Custom traffic-light window controls (#86). Same lazy sender guard as above;
   // getWindow resolves the live window so it survives the macOS activate recreate.
   registerWindowControls({
@@ -170,6 +154,48 @@ if (!gotLock) {
     // the chosen mode — nativeTheme.themeSource forces the renderer's
     // prefers-color-scheme. Absent/unknown → 'system' (getTheme's default).
     nativeTheme.themeSource = await settingsStore.getTheme();
+
+    // Persistent session index (#116). Read the privacy opt-out, construct the
+    // index against userData, and load it once before any scan. A disabled
+    // setting degrades to an in-memory-only cache (no disk writes).
+    const indexEnabled = await settingsStore.getIndexEnabled();
+    const sessionIndex = createSessionIndex({
+      dir: app.getPath("userData"),
+      enabled: indexEnabled,
+    });
+    await sessionIndex.load();
+
+    registerIpcHandlers({
+      ipcMain,
+      isTrustedSender: isMainWindowSender,
+      // Bind the shared index into every store the bridge creates, so scan/getFacts
+      // read and write the one persistent cache.
+      createSessionStore: (root) =>
+        createSessionStore(root, { index: sessionIndex }),
+      settingsStore,
+      reopen: reopenSession,
+      // The theme switch (#86) drives Electron's nativeTheme, which forces the
+      // renderer's prefers-color-scheme (and native menus/dialogs) to the chosen
+      // mode; injected here so ipc.ts stays Electron-free for unit tests.
+      setNativeTheme: (source) => {
+        nativeTheme.themeSource = source;
+      },
+      tempRoots: () => tempRoots(),
+      projectsRoot: defaultProjectsRoot(),
+      platform: process.platform,
+      now: () => Date.now(),
+    });
+
+    // Flush a dirty index on quit. Electron does not delay quit for a
+    // fire-and-forget async task, so intercept before-quit, flush, then re-quit.
+    app.on(
+      "before-quit",
+      createBeforeQuitHandler({
+        isDirty: () => sessionIndex.isDirty(),
+        flush: () => sessionIndex.flush(),
+        quit: () => app.quit(),
+      }),
+    );
 
     const devServerUrl = resolveDevServerUrl();
     // Frameless shell (#86): drop the default menu bar so the SPA title bar is the
