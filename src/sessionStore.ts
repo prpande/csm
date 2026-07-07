@@ -284,15 +284,19 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
         activityEpoch(b.sessions[0].lastActivity) -
         activityEpoch(a.sessions[0].lastActivity),
     );
-    // Prune ONLY after a complete scan, and never on a scan that observed no
-    // files (a missing/transiently-unreadable root returns []). This keeps the
-    // persisted map a subset of sessions present at the last complete scan and
-    // avoids wiping the index on a transient failure (spec §7.2, §11).
+    await finalizeScan(files);
+    return { folders };
+  }
+
+  // The post-scan tail: prune stale entries then flush. Extracted so `scan` stays
+  // under the cognitive-complexity threshold. Prune ONLY after a complete scan and
+  // NEVER when zero files were observed (a missing/transient root returns []),
+  // so a transient failure can't wipe the index (spec §7.2, §11).
+  async function finalizeScan(files: FileEntry[]): Promise<void> {
     if (files.length > 0) {
       index.prune(new Set(pathById.keys()));
     }
     await index.flush();
-    return { folders };
   }
 
   // Read the file, compute facts, and persist them to the index when the
@@ -365,5 +369,21 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
     return out;
   }
 
-  return { scan, getFacts };
+  // Facts-completion seam (spec §7.4): compute + persist facts for every scanned
+  // session that lacks warm facts, yielding to the event loop between files. BUILT
+  // but NOT auto-invoked in #116 — the first consumer that needs guaranteed-complete
+  // facts (faceting / #118) calls it on demand.
+  async function startBackfill(): Promise<void> {
+    await index.load();
+    for (const id of [...pathById.keys()]) {
+      const e = index.get(id);
+      if (e?.facts) continue; // already warm
+      if (inFlight.has(id)) continue; // a concurrent lazy pull owns it
+      await getOneFacts(id); // computes + persists via the shared path
+      await new Promise<void>((r) => setImmediate(r)); // cooperative yield
+    }
+    await index.flush();
+  }
+
+  return { scan, getFacts, startBackfill, inFlight };
 }

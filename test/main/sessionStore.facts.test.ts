@@ -174,3 +174,72 @@ describe("sessionStore.getFacts", () => {
     expect(spy2).not.toHaveBeenCalled();
   });
 });
+
+describe("sessionStore.startBackfill (seam — not auto-run in #116)", () => {
+  test("computes + persists facts for every scanned session, and is idempotent", async () => {
+    const root = fixtureRoot();
+    const userData = mkdtempSync(join(tmpdir(), "csm-backfill-"));
+    createdRoots.push(userData);
+    const index = createSessionIndex({
+      dir: userData,
+      enabled: true,
+      debounceMs: 0,
+    });
+    const spy = vi.fn(
+      (id: string) =>
+        ({
+          sessionId: id,
+          messageCount: 1,
+          firstActivity: null,
+          lastActivity: null,
+          editedFileCount: 0,
+          firstModel: null,
+          distinctModelCount: 0,
+          outputTokens: 0,
+        }) as SessionFacts,
+    );
+    const store = createSessionStore(root, { extractFacts: spy, index });
+    await store.scan({ now: Date.parse("2026-07-01T00:00:00Z") });
+
+    await store.startBackfill();
+    expect(spy).toHaveBeenCalledTimes(1); // the one fixture session got facts
+    expect(index.get(UUID)?.facts).toBeDefined();
+
+    // Second run: everything is warm → no recompute (idempotent).
+    spy.mockClear();
+    await store.startBackfill();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test("skips a session already in flight (in-flight Set de-dup)", async () => {
+    const root = fixtureRoot();
+    const userData = mkdtempSync(join(tmpdir(), "csm-backfill-inflight-"));
+    createdRoots.push(userData);
+    const index = createSessionIndex({
+      dir: userData,
+      enabled: true,
+      debounceMs: 0,
+    });
+    const spy = vi.fn(
+      (id: string) =>
+        ({
+          sessionId: id,
+          messageCount: 1,
+          firstActivity: null,
+          lastActivity: null,
+          editedFileCount: 0,
+          firstModel: null,
+          distinctModelCount: 0,
+          outputTokens: 0,
+        }) as SessionFacts,
+    );
+    const store = createSessionStore(root, { extractFacts: spy, index });
+    await store.scan({ now: Date.parse("2026-07-01T00:00:00Z") });
+
+    // Simulate a concurrent lazy pull already computing this id.
+    store.inFlight.add(UUID);
+    await store.startBackfill();
+    expect(spy).not.toHaveBeenCalled(); // skipped — owned by the in-flight pull
+    store.inFlight.delete(UUID);
+  });
+});
