@@ -28,12 +28,17 @@ const DAY_MS = 86_400_000;
 const NOW_MS = new Date("2026-06-30T12:00:00.000Z").getTime();
 
 let root: string;
+// Extra temp dirs (e.g. enabledIndex() userData) to remove after each test.
+const createdRoots: string[] = [];
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "csm-store-"));
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
+  while (createdRoots.length) {
+    rmSync(createdRoots.pop()!, { recursive: true, force: true });
+  }
 });
 
 // Write <root>/<folder>/<id>.jsonl from records, stamped `ageDays` before NOW.
@@ -319,6 +324,7 @@ test("empty and missing root -> { folders: [] }, no batches", async () => {
 // A real enabled index backed by its own temp userData dir, wired into the store.
 function enabledIndex() {
   const userData = mkdtempSync(join(tmpdir(), "csm-idx-store-"));
+  createdRoots.push(userData);
   const index = createSessionIndex({
     dir: userData,
     enabled: true,
