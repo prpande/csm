@@ -176,8 +176,13 @@ export function createSessionIndex(deps: SessionIndexDeps): SessionIndex {
     cancelDebounce();
     if (flushing) {
       // A write is mid-flight; do not start a second concurrent writer. Wait for
-      // it, then re-flush iff new dirty state accumulated during that write.
-      await flushing;
+      // it to settle, then re-flush iff new dirty state accumulated during that
+      // write. Swallow the shared promise's rejection here: the PRIMARY caller
+      // owns the failure (its try/catch marks the index dirty and warns, §11), so
+      // a waiter re-throwing the same rejection would bypass that fail-soft and
+      // surface as an unhandled rejection / a crashed scan. On failure `dirty` is
+      // left true by the primary, so the re-flush below retries.
+      await flushing.catch(() => {});
       if (dirty) await flush();
       return;
     }

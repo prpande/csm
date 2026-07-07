@@ -147,6 +147,37 @@ test("single-writer: two overlapping flushes yield exactly one file and no lefto
   expect(parsed.entries["id-1"]).toBeDefined();
 });
 
+test("two overlapping flushes where the write FAILS neither throw nor leak an unhandled rejection", async () => {
+  // Point the index at a dir whose parent is a FILE, so writeAtomic's mkdir always
+  // rejects — a portable stand-in for a real write failure (EPERM/disk-full). The
+  // primary flush swallows the rejection (fail-soft, §11); the concurrent waiter
+  // shares the same in-flight promise and must NOT re-throw it (bare `await
+  // flushing` would surface as an unhandled rejection and crash the awaiting scan).
+  const blocker = join(dir, "blocker");
+  writeFileSync(blocker, "x");
+  const idx = createSessionIndex({
+    dir: join(blocker, "sub"),
+    enabled: true,
+    debounceMs: 0,
+  });
+  idx.upsert("id-1", entry());
+
+  const rejections: unknown[] = [];
+  const onRejection = (reason: unknown) => rejections.push(reason);
+  process.on("unhandledRejection", onRejection);
+  try {
+    // Primary + concurrent waiter over the same failing write. Neither rejects.
+    await Promise.all([idx.flush(), idx.flush()]);
+    // Give any stray rejection a macrotask to surface.
+    await new Promise<void>((r) => setTimeout(r, 0));
+    expect(rejections).toEqual([]);
+    // Write failed → the index stays dirty so a later flush retries (§11).
+    expect(idx.isDirty()).toBe(true);
+  } finally {
+    process.off("unhandledRejection", onRejection);
+  }
+});
+
 test("isDirty(): true after an upsert, false after a flush", async () => {
   const idx = createSessionIndex({ dir, enabled: true, debounceMs: 0 });
   await idx.load();
