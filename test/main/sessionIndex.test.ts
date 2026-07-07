@@ -1,5 +1,12 @@
 import { test, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -117,4 +124,44 @@ test("disabled mode: load() ignores an existing file and stays empty", async () 
   // get/upsert still function in-memory even when disabled.
   idx.upsert("mem", entry());
   expect(idx.get("mem")).toBeDefined();
+});
+
+test("flush() writes a well-formed file with schemaVersion and entries", async () => {
+  const idx = createSessionIndex({ dir, enabled: true, debounceMs: 0 });
+  await idx.load();
+  idx.upsert("id-1", entry());
+  await idx.flush();
+  const parsed = JSON.parse(readFileSync(join(dir, INDEX_FILENAME), "utf8"));
+  expect(parsed.schemaVersion).toBe(INDEX_SCHEMA_VERSION);
+  expect(parsed.entries["id-1"]).toEqual(entry());
+});
+
+test("single-writer: two overlapping flushes yield exactly one file and no leftover temp", async () => {
+  const idx = createSessionIndex({ dir, enabled: true, debounceMs: 0 });
+  await idx.load();
+  idx.upsert("id-1", entry());
+  // Fire two flushes without awaiting the first — exercises the in-flight path.
+  await Promise.all([idx.flush(), idx.flush()]);
+  expect(readdirSync(dir)).toEqual([INDEX_FILENAME]); // no *.tmp survivors
+  const parsed = JSON.parse(readFileSync(join(dir, INDEX_FILENAME), "utf8"));
+  expect(parsed.entries["id-1"]).toBeDefined();
+});
+
+test("isDirty(): true after an upsert, false after a flush", async () => {
+  const idx = createSessionIndex({ dir, enabled: true, debounceMs: 0 });
+  await idx.load();
+  expect(idx.isDirty()).toBe(false);
+  idx.upsert("id-1", entry());
+  expect(idx.isDirty()).toBe(true);
+  await idx.flush();
+  expect(idx.isDirty()).toBe(false);
+});
+
+test("disabled mode: flush() is a no-op and never creates a file", async () => {
+  const idx = createSessionIndex({ dir, enabled: false, debounceMs: 0 });
+  await idx.load();
+  idx.upsert("id-1", entry());
+  await idx.flush();
+  expect(idx.isDirty()).toBe(false);
+  expect(existsSync(join(dir, INDEX_FILENAME))).toBe(false);
 });

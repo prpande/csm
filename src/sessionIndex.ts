@@ -9,7 +9,6 @@
 // (unique temp + rename) + debounced (§7.5). Disabled mode (indexEnabled=false)
 // keeps the in-memory map live but never touches disk (§7.6).
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { readFile, writeFile, rename, mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { PermissionMode } from "./sessionParser";
@@ -120,15 +119,84 @@ export function createSessionIndex(deps: SessionIndexDeps): SessionIndex {
     if (removed) markDirty();
   }
 
-  // --- flush machinery is added in Task 3; these stubs keep the module compiling ---
+  let dirty = false;
+  let flushing: Promise<void> | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let tmpCounter = 0;
+
   function markDirty(): void {
-    void debounceMs; // Task 3 wires debounceMs into the flush scheduler
+    if (!enabled) return; // disabled: nothing to persist (§7.6)
+    dirty = true;
+    if (timer === null) {
+      timer = setTimeout(() => {
+        timer = null;
+        void flush();
+      }, debounceMs);
+    }
   }
+
+  function cancelDebounce(): void {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  }
+
+  function serialize(): string {
+    // Built synchronously (before any await) so the written bytes are a
+    // consistent snapshot even if the map mutates during the async write.
+    return (
+      JSON.stringify(
+        {
+          schemaVersion: INDEX_SCHEMA_VERSION,
+          entries: Object.fromEntries(entries),
+        },
+        null,
+        2,
+      ) + "\n"
+    );
+  }
+
+  async function writeAtomic(json: string): Promise<void> {
+    await mkdir(dir, { recursive: true });
+    // Per-flush UNIQUE temp path so two writers can never collide on it, and a
+    // crash/concurrent-read never sees a half-written target (§7.5).
+    const tmp = join(dir, `${INDEX_FILENAME}.${++tmpCounter}.tmp`);
+    try {
+      await writeFile(tmp, json, "utf8");
+      await rename(tmp, file);
+    } catch (err) {
+      await unlink(tmp).catch(() => {}); // best-effort temp cleanup
+      throw err;
+    }
+  }
+
   async function flush(): Promise<void> {
-    /* Task 3 */
+    if (!enabled) return; // disabled: no-op (§7.6)
+    cancelDebounce();
+    if (flushing) {
+      // A write is mid-flight; do not start a second concurrent writer. Wait for
+      // it, then re-flush iff new dirty state accumulated during that write.
+      await flushing;
+      if (dirty) await flush();
+      return;
+    }
+    if (!dirty) return;
+    dirty = false; // claim the current dirty state; new upserts re-set it
+    const json = serialize();
+    flushing = writeAtomic(json);
+    try {
+      await flushing;
+    } catch (err) {
+      dirty = true; // write failed → stay dirty so the next flush retries (§11)
+      console.warn(`[CSM] session index flush failed: ${String(err)}`);
+    } finally {
+      flushing = null;
+    }
   }
+
   function isDirty(): boolean {
-    return false; // Task 3
+    return dirty || flushing !== null;
   }
 
   return { load, get, upsert, prune, flush, isDirty };
