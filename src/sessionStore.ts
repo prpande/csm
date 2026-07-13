@@ -16,6 +16,12 @@ import {
   type SessionFacts,
 } from "./sessionParser";
 import { isValidSessionId } from "./terminalLauncher";
+import {
+  createSessionIndex,
+  type IndexEntry,
+  type IndexFacts,
+  type SessionIndex,
+} from "./sessionIndex";
 
 export interface SessionFolder {
   cwd: string;
@@ -41,6 +47,10 @@ export interface StoreDeps {
   parse?: (sessionId: string, content: string) => SessionMetadata;
   /** Injectable so tests can spy fact-parse call counts (cache behaviour). */
   extractFacts?: (sessionId: string, content: string) => SessionFacts;
+  /** The persistent metadata/facts index (spec 2026-07-07). Defaults to a
+   *  disabled in-memory index → today's ephemeral behaviour when none is
+   *  injected (used by the many existing tests that construct a bare store). */
+  index?: SessionIndex;
 }
 
 // Session files. The match is case-sensitive: Claude always writes lowercase
@@ -67,6 +77,7 @@ export function tierIndex(ageMs: number): number {
 interface FileEntry {
   path: string;
   mtimeMs: number;
+  size: number;
 }
 
 // Collect every *.jsonl one directory level below the root (the encoded-cwd
@@ -103,7 +114,8 @@ async function collectFiles(rootDir: string): Promise<FileEntry[]> {
     for (const name of names) {
       const path = join(dir, name);
       try {
-        files.push({ path, mtimeMs: (await stat(path)).mtimeMs });
+        const st = await stat(path);
+        files.push({ path, mtimeMs: st.mtimeMs, size: st.size });
       } catch {
         // Unreadable between readdir and stat (e.g. removed) — skip.
       }
@@ -130,24 +142,75 @@ function activityEpoch(lastActivity: string | null): number {
 
 export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   const parse = deps.parse ?? parseSession;
-  // Cache key: `filepath\0mtimeMs`. A changed file gets a new key (its stale
-  // entry is simply never read again), so an unchanged file resolves instantly.
-  const cache = new Map<string, SessionMetadata>();
   const extractFacts = deps.extractFacts ?? extractSessionFacts;
+  // Disabled in-memory index when none injected: get/upsert work in memory,
+  // load is empty, flush is a no-op — precisely today's ephemeral cache (§7.6).
+  const index = deps.index ?? createSessionIndex({ dir: "", enabled: false });
   // sessionId -> absolute path, captured during scan. The on-disk path is grouped
   // by ENCODED cwd, not the authoritative in-file cwd, so it is not derivable from
   // a session's cwd — it must be remembered here. Populated in scan(), read by getFacts().
   const pathById = new Map<string, string>();
-  // Fact cache keyed by sessionId; value carries the mtime:size freshness key.
-  // SUCCESS entries only — an error is returned transiently so it retries.
-  const factCache = new Map<string, { key: string; facts: SessionFacts }>();
+  // Sessions whose facts are being computed right now. De-dups a lazy getFacts
+  // pull against the startBackfill() seam (Task 7 exposes this set).
+  const inFlight = new Set<string>();
+
+  // Rebuild a SessionMetadata from a persisted entry (the map key is the id, and
+  // messageCount is intentionally not persisted — no consumer; the row uses
+  // SessionFacts.messageCount, spec §5).
+  function metaFromEntry(id: string, e: IndexEntry): SessionMetadata {
+    return {
+      sessionId: id,
+      cwd: e.cwd,
+      title: e.title,
+      permissionMode: e.permissionMode,
+      lastActivity: e.lastActivity,
+      gitBranch: e.gitBranch,
+      ...(e.version !== undefined ? { version: e.version } : {}),
+    };
+  }
+
+  // SessionFacts reconstructed from a warm entry: firstActivity from facts,
+  // lastActivity from the entry level (de-duped, spec §5).
+  function factsFromEntry(id: string, e: IndexEntry): SessionFacts {
+    const f = e.facts!;
+    return {
+      sessionId: id,
+      messageCount: f.messageCount,
+      firstActivity: f.firstActivity,
+      lastActivity: e.lastActivity,
+      editedFileCount: f.editedFileCount,
+      firstModel: f.firstModel,
+      distinctModelCount: f.distinctModelCount,
+      outputTokens: f.outputTokens,
+    };
+  }
+
+  // The persisted facts subset (drops sessionId → the map key, and lastActivity
+  // → stored once at entry level).
+  function toIndexFacts(f: SessionFacts): IndexFacts {
+    return {
+      messageCount: f.messageCount,
+      firstActivity: f.firstActivity,
+      editedFileCount: f.editedFileCount,
+      firstModel: f.firstModel,
+      distinctModelCount: f.distinctModelCount,
+      outputTokens: f.outputTokens,
+    };
+  }
 
   async function readMetadata(
     entry: FileEntry,
   ): Promise<SessionMetadata | null> {
-    const key = `${entry.path}\0${entry.mtimeMs}`;
-    const cached = cache.get(key);
-    if (cached) return cached;
+    const id = sessionIdOf(entry.path);
+    const existing = index.get(id);
+    // Hit: mtime AND size match the persisted freshness key → no read, no parse.
+    if (
+      existing &&
+      existing.mtime === entry.mtimeMs &&
+      existing.size === entry.size
+    ) {
+      return metaFromEntry(id, existing);
+    }
 
     let content: string;
     try {
@@ -156,19 +219,30 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
       return null; // vanished/unreadable — skip this file, keep scanning.
     }
 
-    const meta = parse(sessionIdOf(entry.path), content);
+    const meta = parse(id, content);
     // Parser returns null lastActivity when no record carried a timestamp; fall
     // back to the file's mtime so every session has an orderable time (spec §4.1).
-    const withTime: SessionMetadata =
-      meta.lastActivity === null
-        ? { ...meta, lastActivity: new Date(entry.mtimeMs).toISOString() }
-        : meta;
-    cache.set(key, withTime);
-    return withTime;
+    const lastActivity =
+      meta.lastActivity ?? new Date(entry.mtimeMs).toISOString();
+    // Miss (new or changed key) → write the metadata tier. A changed key drops
+    // any stale facts by replacing the whole entry (spec §7.2).
+    const newEntry: IndexEntry = {
+      mtime: entry.mtimeMs,
+      size: entry.size,
+      cwd: meta.cwd,
+      title: meta.title,
+      permissionMode: meta.permissionMode,
+      lastActivity,
+      gitBranch: meta.gitBranch,
+      ...(meta.version !== undefined ? { version: meta.version } : {}),
+    };
+    index.upsert(id, newEntry);
+    return metaFromEntry(id, newEntry);
   }
 
   async function scan(opts: ScanOptions): Promise<GroupedSessions> {
     const { now, onBatch } = opts;
+    await index.load(); // idempotent — reads disk at most once
     const files = await collectFiles(rootDir);
     // Rebuild the id->path map each scan so sessions deleted between scans
     // don't linger as stale entries (the map is exactly one scan's worth).
@@ -211,11 +285,52 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
         activityEpoch(b.sessions[0].lastActivity) -
         activityEpoch(a.sessions[0].lastActivity),
     );
+    await finalizeScan(files);
     return { folders };
   }
 
-  // Per-id worker. Returns the cached/fresh facts, or { error: true } for any
-  // validation or I/O failure. Errors are never cached so transient failures retry.
+  // The post-scan tail: prune stale entries then flush. Extracted so `scan` stays
+  // under the cognitive-complexity threshold. Prune ONLY after a complete scan and
+  // NEVER when zero files were observed (a missing/transient root returns []),
+  // so a transient failure can't wipe the index (spec §7.2, §11).
+  async function finalizeScan(files: FileEntry[]): Promise<void> {
+    if (files.length > 0) {
+      index.prune(new Set(pathById.keys()));
+    }
+    await index.flush();
+  }
+
+  // Read the file, compute facts, and persist them to the index when the
+  // scan-time metadata version still matches (keyMatches). Returns null on I/O
+  // failure so the caller can propagate { error: true } without persisting.
+  async function computeAndPersistFacts(
+    id: string,
+    path: string,
+    entry: IndexEntry | undefined,
+    keyMatches: boolean,
+  ): Promise<SessionFacts | null> {
+    let content: string;
+    try {
+      content = await readFile(path, "utf8");
+    } catch {
+      return null; // NOT persisted: a transient failure retries.
+    }
+    const facts = extractFacts(id, content);
+    // Persist facts ONLY when the scan-time metadata version still matches the
+    // current file — so persisted facts always sit on fresh metadata. If the
+    // file changed since scan (or has no entry yet), return transiently; the
+    // next scan refreshes the entry and a later pull persists (spec §7.3).
+    if (keyMatches) {
+      const updated: IndexEntry = { ...entry!, facts: toIndexFacts(facts) };
+      index.upsert(id, updated);
+      return factsFromEntry(id, updated);
+    }
+    return facts;
+  }
+
+  // Per-id worker. Returns cached/fresh facts, or { error: true } for any
+  // validation or I/O failure. Errors are never persisted so transient failures
+  // retry (the #115 rule).
   async function getOneFacts(
     id: string,
   ): Promise<SessionFacts | { error: true }> {
@@ -231,20 +346,21 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
       return { error: true };
     }
 
-    const key = `${st.mtimeMs}:${st.size}`;
-    const cached = factCache.get(id);
-    if (cached && cached.key === key) return cached.facts;
+    const entry = index.get(id);
+    const keyMatches =
+      entry !== undefined &&
+      entry.mtime === st.mtimeMs &&
+      entry.size === st.size;
+    // Warm hit: fresh entry that already carries facts.
+    if (keyMatches && entry!.facts) return factsFromEntry(id, entry!);
 
-    let content: string;
+    inFlight.add(id);
     try {
-      content = await readFile(path, "utf8");
-    } catch {
-      return { error: true }; // NOT cached: a transient failure retries next call.
+      const facts = await computeAndPersistFacts(id, path, entry, keyMatches);
+      return facts ?? { error: true };
+    } finally {
+      inFlight.delete(id);
     }
-
-    const facts = extractFacts(id, content);
-    factCache.set(id, { key, facts });
-    return facts;
   }
 
   async function getFacts(
@@ -255,5 +371,21 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
     return out;
   }
 
-  return { scan, getFacts };
+  // Facts-completion seam (spec §7.4): compute + persist facts for every scanned
+  // session that lacks warm facts, yielding to the event loop between files. BUILT
+  // but NOT auto-invoked in #116 — the first consumer that needs guaranteed-complete
+  // facts (faceting / #118) calls it on demand.
+  async function startBackfill(): Promise<void> {
+    await index.load();
+    for (const id of [...pathById.keys()]) {
+      const e = index.get(id);
+      if (e?.facts) continue; // already warm
+      if (inFlight.has(id)) continue; // a concurrent lazy pull owns it
+      await getOneFacts(id); // computes + persists via the shared path
+      await new Promise<void>((r) => setImmediate(r)); // cooperative yield
+    }
+    await index.flush();
+  }
+
+  return { scan, getFacts, startBackfill, inFlight };
 }

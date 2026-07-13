@@ -22,6 +22,8 @@ export const DEFAULT_CLAUDE_PATH = "claude";
 // Default theme when none is stored (or a stored value is unrecognized): follow
 // the OS. Exported so the IPC bridge's untrusted fallback returns the same value.
 export const DEFAULT_THEME: ThemePreference = "system";
+// The privacy opt-out default (spec §8): indexing is ON unless explicitly disabled.
+export const DEFAULT_INDEX_ENABLED = true;
 
 // Local minimal guard: JSON.parse can yield any type; `null`/array/primitive must
 // not be spread or property-accessed as settings. (A shared type-guard util with
@@ -80,5 +82,26 @@ export function createSettingsStore(dir: string) {
     await writeFile(file, JSON.stringify(next, null, 2) + "\n", "utf8");
   }
 
-  return { getClaudePath, setClaudePath, getTheme, setTheme };
+  async function getIndexEnabled(): Promise<boolean> {
+    const v = (await readSettings()).indexEnabled;
+    // Honor only a real boolean; anything else (absent, a hand-edited string,
+    // a number, null, a corrupt file) → default true.
+    return typeof v === "boolean" ? v : DEFAULT_INDEX_ENABLED;
+  }
+
+  async function setIndexEnabled(value: boolean): Promise<void> {
+    // Spread-merge so unknown keys (claudePath, theme) are preserved.
+    const next = { ...(await readSettings()), indexEnabled: value };
+    await mkdir(dir, { recursive: true });
+    await writeFile(file, JSON.stringify(next, null, 2) + "\n", "utf8");
+  }
+
+  return {
+    getClaudePath,
+    setClaudePath,
+    getTheme,
+    setTheme,
+    getIndexEnabled,
+    setIndexEnabled,
+  };
 }

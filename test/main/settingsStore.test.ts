@@ -141,3 +141,38 @@ test("setTheme preserves unknown keys and the stored claudePath", async () => {
   expect(persisted.claudePath).toBe("keep-me");
   expect(persisted.terminalPreference).toBe("iterm");
 });
+
+test("getIndexEnabled() defaults to true when settings.json is absent", async () => {
+  expect(await createSettingsStore(dir).getIndexEnabled()).toBe(true);
+});
+
+test("setIndexEnabled then getIndexEnabled round-trips through disk", async () => {
+  const store = createSettingsStore(dir);
+  await store.setIndexEnabled(false);
+  expect(await store.getIndexEnabled()).toBe(false);
+  // A fresh instance reads the same persisted value (no in-memory reliance).
+  expect(await createSettingsStore(dir).getIndexEnabled()).toBe(false);
+});
+
+test("a non-boolean / garbage stored indexEnabled falls back to true", async () => {
+  const store = createSettingsStore(dir);
+  for (const contents of [
+    JSON.stringify({ indexEnabled: "false" }), // string, not boolean
+    JSON.stringify({ indexEnabled: 0 }),
+    JSON.stringify({ indexEnabled: null }),
+    "{ not json ",
+  ]) {
+    writeSettings(contents);
+    await expect(store.getIndexEnabled()).resolves.toBe(true);
+  }
+});
+
+test("setIndexEnabled preserves unknown keys and the stored claudePath", async () => {
+  writeSettings(JSON.stringify({ claudePath: "keep-me", theme: "dark" }));
+  const store = createSettingsStore(dir);
+  await store.setIndexEnabled(false);
+  const persisted = JSON.parse(readFileSync(join(dir, SETTINGS_FILE), "utf8"));
+  expect(persisted.indexEnabled).toBe(false);
+  expect(persisted.claudePath).toBe("keep-me");
+  expect(persisted.theme).toBe("dark");
+});
