@@ -14,7 +14,13 @@ import { isOpenableUrl, navigationDecision, windowOpenDecision } from "./urls";
 import { registerIpcHandlers } from "./ipc";
 import { registerWindowControls } from "./windowControls";
 import { applicationMenuTemplate } from "./menu";
-import { windowIconPath, macDockIconPath, type IconEnv } from "./appIcon";
+import {
+  windowIconPath,
+  macDockIconPath,
+  windowsTaskbarAppDetails,
+  WINDOWS_APP_USER_MODEL_ID,
+  type IconEnv,
+} from "./appIcon";
 import { CH } from "./ipcChannels";
 import { createSessionStore } from "./sessionStore";
 import { createSessionIndex } from "./sessionIndex";
@@ -92,10 +98,16 @@ if (!gotLock) {
     }
   });
 
-  // Windows groups taskbar buttons by AppUserModelID and reads the icon from it.
-  // Without an explicit ID an unpackaged dev run groups under electron.exe.
+  // Windows groups taskbar buttons by AppUserModelID; set ours so the button
+  // groups as CSM rather than under electron.exe. This governs GROUPING only — it
+  // does NOT make the window icon survive an Explorer button rebuild (e.g. across
+  // a Modern Standby sleep/wake while the process is suspended), where Explorer
+  // falls back to app-identity resolution and, for an unpackaged run, reverts to
+  // electron.exe's atom icon + "Electron" name. That durability comes from
+  // windowsTaskbarAppDetails() applied to the window in createWindow; the two stay
+  // in sync via the shared WINDOWS_APP_USER_MODEL_ID.
   if (process.platform === "win32") {
-    app.setAppUserModelId("com.prpande.csm");
+    app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
   }
 
   // macOS reads the dock label and the "About/Hide/Quit <app>" role items from
@@ -243,6 +255,19 @@ async function createWindow(devServerUrl: string | undefined): Promise<void> {
       sandbox: true,
     },
   });
+
+  // Pin the Windows taskbar button's icon (and name) to a process-independent
+  // source so an Explorer button rebuild after a Modern Standby sleep/wake can't
+  // revert an unpackaged dev run to the Electron atom icon. No-op (null) off
+  // Windows and in packaged builds — see windowsTaskbarAppDetails().
+  const appDetails = windowsTaskbarAppDetails(
+    process.platform,
+    app.isPackaged,
+    process.execPath,
+    path.join(__dirname, ".."),
+    iconPath,
+  );
+  if (appDetails) mainWindow.setAppDetails(appDetails);
 
   // macOS still shows its native traffic lights under titleBarStyle:"hidden"; hide
   // them so the SPA's own controls are the only window controls, matching Windows.
