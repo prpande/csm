@@ -177,6 +177,18 @@ test("submitting while the prefill is still pending is a no-op", async () => {
   });
 });
 
+test("without a bridge, the modal fails soft: default value, notice, Save disabled", async () => {
+  // Passing bridge={undefined} would just trigger the default parameter, so
+  // remove the global stub to exercise the genuine no-preload path.
+  delete (window as { csm?: unknown }).csm;
+  await act(async () => {
+    render(<SettingsModal onClose={vi.fn()} onSaved={vi.fn()} />);
+  });
+  expect(getInput().value).toBe("claude");
+  expect(screen.getByText(/couldn't load the current setting/i)).toBeTruthy();
+  expect(getSave().disabled).toBe(true);
+});
+
 test("double submission before the first save settles persists exactly once", async () => {
   const save = deferred<void>();
   const bridge = makeBridge({ setClaudePath: vi.fn(() => save.promise) });

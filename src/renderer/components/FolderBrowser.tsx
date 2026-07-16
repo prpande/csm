@@ -82,6 +82,10 @@ export function FolderBrowser() {
     dismissToast();
     setSavedMessage(SAVED_MESSAGE);
   }, [dismissToast]);
+  // Stable identity: Toast's auto-dismiss effect keys on [message, onDismiss],
+  // so an inline closure here would restart the 6s timer on every unrelated
+  // FolderBrowser re-render (scan batches, tree toggles).
+  const dismissSaved = useCallback(() => setSavedMessage(null), []);
 
   useEffect(() => {
     if (toast) setSavedMessage(null);
@@ -136,7 +140,7 @@ export function FolderBrowser() {
       {toast ? (
         <Toast message={toast.message} onDismiss={dismissToast} />
       ) : savedMessage ? (
-        <Toast message={savedMessage} onDismiss={() => setSavedMessage(null)} />
+        <Toast message={savedMessage} onDismiss={dismissSaved} />
       ) : null}
     </div>
   );

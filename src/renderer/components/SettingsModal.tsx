@@ -175,7 +175,7 @@ export function SettingsModal({
               type="submit"
               className={styles.primary}
               data-testid="settings-save"
-              disabled={loading || saving}
+              disabled={loading || saving || !bridge}
             >
               Save
             </button>
