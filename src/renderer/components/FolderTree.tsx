@@ -1,4 +1,11 @@
-import type { FolderNode, SessionTree } from "../../sessionTree";
+import { useRef } from "react";
+import { flushSync } from "react-dom";
+import {
+  flattenVisible,
+  treeKeyAction,
+  type FolderNode,
+  type SessionTree,
+} from "../../sessionTree";
 import type { ScanStatus } from "../hooks/useSessionScan";
 import { TreeNode } from "./TreeNode";
 import styles from "./FolderTree.module.css";
@@ -14,6 +21,10 @@ interface FolderTreeProps {
    *  worktree sessions up into their project; off shows the raw structure. */
   declutter: boolean;
   onToggleDeclutter: () => void;
+  /** The keyboard-focused node (#70). Owned by FolderBrowser alongside
+   *  expansion/selection, so it survives a buildTree rebuild between batches. */
+  focusedPath: string | null;
+  onFocusNode: (path: string) => void;
 }
 
 // Left sidebar: the expandable folder tree over the #64 view-model. Renders the
@@ -29,8 +40,59 @@ export function FolderTree({
   onSelect,
   declutter,
   onToggleDeclutter,
+  focusedPath,
+  onFocusNode,
 }: FolderTreeProps) {
   const isEmpty = tree.roots.length === 0 && tree.unknown === null;
+
+  const treeRef = useRef<HTMLUListElement>(null);
+
+  // Move DOM focus ONLY from a user gesture the tree itself handled — a keydown
+  // it received, or a click on one of its rows. Never from data arriving.
+  //
+  // That rule is the design, and it is the third attempt; the first two failed in
+  // opposite directions, and the reason no middle ground exists is worth stating
+  // so nobody re-derives it:
+  //   1. Focusing whenever a row became "the focused one" STEALS. A scan streams
+  //      in tiers and compactTree can change a node's path mid-scan, so that
+  //      fires on populate, on every tier, and on every refresh.
+  //   2. Gating on `tree.contains(document.activeElement)` STRANDS: when the
+  //      focused <li> is removed the browser has already blurred to <body>.
+  //   3. Tracking ownership from focus/blur CANNOT WORK. Verified in Chromium:
+  //      a removal and a click on a non-focusable area BOTH fire focusout with
+  //      relatedTarget === null, and `target.isConnected` is true in both. The
+  //      two are indistinguishable at blur time, so any branch on that event
+  //      reintroduces (1) or (2).
+  //
+  // Focusing from the gesture sidesteps all of it: inside our own keydown the
+  // tree provably has focus, so focusing cannot steal, and there is no ambiguous
+  // event to misread. flushSync commits the state change first, so the row we
+  // reach for exists (Right may have just expanded its parent).
+  const focusRovingItem = () => {
+    treeRef.current
+      ?.querySelector<HTMLElement>(':scope [tabindex="0"]')
+      ?.focus();
+  };
+
+  // One handler on the <ul role="tree">, not one per row: the tree is a
+  // composite widget with a single tab stop, and key events bubble up from the
+  // focused <li>. All the semantics live in the pure treeKeyAction; this only
+  // dispatches, so the key map stays testable without a DOM.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const flat = flattenVisible(tree, expandedPaths);
+    const action = treeKeyAction(e.key, flat, focusedPath, expandedPaths);
+    if (!action) return; // not ours — let the event through (e.g. Tab)
+    e.preventDefault();
+    // flushSync so the DOM reflects the action before we reach for the row:
+    // ArrowRight may have just expanded a parent, and the child it should land
+    // on does not exist until that render commits.
+    flushSync(() => {
+      if (action.type === "focus") onFocusNode(action.path);
+      else if (action.type === "toggle") onToggle(action.path);
+      else onSelect(action.node);
+    });
+    focusRovingItem();
+  };
 
   return (
     <nav className={styles.sidebar} aria-label="Folders">
@@ -54,7 +116,15 @@ export function FolderTree({
           <span className={styles.declutterLabel}>Declutter</span>
         </button>
       </div>
-      <ul className={styles.tree} role="tree" aria-label="Session folders">
+      {/* The handler sits here, not per row: role="tree" is a composite widget
+          with one tab stop, and keys bubble up from the focused <li>. */}
+      <ul
+        className={styles.tree}
+        role="tree"
+        aria-label="Session folders"
+        ref={treeRef}
+        onKeyDown={onKeyDown}
+      >
         {tree.roots.map((root) => (
           <TreeNode
             key={root.path}
@@ -64,8 +134,12 @@ export function FolderTree({
             selectedPath={selectedPath}
             onToggle={onToggle}
             onSelect={onSelect}
+            focusedPath={focusedPath}
+            onFocusNode={onFocusNode}
           />
         ))}
+        {/* Pinned last (spec §9) — flattenVisible mirrors this, so Down from the
+            last root lands here and not somewhere the user isn't looking. */}
         {tree.unknown && (
           <TreeNode
             key={tree.unknown.path}
@@ -75,6 +149,8 @@ export function FolderTree({
             selectedPath={selectedPath}
             onToggle={onToggle}
             onSelect={onSelect}
+            focusedPath={focusedPath}
+            onFocusNode={onFocusNode}
           />
         )}
       </ul>
