@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { isGitRepo, type FolderNode } from "../../sessionTree";
 import { truncatePathLabel } from "../pathLabel";
 import { GitBranchIcon } from "./GitBranchIcon";
@@ -18,10 +18,6 @@ interface TreeNodeProps {
   /** Report a click so the keyboard's focus follows the mouse — otherwise an
    *  arrow key after a click would resume from a stale row. */
   onFocusNode?: (path: string) => void;
-  /** Whether the tree currently owns keyboard focus (#70). Gates the DOM
-   *  .focus() call — see the effect below for why a live `document.activeElement`
-   *  check cannot answer this. */
-  treeHasFocus?: () => boolean;
 }
 
 // One tree row plus (when expanded) its children. A collapsed node does NOT
@@ -37,7 +33,6 @@ export function TreeNode({
   onSelect,
   focusedPath,
   onFocusNode,
-  treeHasFocus,
 }: TreeNodeProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = hasChildren && expandedPaths.has(node.path);
@@ -49,33 +44,15 @@ export function TreeNode({
   const isFocused = focusedPath === node.path;
   const itemRef = useRef<HTMLLIElement>(null);
 
-  // Pull real DOM focus to the focused row (#70) — real focus, not just
-  // aria-activedescendant, so :focus-visible and the e2e can both observe it.
-  //
-  // Gated on the tree OWNING focus, because both mistakes here are real and were
-  // each caught in turn:
-  //  - Focusing unconditionally STEALS. A scan arrives in tiers, so the roving
-  //    tabindex re-seeds per batch, and compactTree can change a node's path
-  //    mid-scan (remounting this component and re-firing the effect). Measured in
-  //    real Electron: the tree grabbed focus on populate, on every tier, and on
-  //    every refresh, so no other control could hold focus during a scan.
-  //  - Gating on a live `tree.contains(document.activeElement)` STRANDS. When the
-  //    focused <li> is removed — an ancestor collapsed, or a mid-scan re-compaction
-  //    remounts it under a different parent — the browser blurs to <body>
-  //    SYNCHRONOUSLY during the DOM mutation, i.e. before any passive effect runs.
-  //    The check would then see <body>, decline, and focus would never come back:
-  //    the row still reads as the tab stop while the arrows silently do nothing.
-  //
-  // So ownership is tracked from focus/blur events (see FolderTree), which
-  // remember that the tree HAD focus across the moment its element disappears.
-  useEffect(() => {
-    if (!isFocused || !treeHasFocus?.()) return;
-    itemRef.current?.focus();
-  }, [isFocused, treeHasFocus]);
-
+  // No focus effect here, deliberately — see FolderTree. DOM focus moves only
+  // from a user gesture, never from a render, so there is nothing to reconcile
+  // after the fact.
   const onRowClick = () => {
-    // Keep keyboard focus in step with the mouse, or the next arrow key would
-    // resume from wherever the keyboard last was, not from what was clicked.
+    // A click is a gesture, so focusing is intent, not theft: take DOM focus
+    // directly rather than leaving it to a render. Also keeps the keyboard in
+    // step with the mouse — the next arrow must resume from what was clicked,
+    // not from wherever the keyboard last was.
+    itemRef.current?.focus();
     onFocusNode?.(node.path);
     if (isSelectable) onSelect(node);
     else if (hasChildren) onToggle(node.path);
@@ -110,6 +87,10 @@ export function TreeNode({
             tabIndex={-1}
             onClick={(e) => {
               e.stopPropagation();
+              // Same gesture rule as the row: focus this row, not the (tabIndex
+              // -1) chevron, so the ring lands on what the user sees and the
+              // next arrow resumes from here.
+              itemRef.current?.focus();
               onFocusNode?.(node.path);
               onToggle(node.path);
             }}
@@ -175,7 +156,6 @@ export function TreeNode({
               onSelect={onSelect}
               focusedPath={focusedPath}
               onFocusNode={onFocusNode}
-              treeHasFocus={treeHasFocus}
             />
           ))}
         </ul>

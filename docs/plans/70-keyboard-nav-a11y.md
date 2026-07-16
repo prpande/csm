@@ -112,34 +112,50 @@ a tree that grabbed focus on populate, kept grabbing it while sessions streamed,
 and grabbed it again after every refresh — so other controls could not hold focus
 during a scan at all. That is a WCAG 3.2.x unexpected-context-change, not a nicety.
 
-So `TreeNode` pulls real DOM focus only when **the tree owns focus**.
+### The rule: DOM focus moves only from a user gesture, never from a render
 
-**How ownership is decided — and why the obvious way is wrong.** The first
-attempt gated on a live `tree.contains(document.activeElement)`. That stops the
-steal but introduces its mirror image: it **strands** focus. When the focused
-`<li>` is *removed* — an ancestor collapsed, or a mid-scan re-compaction remounts
-it under a different parent — the browser blurs to `<body>` **synchronously
-during the DOM mutation**, strictly before any passive effect runs. The check
-then sees `<body>`, concludes "not ours", and declines. Focus never comes back:
-the row still reads as the tab stop (`tabIndex=0`) while the arrows silently do
-nothing, because the keydown now fires on `<body>` and never reaches the tree's
-handler. The user has to click or Tab away and back to recover, with no clue why.
+`FolderTree` focuses the roving row **inside its own `onKeyDown`**, and `TreeNode`
+focuses its row **inside its own `onClick`**. There is no focus effect anywhere.
+`flushSync` commits the state change first, so the row we reach for already
+exists (Right may have just expanded its parent).
 
-`document.activeElement` simply cannot describe that moment. So ownership is
-tracked from **focus/blur events** on the tree instead:
+This is the third design. The two before it failed in opposite directions, and
+the reason **no middle ground exists** is worth recording so nobody re-derives it:
 
-- `onFocus` → the tree owns focus.
-- `onBlur` → give it up **only if `relatedTarget` is a real node outside the
-  tree**. A null `relatedTarget` means the focused element was removed (or the
-  window blurred) — that is the tree's own row vanishing, not the user leaving,
-  and the imminent re-render is about to restore focus to its replacement.
+1. **Focus whenever a row becomes "the focused one" → STEALS.** A scan streams in
+   tiers, so the seed re-runs per batch, and `compactTree` can change a node's
+   path mid-scan (remounting the component, re-firing the effect). Measured: the
+   tree grabbed focus on populate, on every tier, and on every refresh.
+2. **Gate on `tree.contains(document.activeElement)` → STRANDS.** When the focused
+   `<li>` is removed the browser has *already* blurred to `<body>`, synchronously
+   during the DOM mutation. The check sees `<body>`, declines, and focus never
+   returns — the row still reads as the tab stop while the arrows do nothing.
+3. **Track ownership from focus/blur → IMPOSSIBLE.** Verified directly in
+   Chromium: a removal and a click on a non-focusable area **both** fire
+   `focusout` with `relatedTarget === null`, and `target.isConnected` is `true`
+   in both. The two are indistinguishable at blur time, so any branch on that
+   event reintroduces (1) or (2). (This is also why the unit suite cannot settle
+   it: jsdom fires **no** blur/focusout on removal at all — it silently repoints
+   `activeElement` at `<body>` — so a jsdom test of that branch is vacuous.)
 
-That one distinction is the whole fix: it remembers the tree had focus *across*
-the instant its element disappears.
+Focusing from the gesture sidesteps the whole problem: inside our own keydown the
+tree provably has focus, so focusing cannot steal, and there is no ambiguous event
+to misread. It also means **keyboard tests must Tab into the tree before
+arrowing** — which is exactly what a real user does.
 
-This also means keyboard tests must Tab into the tree before arrowing, since
-arrows do nothing to DOM focus until the tree owns it — which is exactly how a
-real user behaves.
+The key map's shape does real work here too: Left collapses the focused node **in
+place** and only walks to the parent once already collapsed, so the arrows can
+never remove the row they stand on. The mouse can (collapsing an ancestor), and
+that is covered because the collapse is itself a gesture — the chevron handler
+focuses its own row.
+
+**Accepted limitation.** If a scan tier remounts the focused row *while* the user
+is arrow-navigating (compaction changing a node's path mid-stream), focus drops to
+`<body>` and is not restored; the next arrow does nothing until the user clicks or
+Tabs back in. That is narrow (it needs keyboard navigation during the seconds a
+scan is still streaming and restructuring) and transient, and it is the honest
+price of never stealing. Tracked as a follow-up rather than papered over with a
+heuristic that provably cannot be correct.
 
 ## PR B — list pane + modal (outline)
 
@@ -175,25 +191,23 @@ correct at depth; empty tree → `[]`.
 collapses then moves to parent; the tab stop seeds to the first row; a click
 moves keyboard focus; Tab isn't swallowed.
 
-Focus needs guards in **both** directions — the two faults above are mirrors, and
-fixing one is exactly how the other appears:
+Focus needs guards on both halves of the rule, since the two faults are mirrors:
 
 - *Must not steal*: seeding the tab stop must not take DOM focus; a later
   streaming tier must not yank focus off another control. (Use the declutter
   switch — the refresh button is `disabled` while scanning, so it cannot hold
   focus and the assertion would pass for the wrong reason.)
-- *Must not strand*: focus must survive a later tier **remounting** the focused
-  row (tier 1 compacts `D:\src\csm` to a root; tier 2 gives `src` a sibling, so
-  it demotes to a nested child — a different React parent, hence a real
-  unmount+remount), and must survive **collapsing an ancestor** of the focused
-  row.
-- *Must give up*: blurring to a control outside the tree really does release
-  ownership — otherwise the flag goes sticky and re-grabs on the next tier,
-  reintroducing the steal.
+- *Must not strand*: a **mouse-collapse** that removes the focused row keeps focus
+  in the tree; a **keyboard collapse** keeps focus on the node it collapsed.
 
 None of these existed at first, which is why the bug shipped into the PR: every
 keyboard test used a single batch and only asserted what focus *was* doing, never
 what it wasn't.
+
+**What the unit suite cannot prove.** jsdom fires no blur/focusout on element
+removal, so any test of removal-blur handling is vacuous there. The gesture model
+is deliberately built to not depend on that event at all — but the behaviour was
+still verified in real Electron, which is the only place it is decidable.
 
 ## Out of scope
 

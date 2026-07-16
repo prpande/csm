@@ -404,43 +404,20 @@ describe("FolderBrowser", () => {
     expect(document.activeElement).toBe(declutter);
   });
 
-  it("restores focus when a later tier remounts the focused row (#70)", () => {
-    // The mirror of the steal bug, and the harder half. Tier 1's lone session
-    // compacts D:->src->csm into ONE root row. Tier 2 gives `src` a second
-    // child, so the chain stops collapsing and "D:\\src\\csm" is demoted from a
-    // root to a nested child — a different React parent, so a real unmount +
-    // remount. The browser blurs to <body> during that removal, synchronously,
-    // BEFORE any effect runs. Gating .focus() on a live activeElement check
-    // therefore declined and stranded focus on <body>: the row still read as
-    // the tab stop while the arrows silently did nothing.
-    const bridge = fakeBridge();
-    render(<FolderBrowser />);
-    act(() => bridge.emit().onBatch([sess("a", "D:\\src\\csm")]));
-    tabIntoTree("D:\\src\\csm");
-    expect(document.activeElement).toBe(itemFor("D:\\src\\csm"));
-
-    act(() => bridge.emit().onBatch([sess("b", "D:\\src\\other")]));
-    act(() => bridge.emit().onDone());
-
-    // Focus must still be inside the tree, and the arrows must still work.
-    expect(treeOf().contains(document.activeElement)).toBe(true);
-    expect(document.activeElement).not.toBe(document.body);
-  });
-
-  it("restores focus when collapsing an ancestor removes the focused row (#70)", () => {
-    // Same class, mouse-driven: arrow down onto a nested row, then click the
-    // ancestor's chevron. The focused <li> is removed, the browser blurs to
-    // <body>, and focus must come back to the tree rather than be stranded.
+  it("keeps focus in the tree when a mouse-collapse removes the focused row (#70)", () => {
+    // Arrow onto a nested row, then MOUSE-collapse its ancestor: the focused
+    // <li> is removed and the browser blurs to <body>. The collapse is itself a
+    // gesture, so the chevron handler focuses its own row — focus stays in the
+    // tree instead of being stranded, and no render had to guess.
     renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
     tabIntoTree("D:\\src");
     fireEvent.keyDown(treeOf(), { key: "ArrowDown" }); // -> csm (nested)
     expect(document.activeElement).toBe(itemFor("csm"));
 
-    // Collapse the parent via its chevron; "csm" unmounts underneath the focus.
     fireEvent.click(
       screen.getAllByRole("button", { name: /collapse folder/i })[0],
     );
-    expect(screen.queryByText("csm")).toBe(null);
+    expect(screen.queryByText("csm")).toBe(null); // the focused row is gone
 
     expect(treeOf().contains(document.activeElement)).toBe(true);
     expect(document.activeElement).not.toBe(document.body);
@@ -449,18 +426,17 @@ describe("FolderBrowser", () => {
     expect(screen.getByText("csm")).toBeTruthy();
   });
 
-  it("gives up focus when the user moves to a control outside the tree (#70)", () => {
-    // The ownership flag must not be sticky, or the tree would re-grab focus on
-    // the next scan tier — the very bug the flag exists to avoid.
+  it("keyboard-collapsing the focused node keeps focus on it (#70)", () => {
+    // The keyboard can never remove the row it stands on: Left collapses the
+    // focused node IN PLACE (that node stays mounted) and only walks to the
+    // parent once already collapsed. So the arrow path has no self-removal case
+    // to recover from — the key map's shape is what makes that true.
     renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
     tabIntoTree("D:\\src");
 
-    const declutter = screen.getByRole("switch");
-    fireEvent.blur(itemFor("D:\\src"), { relatedTarget: declutter });
-    declutter.focus();
-
-    fireEvent.keyDown(treeOf(), { key: "ArrowDown" });
-    expect(document.activeElement).toBe(declutter);
+    fireEvent.keyDown(treeOf(), { key: "ArrowLeft" }); // collapse D:\src itself
+    expect(screen.queryByText("csm")).toBe(null);
+    expect(document.activeElement).toBe(itemFor("D:\\src"));
   });
 
   it("Down/Up move focus between rows and pull real DOM focus (#70)", () => {
