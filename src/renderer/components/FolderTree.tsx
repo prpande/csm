@@ -91,6 +91,12 @@ export function FolderTree({
           installed files on every launch, so restarting re-runs the identical
           broken build — the copy must NOT invite a retry. Per TESTING.md the only
           real remedy is a reinstall (there is no auto-update). */}
+      {/* The isEmpty asymmetry below is deliberate, not an oversight. On "error"
+          it is load-bearing: a scan can throw AFTER streaming batches, and
+          useSessionScan keeps those on purpose (fail soft, spec §12) — so this
+          notice must yield to a partial result. On "unavailable" the hook clears
+          sessions and returns before subscribing, so no batch can ever exist and
+          the guard would be dead code. */}
       {status === "error" && isEmpty && (
         <div className={styles.notice}>Couldn’t load sessions</div>
       )}
