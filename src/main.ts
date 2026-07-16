@@ -193,6 +193,12 @@ if (!gotLock) {
         nativeTheme.themeSource = source;
       },
       tempRoots: () => tempRoots(),
+      // #83: a handler failure the renderer only sees as a code still has to be
+      // diagnosable. stderr is what the dev launchers tee into
+      // .dev-run/run-desktop.log, so this is the sink that makes a broken scan
+      // self-evident instead of silent.
+      logError: (context, err) =>
+        console.error(`[csm] ${context} failed:`, err),
       projectsRoot: defaultProjectsRoot(),
       platform: process.platform,
       now: () => Date.now(),

@@ -41,7 +41,10 @@ export function TitleBar({
           width={18}
           height={18}
         />
-        <span className={styles.brandText}>CSM · Claude Session Manager</span>
+        {/* The app's one <h1>: names the page for assistive tech and anchors the
+            banner landmark. A plain <span> here left the app with no heading at
+            all from #65 until #83. */}
+        <h1 className={styles.brandText}>CSM · Claude Session Manager</h1>
       </div>
       <div className={styles.actions}>
         <input

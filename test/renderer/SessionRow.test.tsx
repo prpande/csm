@@ -128,6 +128,85 @@ test("worktree branch is inserted as text, never as HTML", () => {
   expect(container.querySelector("img")).toBe(null);
 });
 
+// ---- #110: the session's OWN branch on every row ----------------------------
+
+test("shows the session's own git branch when it is not the repo default", () => {
+  render(
+    <SessionRow
+      session={makeSession({ gitBranch: "feature-x" })}
+      rowHeight={56}
+    />,
+  );
+  expect(screen.getByTestId("git-branch").textContent).toContain("feature-x");
+});
+
+test("suppresses the own-branch chip for null / main / master", () => {
+  // The noise rule (#110): a chip that is always there carries no information.
+  for (const gitBranch of [null, "main", "master"]) {
+    const { unmount } = render(
+      <SessionRow session={makeSession({ gitBranch })} rowHeight={56} />,
+    );
+    expect(screen.queryByTestId("git-branch")).toBeNull();
+    unmount();
+  }
+});
+
+test("labels the own-branch chip 'Branch', not 'Worktree branch'", () => {
+  // An own row was not folded in from anywhere, so the worktree wording would
+  // be actively wrong.
+  render(
+    <SessionRow
+      session={makeSession({ gitBranch: "feature-x" })}
+      rowHeight={56}
+    />,
+  );
+  expect(screen.getByTestId("git-branch").getAttribute("aria-label")).toBe(
+    "Branch: feature-x",
+  );
+});
+
+test("a worktree row shows ONE chip, the provenance one, never both (#110)", () => {
+  // sessionTree sets worktreeBranch to `sess.gitBranch ?? worktree.name`, so on
+  // a worktree row the provenance chip ALREADY IS the git branch. Rendering the
+  // own-branch chip too would print the same string twice on one row.
+  render(
+    <SessionRow
+      session={makeSession({ gitBranch: "feature-x" })}
+      rowHeight={56}
+      worktreeBranch="feature-x"
+    />,
+  );
+  expect(screen.getByTestId("worktree-branch").textContent).toContain(
+    "feature-x",
+  );
+  expect(screen.queryByTestId("git-branch")).toBeNull();
+  expect(screen.getAllByText("feature-x")).toHaveLength(1);
+});
+
+test("the noise rule does not leak onto the provenance chip (#110)", () => {
+  // A worktree session sitting on `main` must STILL show its chip: that chip's
+  // job is "this row was folded in from elsewhere", not "which branch".
+  // Suppressing it would silently erase the provenance signal.
+  render(
+    <SessionRow
+      session={makeSession({ gitBranch: "main" })}
+      rowHeight={56}
+      worktreeBranch="main"
+    />,
+  );
+  expect(screen.getByTestId("worktree-branch").textContent).toContain("main");
+});
+
+test("own git branch is inserted as text, never as HTML", () => {
+  // Branch names are repo-derived untrusted text (CLAUDE.md: render as text).
+  const evil = "<img src=x onerror=alert(1)>";
+  const { container } = render(
+    <SessionRow session={makeSession({ gitBranch: evil })} rowHeight={56} />,
+  );
+  expect(screen.getByText(evil)).toBeTruthy();
+  expect(container.querySelector("img")).toBe(null);
+});
+
 test("title is inserted as text, never as HTML (spec §9)", () => {
   const evil = '<img src=x onerror="alert(1)">';
   const { container } = render(

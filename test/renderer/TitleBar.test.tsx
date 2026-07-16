@@ -19,6 +19,21 @@ describe("TitleBar", () => {
     expect(screen.getByText(/Claude Session Manager/i)).toBeTruthy();
   });
 
+  it("names the app with the page's top-level heading (#83)", () => {
+    // The scaffold's <h1> was dropped in #65, leaving the app with no heading at
+    // all — which silently broke e2e/app.smoke.spec.ts's getByRole("heading")
+    // for every release since. That went unnoticed because the _electron e2e is
+    // local/manual, not a CI job. This assertion lives in the unit suite ON
+    // PURPOSE: it is the copy of the guard that 3-OS CI actually runs.
+    render(<TitleBar onRefresh={vi.fn()} refreshing={false} />);
+    expect(
+      screen.getByRole("heading", {
+        name: /claude session manager/i,
+        level: 1,
+      }),
+    ).toBeTruthy();
+  });
+
   it("wires the refresh control and disables it while scanning", () => {
     const onRefresh = vi.fn();
     const { rerender } = render(

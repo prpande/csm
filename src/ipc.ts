@@ -56,6 +56,12 @@ export interface IpcHandlerDeps {
   /** Resolved system temp roots for the renderer's §10 hide filter. Injected
    * (wraps pathAdapter.tempRoots) so the handler stays testable without `os`. */
   tempRoots: () => string[];
+  /** Diagnostic sink for a failure the renderer only ever learns of as a code
+   * (#83). Injected rather than a direct console.error so the handlers keep the
+   * no-Electron-runtime, no-global-spy testability the rest of this module has.
+   * The main-process log is a trusted local sink — this is the ONE place the real
+   * error may go; it must never reach `post`. */
+  logError: (context: string, err: unknown) => void;
   projectsRoot: string;
   platform: NodeJS.Platform;
   now: () => number;
@@ -80,6 +86,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     reopen,
     setNativeTheme,
     tempRoots,
+    logError,
     projectsRoot,
     platform,
     now,
@@ -115,7 +122,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         onBatch: (sessions) => post(CH.sessionsBatch, { scanId, sessions }),
       });
       post(CH.sessionsDone, { scanId });
-    } catch {
+    } catch (err) {
+      // #83: the renderer gets an opaque code, so without this the scan's real
+      // cause is lost entirely (#81 was invisible in .dev-run/run-desktop.log).
+      // The error goes to the main-process log ONLY — the payload below stays
+      // scanId-only because a scan error can embed an untrusted cwd.
+      logError("sessions:scan", err);
       post(CH.sessionsError, { scanId });
     }
   });
