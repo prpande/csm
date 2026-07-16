@@ -152,3 +152,12 @@ silently shipped or silently dropped.
   the case this approach handles best.
 - **Marking a parent as a repo because a descendant is one** — the issue scopes
   this to a node's own sessions, and a nav folder like `D:\src` is not a repo.
+- **Treating a branchless worktree session as repo evidence.** `rollUpWorktrees`
+  labels a folded-in session `sess.gitBranch ?? worktree.name`, so a worktree
+  session with no `gitBranch` still lands in `worktreeBranches` but is invisible
+  to `isGitRepo`. That path is arguably *stronger* evidence than a branch —
+  `<repo>/.claude/worktrees/<name>` only exists because `git worktree add` made
+  it — so an owner whose only sessions are branchless worktree sessions goes
+  unmarked despite being provably a repo. Left alone deliberately: it is a false
+  negative (the safe direction), and per #151 the live problem is that ~90% of
+  rows are *already* marked, so widening the predicate would push the wrong way.
