@@ -93,6 +93,16 @@ export function SettingsModal({
     if (!inFlight.current) onClose();
   };
 
+  // Tie the visible notices to the input for screen readers that land on the
+  // field after the live-region announcement has passed.
+  const describedBy =
+    [
+      loadFailed ? "settings-load-notice" : null,
+      saveFailed ? "settings-save-error" : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
+
   const submit = (e: FormEvent): void => {
     e.preventDefault();
     if (inFlight.current || loading || !bridge) return;
@@ -101,7 +111,11 @@ export function SettingsModal({
     // Clearing before each attempt re-mounts the alert on a repeat failure,
     // so identical error text is re-announced to assistive tech.
     setSaveFailed(false);
-    bridge.setClaudePath(value.trim()).then(
+    const trimmed = value.trim();
+    // Reflect what is actually being persisted, so a failed save doesn't
+    // leave stale surrounding whitespace visible in the field.
+    setValue(trimmed);
+    bridge.setClaudePath(trimmed).then(
       () => {
         inFlight.current = false;
         if (!mounted.current) return;
@@ -149,15 +163,20 @@ export function SettingsModal({
             value={value}
             disabled={loading || saving}
             placeholder={DEFAULT_CLAUDE_PATH}
+            aria-describedby={describedBy}
             onChange={(e) => setValue(e.target.value)}
           />
           {loadFailed && (
-            <p className={styles.notice} role="status">
+            <p
+              id="settings-load-notice"
+              className={styles.notice}
+              role="status"
+            >
               {LOAD_ERROR}
             </p>
           )}
           {saveFailed && (
-            <p className={styles.error} role="alert">
+            <p id="settings-save-error" className={styles.error} role="alert">
               {SAVE_ERROR}
             </p>
           )}

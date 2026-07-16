@@ -130,6 +130,7 @@ test("a failed save keeps the modal open and announces a fixed error", async () 
   const alert = screen.getByRole("alert");
   expect(alert.textContent).toContain("Couldn't save settings");
   expect(alert.textContent).not.toContain("EACCES");
+  expect(getInput().getAttribute("aria-describedby")).toContain(alert.id);
   expect(screen.getByRole("dialog")).toBeTruthy();
   expect(onSaved).not.toHaveBeenCalled();
   expect(onClose).not.toHaveBeenCalled();
@@ -163,7 +164,9 @@ test("a failed prefill falls back to the default, stays usable, and shows a noti
   expect(getInput().value).toBe("claude");
   expect(getInput().disabled).toBe(false);
   expect(document.activeElement).toBe(getInput());
-  expect(screen.getByText(/couldn't load the current setting/i)).toBeTruthy();
+  const notice = screen.getByText(/couldn't load the current setting/i);
+  expect(notice).toBeTruthy();
+  expect(getInput().getAttribute("aria-describedby")).toContain(notice.id);
 });
 
 test("submitting while the prefill is still pending is a no-op", async () => {
