@@ -115,6 +115,33 @@ test("a live reopen-error toast is replaced by the save confirmation (newest win
   expect(statuses[0].textContent).toContain("Claude path saved.");
 });
 
+test("a reopen error arriving later replaces the save confirmation", async () => {
+  seedOneSession(plainSession);
+  window.csm!.reopenSession = vi.fn(async () => ({
+    ok: false as const,
+    code: "SPAWN_FAILED" as const,
+  }));
+  await act(async () => {
+    render(<FolderBrowser />);
+  });
+  selectFolder();
+  await openSettings();
+  await act(async () => {
+    fireEvent.click(screen.getByTestId("settings-save"));
+  });
+  expect(screen.getByRole("status").textContent).toContain(
+    "Claude path saved.",
+  );
+
+  await act(async () => {
+    fireEvent.doubleClick(screen.getByText("Plain session title"));
+  });
+  const statuses = screen.getAllByRole("status");
+  expect(statuses.length).toBe(1);
+  expect(statuses[0].textContent).toBeTruthy();
+  expect(statuses[0].textContent).not.toContain("Claude path saved.");
+});
+
 test("the gear is inert while the bypass confirmation is pending", async () => {
   seedOneSession(bypassSession);
   await act(async () => {

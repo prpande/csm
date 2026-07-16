@@ -141,6 +141,7 @@ test("while a save is pending, Save is disabled and dismissal is inert", async (
   const { onClose, onSaved } = await renderModal(bridge);
   fireEvent.click(getSave());
   expect(getSave().disabled).toBe(true);
+  expect(getInput().disabled).toBe(true);
   fireEvent.click(screen.getByTestId("settings-cancel"));
   fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
   fireEvent.click(screen.getByTestId("settings-backdrop"));

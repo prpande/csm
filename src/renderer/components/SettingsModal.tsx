@@ -147,7 +147,7 @@ export function SettingsModal({
             className={styles.input}
             type="text"
             value={value}
-            disabled={loading}
+            disabled={loading || saving}
             placeholder={DEFAULT_CLAUDE_PATH}
             onChange={(e) => setValue(e.target.value)}
           />
