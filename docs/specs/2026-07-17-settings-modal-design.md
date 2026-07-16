@@ -53,7 +53,8 @@ bridge typing in `src/renderer/types/csm.d.ts`. This slice is renderer-only.
 - **Modal:** blocking dialog over a fixed backdrop, visually and structurally
   matching `BypassConfirmModal` (backdrop → dialog card, same tokens). Title
   "Settings". One form row: a `<label>` "Claude executable path" tied to a text
-  input via `htmlFor`/`id`.
+  input via `htmlFor`/`id`; the input's `placeholder` shows the default
+  (`claude`).
 - **Prefill:** on mount the input and Save are disabled (and form submission is
   a no-op) while `getClaudePath()` resolves; on resolve the input is enabled,
   prefilled, and focused, and Save is enabled. A guarded effect (`active`
@@ -125,7 +126,10 @@ a self-loading component plus one boolean is the least machinery.
 - `SettingsModal` props: `onClose(): void`, `onSaved(): void`, and an optional
   `bridge?: CsmBridge` defaulting to `currentBridge()` — the same injection
   seam the hooks use, so tests can pass a controllable bridge without touching
-  `window.csm`.
+  `window.csm`. The component mirrors the store's default as a local
+  display-only `DEFAULT_CLAUDE_PATH` constant — the renderer cannot import
+  `settingsStore` (it pulls in `node:fs`), and the store's read-side
+  normalization stays authoritative.
 - New CSS module `SettingsModal.module.css` following the
   `BypassConfirmModal.module.css` structure (backdrop/dialog/title/actions,
   semantic tokens, `:focus-visible` ring, reduced-motion guard). Two modals do
