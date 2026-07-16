@@ -120,3 +120,15 @@ required by CLAUDE.md.
   set) — needs a git invocation; see above.
 - **#111** (git markers on folder tree nodes) consumes the same `gitBranch` field
   but is a separate issue in the `sessionTree` layer.
+- **Telling the two chips apart without hovering — filed as #150.** Adversarial
+  review raised this and it survived refutation: both chips render the same glyph
+  and the same *bare branch name*, so a worktree row on `main` shows a chip while
+  an own row on `main` shows none, and only the tooltip explains why. The
+  pre-existing half of that (provenance-on-`main` chipped, own-row unchipped) is
+  unchanged here — own rows had no chip at all before this slice. What this slice
+  genuinely introduces is the two kinds **coexisting in one recency-sorted list**,
+  which is what makes the shared visual language ambiguous. Fixing it means
+  inventing a distinguishing treatment for the provenance chip — a visual-design
+  call, i.e. exactly what this plan reused the shipped #101 look to *avoid*
+  making unilaterally. So it goes to #150 behind `needs-design` rather than
+  getting decided inside an implementation PR.
