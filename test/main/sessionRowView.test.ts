@@ -3,6 +3,7 @@ import {
   formatRelativeTime,
   chipVariant,
   shortSessionId,
+  shouldShowGitBranch,
 } from "../../src/sessionRowView";
 
 // Fixed reference "now" so the relative-time buckets are deterministic.
@@ -66,4 +67,34 @@ test("chipVariant: dontAsk / unrecognized / empty all fall to 'default'", () => 
 test("shortSessionId: first 8 chars", () => {
   expect(shortSessionId("abcdefgh-1234-5678")).toBe("abcdefgh");
   expect(shortSessionId("abc")).toBe("abc");
+});
+
+// ---- #110 git-branch noise rule ---------------------------------------------
+
+test("shouldShowGitBranch: a non-default branch shows", () => {
+  expect(shouldShowGitBranch("feature-x")).toBe(true);
+  expect(shouldShowGitBranch("110-git-branch-rows")).toBe(true);
+});
+
+test("shouldShowGitBranch: absent or repo-default branches are suppressed", () => {
+  // The chip only carries information when the branch ISN'T the default —
+  // otherwise an all-main folder is a wall of identical chips (#110).
+  expect(shouldShowGitBranch(null)).toBe(false);
+  expect(shouldShowGitBranch("main")).toBe(false);
+  expect(shouldShowGitBranch("master")).toBe(false);
+});
+
+test("shouldShowGitBranch: the match is case-sensitive, so 'Main' shows", () => {
+  // Deliberate: git branch names ARE case-sensitive, so `Main` is a genuinely
+  // different branch from `main`. A spurious chip is noise; a suppressed chip
+  // is a lie — so err toward showing.
+  expect(shouldShowGitBranch("Main")).toBe(true);
+  expect(shouldShowGitBranch("MASTER")).toBe(true);
+});
+
+test("shouldShowGitBranch: a branch merely containing a default name shows", () => {
+  // Exact match, not substring — `main` must not swallow real branch names.
+  expect(shouldShowGitBranch("main-fix")).toBe(true);
+  expect(shouldShowGitBranch("feature/main")).toBe(true);
+  expect(shouldShowGitBranch("remaster")).toBe(true);
 });
