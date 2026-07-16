@@ -6,8 +6,11 @@ import { TitleBar } from "./TitleBar";
 import { FolderTree } from "./FolderTree";
 import { FolderPane } from "./FolderPane";
 import { BypassConfirmModal } from "./BypassConfirmModal";
+import { SettingsModal } from "./SettingsModal";
 import { Toast } from "./Toast";
 import styles from "./FolderBrowser.module.css";
+
+const SAVED_MESSAGE = "Claude path saved.";
 
 // Slice-2 shell (decision A): the single owner of the tree's expansion and
 // selection state, wrapping the #64 data layer. Children are presentational.
@@ -27,6 +30,8 @@ export function FolderBrowser() {
   } = useReopen();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   // Auto-expand each drive root once, the first time it appears — including a
   // root first seen in a later streaming tier. The ref tracks which roots have
   // already been seeded so a re-streamed root (a refresh, or a root that spans
@@ -59,6 +64,29 @@ export function FolderBrowser() {
     setSelectedPath(node.path);
   }, []);
 
+  // Cross-modal gates (settings spec §3): there is no focus trap yet (#70), so
+  // backdrop coverage doesn't imply focus containment — the newly-enabled gear
+  // is keyboard-reachable behind the bypass-confirm backdrop and rows are
+  // reachable behind the settings backdrop. Two state gates keep the modals
+  // mutually exclusive.
+  const openSettings = useCallback(() => {
+    if (!pendingBypass) setSettingsOpen(true);
+  }, [pendingBypass]);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+
+  // Newest-message-wins toast slot (settings spec §3): a fresh save
+  // confirmation dismisses a live reopen error, and a reopen error arriving
+  // later clears the confirmation — superseded messages are dropped, never
+  // queued for redisplay.
+  const handleSaved = useCallback(() => {
+    dismissToast();
+    setSavedMessage(SAVED_MESSAGE);
+  }, [dismissToast]);
+
+  useEffect(() => {
+    if (toast) setSavedMessage(null);
+  }, [toast]);
+
   const scanning = status === "scanning";
   // Resolve the selection against the live tree. Null it out when the folder is
   // gone OR is no longer selectable (its own sessions aged out, leaving a
@@ -70,7 +98,11 @@ export function FolderBrowser() {
 
   return (
     <div className={styles.layout}>
-      <TitleBar onRefresh={refresh} refreshing={scanning} />
+      <TitleBar
+        onRefresh={refresh}
+        refreshing={scanning}
+        onOpenSettings={openSettings}
+      />
       <div className={styles.body}>
         <FolderTree
           tree={tree}
@@ -86,7 +118,9 @@ export function FolderBrowser() {
           selected={selected}
           onRefreshFolder={refresh}
           refreshDisabled={scanning}
-          onOpen={(session) => void requestReopen(session)}
+          onOpen={(session) => {
+            if (!settingsOpen) void requestReopen(session);
+          }}
         />
       </div>
       {pendingBypass && (
@@ -96,7 +130,14 @@ export function FolderBrowser() {
           onCancel={cancelReopen}
         />
       )}
-      {toast && <Toast message={toast.message} onDismiss={dismissToast} />}
+      {settingsOpen && (
+        <SettingsModal onClose={closeSettings} onSaved={handleSaved} />
+      )}
+      {toast ? (
+        <Toast message={toast.message} onDismiss={dismissToast} />
+      ) : savedMessage ? (
+        <Toast message={savedMessage} onDismiss={() => setSavedMessage(null)} />
+      ) : null}
     </div>
   );
 }
