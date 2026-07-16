@@ -28,6 +28,7 @@ export function TitleBar({
   // is the availability signal. Without it the modal could neither load nor
   // save, so the gear stays a labelled placeholder.
   const settingsReady = onOpenSettings !== undefined && !!currentBridge();
+  const settingsLabel = settingsReady ? "Settings" : "Settings (unavailable)";
   return (
     <header className={styles.titleBar}>
       <div className={styles.brand}>
@@ -63,10 +64,10 @@ export function TitleBar({
         <button
           type="button"
           className={styles.iconButton}
-          onClick={settingsReady ? onOpenSettings : undefined}
+          onClick={onOpenSettings}
           disabled={!settingsReady}
-          aria-label={settingsReady ? "Settings" : "Settings (unavailable)"}
-          title={settingsReady ? "Settings" : "Settings (unavailable)"}
+          aria-label={settingsLabel}
+          title={settingsLabel}
         >
           ⚙
         </button>
