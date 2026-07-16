@@ -544,8 +544,18 @@ describe("isGitRepo", () => {
     expect(isGitRepo(tree.roots[0])).toBe(true);
   });
 
-  test("the (unknown) group is not a repo", () => {
-    const tree = buildTree([s("u", UNKNOWN_CWD)]);
+  test("the (unknown) group is not a repo, even holding a branch-carrying session", () => {
+    // NOT a vacuous case. parseSession resolves cwd and gitBranch in
+    // independent passes — cwd from the first record carrying one (else the
+    // "(unknown)" fallback), gitBranch from the last non-empty one — so a file
+    // whose records carry a gitBranch but never a cwd genuinely lands in this
+    // bucket WITH a branch. (The parser suite builds exactly that record shape.)
+    // "(unknown)" is a bucket, not a working tree, and must never claim to be.
+    const tree = buildTree([s("u", UNKNOWN_CWD, null, { gitBranch: "main" })]);
+    // Precondition: the branch really did survive into the bucket. Without this
+    // the assertion below could pass for the wrong reason — which is exactly how
+    // the first version of this test passed while the defect was live.
+    expect(tree.unknown!.sessions[0].gitBranch).toBe("main");
     expect(isGitRepo(tree.unknown!)).toBe(false);
   });
 });

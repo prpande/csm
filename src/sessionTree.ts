@@ -196,6 +196,14 @@ export function findFolder(tree: SessionTree, path: string): FolderNode | null {
  *  direction: a missing marker is a non-event, marking a non-repo would be a lie.
  *  A live probe could later enrich this (#91). */
 export function isGitRepo(node: FolderNode): boolean {
+  // "(unknown)" is not a folder — it is the bucket for sessions whose cwd never
+  // resolved, and it CAN hold branch-carrying sessions: parseSession reads cwd
+  // and gitBranch from independent passes, so a file whose records carry a
+  // gitBranch but never a cwd lands here WITH a branch. Excluded at the
+  // predicate rather than at the marker, because "a bucket is not a working
+  // tree" is a fact about the data that every consumer needs, not a rendering
+  // detail.
+  if (node.path === UNKNOWN_CWD) return false;
   return node.sessions.some((s) => s.gitBranch !== null);
 }
 

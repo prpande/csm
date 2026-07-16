@@ -58,6 +58,18 @@ stored field would have had to reproduce by hand:
 | intermediate nav folder (`D:\src`, `ownCount === 0`) | `[]` | no | yes — it isn't a repo, its children are |
 | #77-compacted chain | the merged leaf's sessions | follows the leaf | yes |
 | #101 roll-up owner | own + folded-in worktree sessions | yes | yes — it *is* the repo the worktrees belong to |
+| the `(unknown)` bucket | sessions whose cwd never resolved | **no — special-cased** | see below |
+
+**`(unknown)` needs an explicit exclusion.** It is not a folder; it is where
+sessions whose `cwd` never resolved are collected. And it genuinely *can* hold
+branch-carrying sessions: `parseSession` resolves `cwd` and `gitBranch` in
+**independent** passes — `cwd` from the first record carrying one (else the
+`(unknown)` fallback), `gitBranch` from the last non-empty one — so a file whose
+records carry a `gitBranch` but never a `cwd` lands in this bucket *with* a
+branch. The parser's own suite builds exactly that record shape, so it is not
+hypothetical. `isGitRepo` therefore returns false for it by path, at the
+**predicate** rather than at the marker: "a bucket is not a working tree" is a
+fact about the data every consumer needs (#91, #103), not a rendering detail.
 
 ### False negatives are the safe direction
 
@@ -95,6 +107,11 @@ test stays green.
 - a `rollUpWorktrees` owner whose branch-carrying sessions arrived by folding →
   `true`.
 - a `compactTree`-collapsed chain → follows the merged leaf.
+- the `(unknown)` bucket **holding a branch-carrying session** → `false`. The
+  fixture must actually put a branch in the bucket and assert it survived
+  (precondition), or the test passes for the wrong reason — the first version of
+  this test did exactly that, asserting the invariant while the defect was live,
+  because the fixture helper defaults `gitBranch: null`.
 
 **`test/renderer/FolderBrowser.test.tsx`** (integration — there is no
 `FolderTree.test.tsx`, so tree-level rendering is asserted here per the existing
