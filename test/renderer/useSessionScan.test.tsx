@@ -84,6 +84,18 @@ describe("useSessionScan", () => {
     expect(result.current.status).toBe("error");
   });
 
+  it("keeps a scan error distinct from an absent bridge (#83)", () => {
+    // The two failures have different causes and different fixes: a scan error
+    // is a runtime/data problem, an absent bridge is a build/packaging bug.
+    // They must not collapse to one status.
+    const { bridge, emit } = fakeBridge();
+    const { result } = renderHook(() => useSessionScan(bridge));
+
+    act(() => emit().onError());
+    expect(result.current.status).toBe("error");
+    expect(result.current.status).not.toBe("unavailable");
+  });
+
   it("unsubscribes on unmount", () => {
     const { bridge, unsubscribe } = fakeBridge();
     const { unmount } = renderHook(() => useSessionScan(bridge));
@@ -102,13 +114,15 @@ describe("useSessionScan", () => {
     expect(result.current.status).toBe("scanning");
   });
 
-  it("fails soft to 'error' when the bridge is absent", () => {
+  it("fails soft to 'unavailable' when the bridge is absent (#83)", () => {
     // Real non-desktop case: no preload, so window.csm is undefined and the
     // hook's default resolves to no bridge. (Passing `undefined` explicitly
     // would instead trigger the default param and pick up window.csm.)
+    // Distinct from 'error': the preload never loaded, which is a build or
+    // packaging bug (#81), not a failed scan.
     window.csm = undefined;
     const { result } = renderHook(() => useSessionScan());
-    expect(result.current.status).toBe("error");
+    expect(result.current.status).toBe("unavailable");
     expect(result.current.tree).toEqual({ roots: [], unknown: null });
   });
 });

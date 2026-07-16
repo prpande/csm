@@ -63,6 +63,7 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
   const reopen = vi.fn(async () => {});
   const setNativeTheme = vi.fn();
   const tempRoots = vi.fn(() => ["C:\\Users\\p\\AppData\\Local\\Temp"]);
+  const logError = vi.fn();
   const deps: IpcHandlerDeps = {
     ipcMain,
     isTrustedSender: (s: unknown) => s === trusted,
@@ -71,6 +72,7 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
     reopen,
     setNativeTheme,
     tempRoots,
+    logError,
     projectsRoot: "/root/projects",
     platform: "win32",
     now: () => 1234,
@@ -88,6 +90,7 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
     reopen,
     setNativeTheme,
     tempRoots,
+    logError,
     call,
   };
 }
@@ -138,6 +141,47 @@ test("a scan that throws sends error, not done", async () => {
   expect(sent).toEqual([
     { channel: CH.sessionsError, payload: { scanId: "scan-3" } },
   ]);
+});
+
+// ---- #83 observability: a scan failure must not be silent in main ------------
+
+test("a scan that throws logs the real error in the main process (#83)", async () => {
+  // The #81 regression was invisible in the launcher log because this catch
+  // discarded `err`. The thrown error itself — not a stringified stand-in —
+  // must reach the injected sink, so a stack trace survives to the log.
+  const boom = new Error("disk gone");
+  const scan: ScanImpl = async () => {
+    throw boom;
+  };
+  const { call, logError } = setup({
+    createSessionStore: makeCreateStore(scan),
+  });
+  await call(CH.sessionsScan, "scan-log");
+
+  expect(logError).toHaveBeenCalledTimes(1);
+  expect(logError).toHaveBeenCalledWith("sessions:scan", boom);
+});
+
+test("a scan that throws still leaks no error message to the renderer (#83)", async () => {
+  // Guards the no-message-leak invariant against the new logging path: the
+  // detail goes to the main-process log, NEVER over IPC. A scan error can embed
+  // an untrusted cwd, so the renderer payload stays scanId-only.
+  const scan: ScanImpl = async () => {
+    throw new Error("C:\\secret\\path exploded");
+  };
+  const { call, sent } = setup({ createSessionStore: makeCreateStore(scan) });
+  await call(CH.sessionsScan, "scan-leak");
+
+  expect(sent).toEqual([
+    { channel: CH.sessionsError, payload: { scanId: "scan-leak" } },
+  ]);
+  expect(JSON.stringify(sent)).not.toContain("secret");
+});
+
+test("a successful scan logs nothing (#83)", async () => {
+  const { call, logError } = setup();
+  await call(CH.sessionsScan, "scan-ok");
+  expect(logError).not.toHaveBeenCalled();
 });
 
 test("sessions:scan from an untrusted sender runs no scan and sends nothing", async () => {

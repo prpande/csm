@@ -84,8 +84,17 @@ export function FolderTree({
       {status === "done" && isEmpty && (
         <div className={styles.notice}>No Claude sessions found</div>
       )}
+      {/* Two failures, two causes, two fixes (#83). "error" = the scan threw
+          (runtime/data — a refresh may help). "unavailable" = the preload bridge
+          never loaded (a build/packaging bug like #81 — a refresh cannot help,
+          so the copy says so rather than inviting a pointless retry). */}
       {status === "error" && isEmpty && (
         <div className={styles.notice}>Couldn’t load sessions</div>
+      )}
+      {status === "unavailable" && (
+        <div className={styles.notice}>
+          Session bridge unavailable — restart CSM
+        </div>
       )}
     </nav>
   );
