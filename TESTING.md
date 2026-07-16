@@ -81,6 +81,7 @@ To see those, re-run in the **foreground** with Electron's logging on:
 The two notices point at different faults:
 
 - **"Session bridge unavailable"** — the preload never loaded, so `window.csm` is undefined.
-  A build/packaging fault (restarting won't help). Check the preload bundle step.
+  A build/packaging fault, so restarting re-runs the same broken build. From source, check the
+  preload bundle step; on a downloaded build, reinstall from the latest release.
 - **"Couldn't load sessions"** — the bridge is fine but the scan threw. The main process logs
   the real error as `[csm] sessions:scan failed: …`.

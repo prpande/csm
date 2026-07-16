@@ -59,10 +59,17 @@ Widen the union to `ScanStatus = "scanning" | "done" | "error" | "unavailable"`
 and set `"unavailable"` on the bridge-missing branch. `FolderTree` then renders a
 distinct notice per state:
 
-| status        | notice                                    | means                        |
-| ------------- | ----------------------------------------- | ---------------------------- |
-| `error`       | "Couldn't load sessions" (unchanged)      | the scan threw               |
-| `unavailable` | "Session bridge unavailable — restart CSM" | the preload bridge is absent |
+| status        | notice                                       | means                        |
+| ------------- | -------------------------------------------- | ---------------------------- |
+| `error`       | "Couldn't load sessions" (unchanged)         | the scan threw               |
+| `unavailable` | "Session bridge unavailable — reinstall CSM" | the preload bridge is absent |
+
+The remedies differ, so the copy must too. A scan error is transient, so a
+refresh may genuinely help. A missing bridge is not: the preload path is a static
+`__dirname` join resolved from the installed files on every launch, so restarting
+re-runs the identical broken build. Since there is no auto-update (`TESTING.md`),
+a reinstall is the only remedy that changes the outcome — telling the user to
+restart would loop them forever.
 
 `FolderBrowser` only reads `status === "scanning"`, so the new member is additive
 for every other consumer.
@@ -139,7 +146,12 @@ where "Unable to load preload script" goes), so a foreground re-run with
 **`test/renderer/useSessionScan.test.tsx`**
 
 - no bridge → `status === "unavailable"` (was `"error"`).
-- bridge present, `onError` fires → `status === "error"` (stays distinct).
+- bridge present, `onError` fires → `status === "error"` (the pre-existing test —
+  it is what holds the other half of the distinction).
+
+Those two are the whole guard. A third test asserting `status` is `"error"` *and*
+`not.toBe("unavailable")` was written and then removed: it is a tautology (a
+string cannot equal two literals) that stays green with the fix reverted.
 
 **`test/renderer/FolderBrowser.test.tsx`**
 

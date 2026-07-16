@@ -84,16 +84,19 @@ export function FolderTree({
       {status === "done" && isEmpty && (
         <div className={styles.notice}>No Claude sessions found</div>
       )}
-      {/* Two failures, two causes, two fixes (#83). "error" = the scan threw
-          (runtime/data — a refresh may help). "unavailable" = the preload bridge
-          never loaded (a build/packaging bug like #81 — a refresh cannot help,
-          so the copy says so rather than inviting a pointless retry). */}
+      {/* Two failures, two causes, two remedies (#83). "error" = the scan threw
+          (runtime/data — transient, so a refresh may genuinely help).
+          "unavailable" = the preload bridge never loaded (a build/packaging bug
+          like #81). The preload path is a static __dirname join resolved from the
+          installed files on every launch, so restarting re-runs the identical
+          broken build — the copy must NOT invite a retry. Per TESTING.md the only
+          real remedy is a reinstall (there is no auto-update). */}
       {status === "error" && isEmpty && (
         <div className={styles.notice}>Couldn’t load sessions</div>
       )}
       {status === "unavailable" && (
         <div className={styles.notice}>
-          Session bridge unavailable — restart CSM
+          Session bridge unavailable — reinstall CSM
         </div>
       )}
     </nav>

@@ -84,18 +84,6 @@ describe("useSessionScan", () => {
     expect(result.current.status).toBe("error");
   });
 
-  it("keeps a scan error distinct from an absent bridge (#83)", () => {
-    // The two failures have different causes and different fixes: a scan error
-    // is a runtime/data problem, an absent bridge is a build/packaging bug.
-    // They must not collapse to one status.
-    const { bridge, emit } = fakeBridge();
-    const { result } = renderHook(() => useSessionScan(bridge));
-
-    act(() => emit().onError());
-    expect(result.current.status).toBe("error");
-    expect(result.current.status).not.toBe("unavailable");
-  });
-
   it("unsubscribes on unmount", () => {
     const { bridge, unsubscribe } = fakeBridge();
     const { unmount } = renderHook(() => useSessionScan(bridge));
