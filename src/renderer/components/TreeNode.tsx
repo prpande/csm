@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { isGitRepo, type FolderNode } from "../../sessionTree";
 import { truncatePathLabel } from "../pathLabel";
 import { GitBranchIcon } from "./GitBranchIcon";
@@ -11,6 +12,12 @@ interface TreeNodeProps {
   selectedPath: string | null;
   onToggle: (path: string) => void;
   onSelect: (node: FolderNode) => void;
+  /** The one keyboard-focused node in the whole tree (#70), or null before the
+   *  tree has any rows. Drives the roving tabindex. */
+  focusedPath?: string | null;
+  /** Report a click so the keyboard's focus follows the mouse — otherwise an
+   *  arrow key after a click would resume from a stale row. */
+  onFocusNode?: (path: string) => void;
 }
 
 // One tree row plus (when expanded) its children. A collapsed node does NOT
@@ -24,6 +31,8 @@ export function TreeNode({
   selectedPath,
   onToggle,
   onSelect,
+  focusedPath,
+  onFocusNode,
 }: TreeNodeProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = hasChildren && expandedPaths.has(node.path);
@@ -32,18 +41,35 @@ export function TreeNode({
   // Derived with zero I/O from the sessions already in the tree (#111), so it
   // still marks a repo whose folder has since been deleted.
   const isRepo = isGitRepo(node);
+  const isFocused = focusedPath === node.path;
+  const itemRef = useRef<HTMLLIElement>(null);
+
+  // Pull real DOM focus to the focused row (#70). Real focus, not just
+  // aria-activedescendant, so the existing :focus-visible styling and the e2e
+  // can both observe it. Guarded on isFocused, so only one node ever calls this.
+  useEffect(() => {
+    if (isFocused) itemRef.current?.focus();
+  }, [isFocused]);
 
   const onRowClick = () => {
+    // Keep keyboard focus in step with the mouse, or the next arrow key would
+    // resume from wherever the keyboard last was, not from what was clicked.
+    onFocusNode?.(node.path);
     if (isSelectable) onSelect(node);
     else if (hasChildren) onToggle(node.path);
   };
 
   return (
     <li
+      ref={itemRef}
       className={styles.item}
       role="treeitem"
       aria-expanded={hasChildren ? isExpanded : undefined}
       aria-selected={isSelectable ? isSelected : undefined}
+      // Roving tabindex: the tree is ONE tab stop. tabIndex/focus must sit on the
+      // same element as aria-expanded/aria-selected — putting them on the inner
+      // row div would give a tree that navigates but announces wrong.
+      tabIndex={isFocused ? 0 : -1}
     >
       <div
         className={isSelected ? `${styles.row} ${styles.selected}` : styles.row}
@@ -55,8 +81,14 @@ export function TreeNode({
             type="button"
             className={styles.chevron}
             aria-label={isExpanded ? "Collapse folder" : "Expand folder"}
+            // Out of the natural Tab order (#70): the tree is a composite widget
+            // with ONE tab stop, so Tab must reach the tree — not every visible
+            // node's chevron in turn. Still mouse-clickable, and keyboard users
+            // expand/collapse via the row's own Right/Left/Space (ARIA APG).
+            tabIndex={-1}
             onClick={(e) => {
               e.stopPropagation();
+              onFocusNode?.(node.path);
               onToggle(node.path);
             }}
           >
@@ -119,6 +151,8 @@ export function TreeNode({
               selectedPath={selectedPath}
               onToggle={onToggle}
               onSelect={onSelect}
+              focusedPath={focusedPath}
+              onFocusNode={onFocusNode}
             />
           ))}
         </ul>

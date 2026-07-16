@@ -1,4 +1,9 @@
-import type { FolderNode, SessionTree } from "../../sessionTree";
+import {
+  flattenVisible,
+  treeKeyAction,
+  type FolderNode,
+  type SessionTree,
+} from "../../sessionTree";
 import type { ScanStatus } from "../hooks/useSessionScan";
 import { TreeNode } from "./TreeNode";
 import styles from "./FolderTree.module.css";
@@ -14,6 +19,10 @@ interface FolderTreeProps {
    *  worktree sessions up into their project; off shows the raw structure. */
   declutter: boolean;
   onToggleDeclutter: () => void;
+  /** The keyboard-focused node (#70). Owned by FolderBrowser alongside
+   *  expansion/selection, so it survives a buildTree rebuild between batches. */
+  focusedPath: string | null;
+  onFocusNode: (path: string) => void;
 }
 
 // Left sidebar: the expandable folder tree over the #64 view-model. Renders the
@@ -29,8 +38,24 @@ export function FolderTree({
   onSelect,
   declutter,
   onToggleDeclutter,
+  focusedPath,
+  onFocusNode,
 }: FolderTreeProps) {
   const isEmpty = tree.roots.length === 0 && tree.unknown === null;
+
+  // One handler on the <ul role="tree">, not one per row: the tree is a
+  // composite widget with a single tab stop, and key events bubble up from the
+  // focused <li>. All the semantics live in the pure treeKeyAction; this only
+  // dispatches, so the key map stays testable without a DOM.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const flat = flattenVisible(tree, expandedPaths);
+    const action = treeKeyAction(e.key, flat, focusedPath, expandedPaths);
+    if (!action) return; // not ours — let the event through (e.g. Tab)
+    e.preventDefault();
+    if (action.type === "focus") onFocusNode(action.path);
+    else if (action.type === "toggle") onToggle(action.path);
+    else onSelect(action.node);
+  };
 
   return (
     <nav className={styles.sidebar} aria-label="Folders">
@@ -54,7 +79,14 @@ export function FolderTree({
           <span className={styles.declutterLabel}>Declutter</span>
         </button>
       </div>
-      <ul className={styles.tree} role="tree" aria-label="Session folders">
+      {/* The handler sits here, not per row: role="tree" is a composite widget
+          with one tab stop, and keys bubble up from the focused <li>. */}
+      <ul
+        className={styles.tree}
+        role="tree"
+        aria-label="Session folders"
+        onKeyDown={onKeyDown}
+      >
         {tree.roots.map((root) => (
           <TreeNode
             key={root.path}
@@ -64,8 +96,12 @@ export function FolderTree({
             selectedPath={selectedPath}
             onToggle={onToggle}
             onSelect={onSelect}
+            focusedPath={focusedPath}
+            onFocusNode={onFocusNode}
           />
         ))}
+        {/* Pinned last (spec §9) — flattenVisible mirrors this, so Down from the
+            last root lands here and not somewhere the user isn't looking. */}
         {tree.unknown && (
           <TreeNode
             key={tree.unknown.path}
@@ -75,6 +111,8 @@ export function FolderTree({
             selectedPath={selectedPath}
             onToggle={onToggle}
             onSelect={onSelect}
+            focusedPath={focusedPath}
+            onFocusNode={onFocusNode}
           />
         )}
       </ul>

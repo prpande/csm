@@ -95,6 +95,20 @@
 
 .item {
   margin: 0;
+  /* The <li> takes real DOM focus (roving tabindex, #70), so suppress the UA's
+     default outline on the whole item — the ring below is drawn on the row
+     instead, which is the part the user perceives as "the folder". Without this,
+     the <li> would outline its entire subtree when a parent is focused. */
+  outline: none;
+}
+
+/* Focus ring (#70). :focus-visible, so it appears for keyboard users and not on
+   a mouse click. Drawn on the row via the focused <li> rather than on the <li>
+   itself, so it hugs the folder row and not its expanded children. inset keeps
+   it inside the sidebar's clipped width at any indent depth. */
+.item:focus-visible > .row {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .row {

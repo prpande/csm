@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, within, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  createEvent,
+  within,
+  act,
+} from "@testing-library/react";
 import { FolderBrowser } from "../../src/renderer/components/FolderBrowser";
 import type { SessionsListener } from "../../src/ipcTypes";
 import type { SessionMetadata } from "../../src/sessionParser";
@@ -345,6 +352,96 @@ describe("FolderBrowser", () => {
     const plainRow = screen.getByText("scratch").closest("li")!;
     expect(within(repoRow).queryByTestId("git-repo-marker")).toBeTruthy();
     expect(within(plainRow).queryByTestId("git-repo-marker")).toBe(null);
+  });
+
+  // ---- #70: keyboard navigation (integration; no FolderTree.test.tsx) -------
+  // The key map itself is unit-tested in test/main/sessionTree.test.ts. These
+  // assert the WIRING: that keys reach it, its actions are dispatched, and real
+  // DOM focus follows — none of which the pure tests can see.
+
+  const treeOf = () => screen.getByRole("tree", { name: /session folders/i });
+  const itemFor = (name: string): HTMLElement =>
+    screen.getByText(name).closest("li")!;
+
+  it("focus starts on the first tree row once the tree has rows (#70)", () => {
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    // Roving tabindex: exactly one row is tabbable, and it's the first.
+    expect(itemFor("D:\\src").getAttribute("tabindex")).toBe("0");
+    expect(itemFor("csm").getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("Down/Up move focus between rows and pull real DOM focus (#70)", () => {
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+
+    fireEvent.keyDown(treeOf(), { key: "ArrowDown" });
+    expect(itemFor("csm").getAttribute("tabindex")).toBe("0");
+    // Real focus, not just the attribute — that's what :focus-visible needs.
+    expect(document.activeElement).toBe(itemFor("csm"));
+
+    fireEvent.keyDown(treeOf(), { key: "ArrowUp" });
+    expect(itemFor("D:\\src").getAttribute("tabindex")).toBe("0");
+    expect(document.activeElement).toBe(itemFor("D:\\src"));
+  });
+
+  it("Left collapses the focused node, Right expands it again (#70)", () => {
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    expect(screen.getByText("csm")).toBeTruthy(); // roots auto-expand
+
+    fireEvent.keyDown(treeOf(), { key: "ArrowLeft" });
+    expect(screen.queryByText("csm")).toBe(null); // subtree unmounted
+
+    fireEvent.keyDown(treeOf(), { key: "ArrowRight" });
+    expect(screen.getByText("csm")).toBeTruthy();
+  });
+
+  it("Left from a child moves focus to its parent (#70)", () => {
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    fireEvent.keyDown(treeOf(), { key: "ArrowDown" }); // -> csm (a leaf)
+    expect(document.activeElement).toBe(itemFor("csm"));
+
+    fireEvent.keyDown(treeOf(), { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(itemFor("D:\\src"));
+  });
+
+  it("Enter selects the focused folder that owns sessions (#70)", () => {
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    expect(
+      screen.getByText(/select a folder to view its sessions/i),
+    ).toBeTruthy();
+
+    fireEvent.keyDown(treeOf(), { key: "ArrowDown" }); // -> csm
+    fireEvent.keyDown(treeOf(), { key: "Enter" });
+    // Same outcome as a click: the pane header shows the folder's full cwd.
+    expect(screen.getByText("D:\\src\\csm")).toBeTruthy();
+    expect(screen.getByText(/1 session/i)).toBeTruthy();
+  });
+
+  it("clicking a row moves keyboard focus to it, so arrows resume from there (#70)", () => {
+    // Without this, the next arrow key would jump from wherever the keyboard
+    // last was rather than from what the user just clicked.
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    fireEvent.click(screen.getByText("prism"));
+    expect(itemFor("prism").getAttribute("tabindex")).toBe("0");
+
+    fireEvent.keyDown(treeOf(), { key: "ArrowUp" });
+    expect(document.activeElement).toBe(itemFor("csm"));
+  });
+
+  it("keeps the tree to a single Tab stop (#70)", () => {
+    // A chevron per visible node in the Tab order would make "Tab moves between
+    // tree and list" unreachable in practice.
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    const chevron = screen.getAllByRole("button", { name: /folder$/i })[0];
+    expect(chevron.getAttribute("tabindex")).toBe("-1");
+    const tabbable = treeOf().querySelectorAll('[tabindex="0"]');
+    expect(tabbable).toHaveLength(1);
+  });
+
+  it("does not swallow keys it doesn't handle, so Tab can leave the pane (#70)", () => {
+    renderScanned([sess("a", "D:\\src\\csm")]);
+    const e = createEvent.keyDown(treeOf(), { key: "Tab" });
+    fireEvent(treeOf(), e);
+    expect(e.defaultPrevented).toBe(false);
   });
 
   it("does not mark an intermediate folder above a repo (#111)", () => {

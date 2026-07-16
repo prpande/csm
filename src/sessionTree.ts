@@ -182,6 +182,131 @@ export function findFolder(tree: SessionTree, path: string): FolderNode | null {
   return search(tree.roots);
 }
 
+/** One row of the tree as it is actually on screen (#70). */
+export interface FlatNode {
+  node: FolderNode;
+  /** Nesting depth (0 = root) — the same value TreeNode indents by. */
+  depth: number;
+  /** The path of the row above this one in the hierarchy; null for a root, so
+   *  Left-from-a-root has nowhere to go. */
+  parentPath: string | null;
+}
+
+/** The visible rows, top to bottom, for keyboard traversal (#70).
+ *
+ *  MUST mirror FolderTree/TreeNode's render exactly: roots in order, the
+ *  "(unknown)" group pinned last, and children only for an expanded node — a
+ *  collapsed node renders no child `<ul>` at all, so its subtree must not be
+ *  arrow-reachable either. Arrow keys walk this array while the user watches the
+ *  render; any divergence between the two is an off-by-one the user feels.
+ *
+ *  Derived here rather than by walking the DOM so there is ONE definition of
+ *  "what's on screen", and so navigation stays pure and testable without a DOM. */
+export function flattenVisible(
+  tree: SessionTree,
+  expandedPaths: ReadonlySet<string>,
+): FlatNode[] {
+  const out: FlatNode[] = [];
+  const walk = (node: FolderNode, depth: number, parentPath: string | null) => {
+    out.push({ node, depth, parentPath });
+    // Mirrors TreeNode: `hasChildren && expandedPaths.has(path)`.
+    if (node.children.length > 0 && expandedPaths.has(node.path)) {
+      for (const child of node.children) walk(child, depth + 1, node.path);
+    }
+  };
+  for (const root of tree.roots) walk(root, 0, null);
+  if (tree.unknown) walk(tree.unknown, 0, null);
+  return out;
+}
+
+/** What a key should do to the tree (#70). The component dispatches it; null
+ *  means "not ours" — leave the event alone rather than swallowing it. */
+export type TreeKeyAction =
+  | { type: "focus"; path: string }
+  | { type: "toggle"; path: string }
+  | { type: "select"; node: FolderNode };
+
+/** The focused row plus the facts each key handler needs about it. */
+interface KeyContext {
+  at: FlatNode;
+  /** Index of `at` within the visible rows. */
+  cur: number;
+  /** True when nothing was focused yet — the arrows land on row 0 rather than
+   *  stepping off it. */
+  unfocused: boolean;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  /** Focus a row by index, clamped, so the ends of the list are dead-stops
+   *  rather than wraps. */
+  focusAt: (i: number) => TreeKeyAction;
+}
+type KeyHandler = (c: KeyContext) => TreeKeyAction | null;
+
+// APG treeview: Right opens a closed node in place, then steps INTO it once open.
+const openOrDescend: KeyHandler = (c) => {
+  if (!c.hasChildren) return null; // a leaf has nothing to open or step into
+  if (c.isExpanded) return c.focusAt(c.cur + 1);
+  return { type: "toggle", path: c.at.node.path };
+};
+
+// APG treeview: Left closes an open node in place, then walks OUT to the parent.
+const closeOrAscend: KeyHandler = (c) => {
+  if (c.isExpanded) return { type: "toggle", path: c.at.node.path };
+  if (c.at.parentPath === null) return null; // a root: nowhere further out
+  return { type: "focus", path: c.at.parentPath };
+};
+
+// A tree item is not a session, so the issue's "Enter opens the session" AC does
+// not apply here — Enter and Space mirror the row's click instead.
+const activate: KeyHandler = (c) => {
+  if (c.at.node.ownCount > 0) return { type: "select", node: c.at.node };
+  return c.hasChildren ? { type: "toggle", path: c.at.node.path } : null;
+};
+
+// The key map, as a map. An absent key resolves to null, so the tree only ever
+// swallows the events it actually handles.
+const TREE_KEYS: Record<string, KeyHandler> = {
+  ArrowDown: (c) => c.focusAt(c.unfocused ? 0 : c.cur + 1),
+  ArrowUp: (c) => c.focusAt(c.unfocused ? 0 : c.cur - 1),
+  ArrowRight: openOrDescend,
+  ArrowLeft: closeOrAscend,
+  " ": activate,
+  Enter: activate,
+};
+
+/** Resolve a keypress against the visible rows (#70) — pure, so the whole key
+ *  map is unit-testable with no DOM and the component stays a dispatcher.
+ *  Returns null when the key isn't ours, so the caller leaves the event alone.
+ *
+ *  A `focusedPath` that isn't in `flat` (nothing focused yet, or the focused
+ *  folder vanished between scan batches) resolves to the first row rather than
+ *  to nothing, so the first keypress is never a dead one. */
+export function treeKeyAction(
+  key: string,
+  flat: readonly FlatNode[],
+  focusedPath: string | null,
+  expandedPaths: ReadonlySet<string>,
+): TreeKeyAction | null {
+  const handler = TREE_KEYS[key];
+  if (!handler || flat.length === 0) return null;
+
+  const found = flat.findIndex((f) => f.node.path === focusedPath);
+  const cur = found === -1 ? 0 : found;
+  const at = flat[cur];
+  const hasChildren = at.node.children.length > 0;
+  return handler({
+    at,
+    cur,
+    unfocused: found === -1,
+    hasChildren,
+    isExpanded: hasChildren && expandedPaths.has(at.node.path),
+    focusAt: (i) => ({
+      type: "focus",
+      path: flat[Math.max(0, Math.min(flat.length - 1, i))].node.path,
+    }),
+  });
+}
+
 /** Whether this folder was a git working tree at session time (#111) — true when
  *  any of its OWN sessions carries a `gitBranch`. Derived on read rather than
  *  stored on the node: `buildTree`, `compactTree` and `rollUpWorktrees` each

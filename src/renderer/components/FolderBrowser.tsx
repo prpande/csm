@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSessionScan } from "../hooks/useSessionScan";
 import { useReopen } from "../hooks/useReopen";
-import { findFolder, type FolderNode } from "../../sessionTree";
+import { findFolder, flattenVisible, type FolderNode } from "../../sessionTree";
 import { TitleBar } from "./TitleBar";
 import { FolderTree } from "./FolderTree";
 import { FolderPane } from "./FolderPane";
@@ -27,6 +27,10 @@ export function FolderBrowser() {
   } = useReopen();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  // Keyboard focus (#70) is held as a PATH for the same reason selection is:
+  // buildTree rebuilds every node between streaming batches, so a node reference
+  // would go stale. treeKeyAction falls back to the first row if the path is gone.
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
   // Auto-expand each drive root once, the first time it appears — including a
   // root first seen in a later streaming tier. The ref tracks which roots have
   // already been seeded so a re-streamed root (a refresh, or a root that spans
@@ -59,6 +63,25 @@ export function FolderBrowser() {
     setSelectedPath(node.path);
   }, []);
 
+  // "Focus lands on the tree on load" (spec §9): seed the focused row the first
+  // time the tree has one. Only the roving-tabindex STATE is seeded — no
+  // .focus() call fires until the user actually enters the tree, so this never
+  // steals focus from the page on mount.
+  const visible = useMemo(
+    () => flattenVisible(tree, expanded),
+    [tree, expanded],
+  );
+  useEffect(() => {
+    setFocusedPath((prev) => {
+      if (visible.length === 0) return prev;
+      // Keep the user's focus unless the row it names has disappeared (a folder
+      // aged out between batches, or the declutter toggle hid it).
+      if (prev !== null && visible.some((f) => f.node.path === prev))
+        return prev;
+      return visible[0].node.path;
+    });
+  }, [visible]);
+
   const scanning = status === "scanning";
   // Resolve the selection against the live tree. Null it out when the folder is
   // gone OR is no longer selectable (its own sessions aged out, leaving a
@@ -81,6 +104,8 @@ export function FolderBrowser() {
           onSelect={select}
           declutter={declutter}
           onToggleDeclutter={toggleDeclutter}
+          focusedPath={focusedPath}
+          onFocusNode={setFocusedPath}
         />
         <FolderPane
           selected={selected}
