@@ -32,8 +32,7 @@ bridge typing in `src/renderer/types/csm.d.ts`. This slice is renderer-only.
 **Out (deferred, tracked)**
 
 - `claudePath` resolvability validation and echoing the resolved absolute path
-  (parent spec §8) — explicitly out of scope in #68; follow-up issue to be
-  filed at PR time.
+  (parent spec §8) — explicitly out of scope in #68; tracked in #145.
 - Focus trap / full keyboard traversal — #70 owns modal keyboard polish, same
   as `BypassConfirmModal`. (The cheap cross-modal state gates below are NOT
   deferred — they close a hole this slice itself would open.)
