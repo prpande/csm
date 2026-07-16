@@ -362,6 +362,11 @@ describe("FolderBrowser", () => {
   const treeOf = () => screen.getByRole("tree", { name: /session folders/i });
   const itemFor = (name: string): HTMLElement =>
     screen.getByText(name).closest("li")!;
+  // Enter the tree the way a real user does — Tab lands DOM focus on the roving
+  // tab stop. Arrows only move focus once the tree already holds it (it must
+  // never grab focus on its own; see the two seeding tests below), so a test
+  // that arrows without this would assert a state no user can reach.
+  const tabIntoTree = (name: string) => itemFor(name).focus();
 
   it("focus starts on the first tree row once the tree has rows (#70)", () => {
     renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
@@ -370,8 +375,38 @@ describe("FolderBrowser", () => {
     expect(itemFor("csm").getAttribute("tabindex")).toBe("-1");
   });
 
+  it("seeding the tab stop does NOT steal real DOM focus (#70)", () => {
+    // A scan streams in tiers, so the seed re-runs per batch — and compactTree
+    // can change a node's path mid-scan, remounting TreeNode and re-firing its
+    // focus effect. Focusing unconditionally stole focus on populate, again on
+    // every tier, and again on every refresh. Measured in real Electron.
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+
+    expect(itemFor("D:\\src").getAttribute("tabindex")).toBe("0"); // ready...
+    expect(document.activeElement).not.toBe(itemFor("D:\\src")); // ...but not taken
+  });
+
+  it("a later streaming tier does not yank focus off another control (#70)", () => {
+    const bridge = fakeBridge();
+    render(<FolderBrowser />);
+    act(() => bridge.emit().onBatch([sess("a", "D:\\src\\csm")]));
+
+    // The declutter switch, NOT the refresh button — refresh is disabled while
+    // scanning, so it cannot hold focus and this would pass for the wrong reason.
+    const declutter = screen.getByRole("switch");
+    declutter.focus();
+    expect(document.activeElement).toBe(declutter);
+
+    // Later tiers land, re-seeding the tree's tab stop each time.
+    act(() => bridge.emit().onBatch([sess("b", "D:\\other\\proj")]));
+    act(() => bridge.emit().onDone());
+
+    expect(document.activeElement).toBe(declutter);
+  });
+
   it("Down/Up move focus between rows and pull real DOM focus (#70)", () => {
     renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    tabIntoTree("D:\\src");
 
     fireEvent.keyDown(treeOf(), { key: "ArrowDown" });
     expect(itemFor("csm").getAttribute("tabindex")).toBe("0");
@@ -396,6 +431,7 @@ describe("FolderBrowser", () => {
 
   it("Left from a child moves focus to its parent (#70)", () => {
     renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    tabIntoTree("D:\\src");
     fireEvent.keyDown(treeOf(), { key: "ArrowDown" }); // -> csm (a leaf)
     expect(document.activeElement).toBe(itemFor("csm"));
 
@@ -420,6 +456,7 @@ describe("FolderBrowser", () => {
     // Without this, the next arrow key would jump from wherever the keyboard
     // last was rather than from what the user just clicked.
     renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    tabIntoTree("D:\\src");
     fireEvent.click(screen.getByText("prism"));
     expect(itemFor("prism").getAttribute("tabindex")).toBe("0");
 

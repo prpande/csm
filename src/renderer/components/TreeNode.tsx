@@ -44,11 +44,22 @@ export function TreeNode({
   const isFocused = focusedPath === node.path;
   const itemRef = useRef<HTMLLIElement>(null);
 
-  // Pull real DOM focus to the focused row (#70). Real focus, not just
-  // aria-activedescendant, so the existing :focus-visible styling and the e2e
-  // can both observe it. Guarded on isFocused, so only one node ever calls this.
+  // Pull real DOM focus to the focused row (#70) — real focus, not just
+  // aria-activedescendant, so :focus-visible and the e2e can both observe it.
+  //
+  // ONLY when the tree already holds focus, i.e. the user is navigating inside
+  // it. The roving tabindex is re-seeded every time a scan tier lands or a
+  // refresh re-streams, and compactTree can change a node's path mid-scan, which
+  // remounts this component and re-fires the effect. Focusing unconditionally
+  // therefore stole focus on populate, again on every tier, and again on every
+  // refresh — measured in real Electron, not theorised: it made other controls
+  // impossible to keep focus on while sessions loaded.
   useEffect(() => {
-    if (isFocused) itemRef.current?.focus();
+    if (!isFocused) return;
+    const el = itemRef.current;
+    if (!el) return;
+    const tree = el.closest('[role="tree"]');
+    if (tree?.contains(document.activeElement)) el.focus();
   }, [isFocused]);
 
   const onRowClick = () => {

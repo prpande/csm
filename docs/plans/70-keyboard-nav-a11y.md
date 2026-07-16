@@ -86,12 +86,39 @@ nested tab stops).
 *session rows*; tree items aren't sessions. Both keys mirror the existing mouse
 behavior — no new concept.
 
-### Focus on load
+### Focus on load — seed the tab stop, never steal focus
 
 A `useEffect` in `FolderBrowser` (alongside the existing `seededRoots`
-auto-expand) sets `focusedPath` to the first visible node the first time the tree
-becomes non-empty. Focus **state** starts on the tree; it does not steal the
-browser's focus on mount.
+auto-expand) sets `focusedPath` to the first visible node once the tree is
+non-empty, and re-seeds if that row later disappears.
+
+**"Focus lands on the tree on load" (AC) is implemented as "the tree's roving tab
+stop is seeded and ready", not as taking DOM focus.** That is a deliberate
+reading, and it was forced by measurement rather than taste. An earlier draft had
+`TreeNode` call `.focus()` whenever a row became focused; probing the built app in
+real Electron showed:
+
+```
+activeElement BEFORE any tree row exists: body
+activeElement AFTER the tree populates:   li[role=treeitem] "C:"        <- stolen
+activeElement after focusing Refresh:     li[role=treeitem] "C:"        <- .focus() wouldn't stick
+activeElement AFTER refresh re-streams:   li[role=treeitem] "AppData…"  <- yanked again, to an arbitrary row
+```
+
+Three separate faults, one cause. A scan arrives in **tiers**, so the seed re-runs
+per batch; `compactTree` can change a node's `path` mid-scan, which changes
+`TreeNode`'s `key`, **remounts** it and re-fires the mount effect. The result was
+a tree that grabbed focus on populate, kept grabbing it while sessions streamed,
+and grabbed it again after every refresh — so other controls could not hold focus
+during a scan at all. That is a WCAG 3.2.x unexpected-context-change, not a nicety.
+
+So `TreeNode` pulls real DOM focus **only when the tree already contains
+`document.activeElement`** — i.e. the user is navigating inside it. The roving
+tabindex still seeds, so Tab reaches the right row; nothing is stolen.
+
+This also means keyboard tests must Tab into the tree before arrowing, since
+arrows do nothing to DOM focus until the tree holds it — which is exactly how a
+real user behaves.
 
 ## PR B — list pane + modal (outline)
 
@@ -124,7 +151,15 @@ correct at depth; empty tree → `[]`.
 
 **`test/renderer/FolderBrowser.test.tsx`** (integration; there is no
 `FolderTree.test.tsx`) — Down/Up traverse; Right expands then descends; Left
-collapses then moves to parent; focus starts on the tree.
+collapses then moves to parent; the tab stop seeds to the first row; a click
+moves keyboard focus; Tab isn't swallowed.
+
+Plus two guards for the focus-steal fault above, which no test caught the first
+time because they all used a single batch and never checked what focus was *not*
+doing: seeding the tab stop must not take DOM focus, and a **later streaming
+tier** must not yank focus off another control (use the declutter switch — the
+refresh button is `disabled` while scanning, so it cannot hold focus and the
+assertion would pass for the wrong reason).
 
 ## Out of scope
 

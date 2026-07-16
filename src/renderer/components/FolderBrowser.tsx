@@ -63,10 +63,12 @@ export function FolderBrowser() {
     setSelectedPath(node.path);
   }, []);
 
-  // "Focus lands on the tree on load" (spec §9): seed the focused row the first
-  // time the tree has one. Only the roving-tabindex STATE is seeded — no
-  // .focus() call fires until the user actually enters the tree, so this never
-  // steals focus from the page on mount.
+  // "Focus lands on the tree on load" (spec §9), implemented as: the tree's
+  // roving tab stop is seeded and ready — NOT as stealing the user's focus.
+  // This seeds STATE only; TreeNode pulls real DOM focus solely when the tree
+  // already holds it (see the comment there). Stealing was measured to be
+  // actively harmful: a scan streams in tiers, so it re-fired on every tier and
+  // on every refresh, making other controls impossible to keep focus on.
   const visible = useMemo(
     () => flattenVisible(tree, expanded),
     [tree, expanded],
@@ -74,8 +76,8 @@ export function FolderBrowser() {
   useEffect(() => {
     setFocusedPath((prev) => {
       if (visible.length === 0) return prev;
-      // Keep the user's focus unless the row it names has disappeared (a folder
-      // aged out between batches, or the declutter toggle hid it).
+      // Keep the user's row unless it has disappeared (aged out between batches,
+      // hidden by the declutter toggle, or not yet re-streamed after a refresh).
       if (prev !== null && visible.some((f) => f.node.path === prev))
         return prev;
       return visible[0].node.path;
