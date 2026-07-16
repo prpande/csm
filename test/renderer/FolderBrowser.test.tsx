@@ -329,4 +329,38 @@ describe("FolderBrowser", () => {
     expect(screen.getByText(/couldn’t load sessions/i)).toBeTruthy();
     expect(screen.queryByText(/session bridge unavailable/i)).toBe(null);
   });
+
+  // ---- #111: git-repo markers on tree nodes --------------------------------
+
+  it("marks only the folders whose sessions carry a git branch (#111)", () => {
+    // Two sibling leaves under D:\src: one a repo, one not. Asserting BOTH in
+    // one tree is the point — a marker on every row would pass a
+    // repo-only test.
+    renderScanned([
+      { ...sess("a", "D:\\src\\csm"), gitBranch: "feature-x" },
+      sess("b", "D:\\src\\scratch"),
+    ]);
+
+    const repoRow = screen.getByText("csm").closest("li")!;
+    const plainRow = screen.getByText("scratch").closest("li")!;
+    expect(within(repoRow).queryByTestId("git-repo-marker")).toBeTruthy();
+    expect(within(plainRow).queryByTestId("git-repo-marker")).toBe(null);
+  });
+
+  it("does not mark an intermediate folder above a repo (#111)", () => {
+    // D:\src owns no sessions, so it is not itself a repo — only its child is.
+    // Two children keep the chain from being compacted away by #77.
+    renderScanned([
+      { ...sess("a", "D:\\src\\csm"), gitBranch: "feature-x" },
+      { ...sess("b", "D:\\src\\other"), gitBranch: "feature-y" },
+    ]);
+
+    const srcRow = screen.getByText("D:\\src").closest("li")!;
+    // The marker inside the nested children must not be mistaken for the
+    // parent's own, so scope to D:\src's own row div, not its whole <li>.
+    const ownRow = srcRow.querySelector("div")!;
+    expect(within(ownRow).queryByTestId("git-repo-marker")).toBe(null);
+    // ...while the repo children below it ARE marked.
+    expect(screen.getAllByTestId("git-repo-marker")).toHaveLength(2);
+  });
 });
