@@ -25,6 +25,21 @@ export function shortSessionId(id: string): string {
   return id.slice(0, 8);
 }
 
+// Branch names treated as "the repo default" for the row's noise rule (#110).
+// Exact, case-sensitive matches: git branch names ARE case-sensitive, so `Main`
+// is a genuinely different branch from `main` and must still show. Erring toward
+// showing is the safe direction — a spurious chip is noise, a suppressed chip is
+// a lie. (Resolving the repo's actually-configured default would need a git
+// invocation; CSM shells out to git nowhere today. See docs/plans/110-*.md.)
+const DEFAULT_BRANCH_NAMES: ReadonlySet<string> = new Set(["main", "master"]);
+
+/** Whether a session's own branch is worth a row chip (#110): present, and not
+ *  the repo default — an all-`main` folder would otherwise be a wall of
+ *  identical chips, and a chip that is always there carries no information. */
+export function shouldShowGitBranch(branch: string | null): branch is string {
+  return branch !== null && !DEFAULT_BRANCH_NAMES.has(branch);
+}
+
 // Relative-time buckets (seconds) → formatter. Ordered coarsest-last; the first
 // bucket whose limit the age is under wins.
 const SEC = 1;

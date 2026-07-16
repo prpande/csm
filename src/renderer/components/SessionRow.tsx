@@ -4,6 +4,7 @@ import {
   formatRelativeTime,
   shortSessionId,
   factSegments,
+  shouldShowGitBranch,
 } from "../../sessionRowView";
 import type { FactEntry } from "../hooks/useSessionFacts";
 import styles from "./SessionRow.module.css";
@@ -39,6 +40,16 @@ export function SessionRow({
   // Non-empty only in the loaded state; the skeleton/error arms don't read it.
   const factSegs =
     factState?.status === "loaded" ? factSegments(factState.facts) : [];
+  // One branch chip per row, at most (#110). A worktree row's provenance chip
+  // already IS this session's gitBranch (sessionTree sets it to
+  // `sess.gitBranch ?? worktree.name`), so computing an own-branch chip too
+  // would print the same string twice — hence the `worktreeBranch === undefined`
+  // guard rather than two independent chips.
+  const isProvenance = worktreeBranch !== undefined;
+  const ownBranch = shouldShowGitBranch(session.gitBranch)
+    ? session.gitBranch
+    : undefined;
+  const branchLabel = worktreeBranch ?? ownBranch;
   return (
     <div
       className={styles.row}
@@ -54,15 +65,22 @@ export function SessionRow({
           <span className={styles.chip} data-variant={variant}>
             {session.permissionMode}
           </span>
-          {/* Worktree provenance (#101): a neutral, informational chip — held
-              visually apart from the risk-coded permission chip. The branch is
-              user/repo-derived text, so it goes in as a text node. */}
-          {worktreeBranch !== undefined && (
+          {/* A neutral, informational chip — held visually apart from the
+              risk-coded permission chip. The branch is user/repo-derived text,
+              so it goes in as a text node, never innerHTML.
+
+              Two jobs, one look. As PROVENANCE (#101) it means "this row was
+              folded in from a worktree elsewhere" and always shows — including
+              on `main`, since suppressing it would erase that signal. As
+              INFORMATION (#110) it means "this session ran on that branch" and
+              is suppressed for the repo default (shouldShowGitBranch), which is
+              why only the latter passes through the noise rule. */}
+          {branchLabel !== undefined && (
             <span
               className={styles.branch}
-              data-testid="worktree-branch"
-              title={`Worktree branch: ${worktreeBranch}`}
-              aria-label={`Worktree branch: ${worktreeBranch}`}
+              data-testid={isProvenance ? "worktree-branch" : "git-branch"}
+              title={`${isProvenance ? "Worktree branch" : "Branch"}: ${branchLabel}`}
+              aria-label={`${isProvenance ? "Worktree branch" : "Branch"}: ${branchLabel}`}
             >
               <svg
                 className={styles.branchIcon}
@@ -76,7 +94,7 @@ export function SessionRow({
                   d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z"
                 />
               </svg>
-              <span className={styles.branchName}>{worktreeBranch}</span>
+              <span className={styles.branchName}>{branchLabel}</span>
             </span>
           )}
           <span className={styles.sep} aria-hidden="true">
