@@ -18,6 +18,10 @@ interface TreeNodeProps {
   /** Report a click so the keyboard's focus follows the mouse — otherwise an
    *  arrow key after a click would resume from a stale row. */
   onFocusNode?: (path: string) => void;
+  /** Whether the tree currently owns keyboard focus (#70). Gates the DOM
+   *  .focus() call — see the effect below for why a live `document.activeElement`
+   *  check cannot answer this. */
+  treeHasFocus?: () => boolean;
 }
 
 // One tree row plus (when expanded) its children. A collapsed node does NOT
@@ -33,6 +37,7 @@ export function TreeNode({
   onSelect,
   focusedPath,
   onFocusNode,
+  treeHasFocus,
 }: TreeNodeProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = hasChildren && expandedPaths.has(node.path);
@@ -47,20 +52,26 @@ export function TreeNode({
   // Pull real DOM focus to the focused row (#70) — real focus, not just
   // aria-activedescendant, so :focus-visible and the e2e can both observe it.
   //
-  // ONLY when the tree already holds focus, i.e. the user is navigating inside
-  // it. The roving tabindex is re-seeded every time a scan tier lands or a
-  // refresh re-streams, and compactTree can change a node's path mid-scan, which
-  // remounts this component and re-fires the effect. Focusing unconditionally
-  // therefore stole focus on populate, again on every tier, and again on every
-  // refresh — measured in real Electron, not theorised: it made other controls
-  // impossible to keep focus on while sessions loaded.
+  // Gated on the tree OWNING focus, because both mistakes here are real and were
+  // each caught in turn:
+  //  - Focusing unconditionally STEALS. A scan arrives in tiers, so the roving
+  //    tabindex re-seeds per batch, and compactTree can change a node's path
+  //    mid-scan (remounting this component and re-firing the effect). Measured in
+  //    real Electron: the tree grabbed focus on populate, on every tier, and on
+  //    every refresh, so no other control could hold focus during a scan.
+  //  - Gating on a live `tree.contains(document.activeElement)` STRANDS. When the
+  //    focused <li> is removed — an ancestor collapsed, or a mid-scan re-compaction
+  //    remounts it under a different parent — the browser blurs to <body>
+  //    SYNCHRONOUSLY during the DOM mutation, i.e. before any passive effect runs.
+  //    The check would then see <body>, decline, and focus would never come back:
+  //    the row still reads as the tab stop while the arrows silently do nothing.
+  //
+  // So ownership is tracked from focus/blur events (see FolderTree), which
+  // remember that the tree HAD focus across the moment its element disappears.
   useEffect(() => {
-    if (!isFocused) return;
-    const el = itemRef.current;
-    if (!el) return;
-    const tree = el.closest('[role="tree"]');
-    if (tree?.contains(document.activeElement)) el.focus();
-  }, [isFocused]);
+    if (!isFocused || !treeHasFocus?.()) return;
+    itemRef.current?.focus();
+  }, [isFocused, treeHasFocus]);
 
   const onRowClick = () => {
     // Keep keyboard focus in step with the mouse, or the next arrow key would
@@ -164,6 +175,7 @@ export function TreeNode({
               onSelect={onSelect}
               focusedPath={focusedPath}
               onFocusNode={onFocusNode}
+              treeHasFocus={treeHasFocus}
             />
           ))}
         </ul>

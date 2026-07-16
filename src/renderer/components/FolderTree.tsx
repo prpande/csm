@@ -1,3 +1,4 @@
+import { useCallback, useRef } from "react";
 import {
   flattenVisible,
   treeKeyAction,
@@ -43,6 +44,27 @@ export function FolderTree({
 }: FolderTreeProps) {
   const isEmpty = tree.roots.length === 0 && tree.unknown === null;
 
+  // Does the tree own keyboard focus? Tracked from focus/blur rather than read
+  // from document.activeElement, because the one moment that matters is the one
+  // activeElement cannot describe: when the focused <li> is REMOVED (an ancestor
+  // collapsed, or a mid-scan re-compaction remounts it under a new parent), the
+  // browser blurs to <body> synchronously, before any effect can look. A live
+  // check would conclude "not ours" and strand focus on <body> forever.
+  const hasFocus = useRef(false);
+  const treeHasFocus = useCallback(() => hasFocus.current, []);
+  const onFocus = () => {
+    hasFocus.current = true;
+  };
+  const onBlur = (e: React.FocusEvent) => {
+    // relatedTarget is null when the focused element was removed from the DOM
+    // (or the window lost focus). That is NOT the tree losing ownership — it is
+    // the tree's own row vanishing, and the re-render is about to restore focus
+    // to its replacement. Only a blur that demonstrably lands somewhere OUTSIDE
+    // the tree gives up the claim.
+    const next = e.relatedTarget as Node | null;
+    if (next && !e.currentTarget.contains(next)) hasFocus.current = false;
+  };
+
   // One handler on the <ul role="tree">, not one per row: the tree is a
   // composite widget with a single tab stop, and key events bubble up from the
   // focused <li>. All the semantics live in the pure treeKeyAction; this only
@@ -86,6 +108,8 @@ export function FolderTree({
         role="tree"
         aria-label="Session folders"
         onKeyDown={onKeyDown}
+        onFocus={onFocus}
+        onBlur={onBlur}
       >
         {tree.roots.map((root) => (
           <TreeNode
@@ -98,6 +122,7 @@ export function FolderTree({
             onSelect={onSelect}
             focusedPath={focusedPath}
             onFocusNode={onFocusNode}
+            treeHasFocus={treeHasFocus}
           />
         ))}
         {/* Pinned last (spec §9) — flattenVisible mirrors this, so Down from the
@@ -113,6 +138,7 @@ export function FolderTree({
             onSelect={onSelect}
             focusedPath={focusedPath}
             onFocusNode={onFocusNode}
+            treeHasFocus={treeHasFocus}
           />
         )}
       </ul>

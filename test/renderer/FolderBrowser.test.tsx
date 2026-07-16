@@ -404,6 +404,65 @@ describe("FolderBrowser", () => {
     expect(document.activeElement).toBe(declutter);
   });
 
+  it("restores focus when a later tier remounts the focused row (#70)", () => {
+    // The mirror of the steal bug, and the harder half. Tier 1's lone session
+    // compacts D:->src->csm into ONE root row. Tier 2 gives `src` a second
+    // child, so the chain stops collapsing and "D:\\src\\csm" is demoted from a
+    // root to a nested child — a different React parent, so a real unmount +
+    // remount. The browser blurs to <body> during that removal, synchronously,
+    // BEFORE any effect runs. Gating .focus() on a live activeElement check
+    // therefore declined and stranded focus on <body>: the row still read as
+    // the tab stop while the arrows silently did nothing.
+    const bridge = fakeBridge();
+    render(<FolderBrowser />);
+    act(() => bridge.emit().onBatch([sess("a", "D:\\src\\csm")]));
+    tabIntoTree("D:\\src\\csm");
+    expect(document.activeElement).toBe(itemFor("D:\\src\\csm"));
+
+    act(() => bridge.emit().onBatch([sess("b", "D:\\src\\other")]));
+    act(() => bridge.emit().onDone());
+
+    // Focus must still be inside the tree, and the arrows must still work.
+    expect(treeOf().contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("restores focus when collapsing an ancestor removes the focused row (#70)", () => {
+    // Same class, mouse-driven: arrow down onto a nested row, then click the
+    // ancestor's chevron. The focused <li> is removed, the browser blurs to
+    // <body>, and focus must come back to the tree rather than be stranded.
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    tabIntoTree("D:\\src");
+    fireEvent.keyDown(treeOf(), { key: "ArrowDown" }); // -> csm (nested)
+    expect(document.activeElement).toBe(itemFor("csm"));
+
+    // Collapse the parent via its chevron; "csm" unmounts underneath the focus.
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /collapse folder/i })[0],
+    );
+    expect(screen.queryByText("csm")).toBe(null);
+
+    expect(treeOf().contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(document.body);
+    // ...and the keyboard still drives the tree.
+    fireEvent.keyDown(treeOf(), { key: "ArrowRight" });
+    expect(screen.getByText("csm")).toBeTruthy();
+  });
+
+  it("gives up focus when the user moves to a control outside the tree (#70)", () => {
+    // The ownership flag must not be sticky, or the tree would re-grab focus on
+    // the next scan tier — the very bug the flag exists to avoid.
+    renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
+    tabIntoTree("D:\\src");
+
+    const declutter = screen.getByRole("switch");
+    fireEvent.blur(itemFor("D:\\src"), { relatedTarget: declutter });
+    declutter.focus();
+
+    fireEvent.keyDown(treeOf(), { key: "ArrowDown" });
+    expect(document.activeElement).toBe(declutter);
+  });
+
   it("Down/Up move focus between rows and pull real DOM focus (#70)", () => {
     renderScanned([sess("a", "D:\\src\\csm"), sess("b", "D:\\src\\prism")]);
     tabIntoTree("D:\\src");
