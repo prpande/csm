@@ -3,6 +3,7 @@ import {
   buildTree,
   compactTree,
   findFolder,
+  isGitRepo,
   rollUpWorktrees,
   UNKNOWN_CWD,
   type FolderNode,
@@ -464,5 +465,87 @@ describe("rollUpWorktrees", () => {
   test("the (unknown) group passes through unchanged", () => {
     const tree = rollUpWorktrees(buildTree([s("u", UNKNOWN_CWD)]));
     expect(tree.unknown?.ownCount).toBe(1);
+  });
+});
+
+// isGitRepo (#111) — a folder whose sessions carry a gitBranch WAS a git working
+// tree at session time. Derived on read from the node's own sessions: no fs, no
+// .git probe, no git subprocess — which is why it still answers for a folder
+// that has since been deleted.
+describe("isGitRepo", () => {
+  const at = (tree: SessionTree, ...names: string[]): FolderNode =>
+    names.reduce((n, name) => child(n, name), tree.roots[0]);
+
+  test("false when none of the folder's own sessions carry a branch", () => {
+    const tree = buildTree([s("a", "D:\\scratch\\notes")]);
+    expect(isGitRepo(at(tree, "scratch", "notes"))).toBe(false);
+  });
+
+  test("true when at least one own session carries a branch", () => {
+    const tree = buildTree([
+      s("a", "D:\\src\\csm", null, { gitBranch: "feature-x" }),
+    ]);
+    expect(isGitRepo(at(tree, "src", "csm"))).toBe(true);
+  });
+
+  test("a mix of branch-carrying and branchless sessions is still a repo", () => {
+    // `some`, not `every`: older sessions predating the gitBranch field must not
+    // mask a repo that later sessions prove.
+    const tree = buildTree([
+      s("old", "D:\\src\\csm", "2026-07-01T00:00:00.000Z"),
+      s("new", "D:\\src\\csm", "2026-07-02T00:00:00.000Z", {
+        gitBranch: "main",
+      }),
+    ]);
+    expect(isGitRepo(at(tree, "src", "csm"))).toBe(true);
+  });
+
+  test("`main` counts — the repo marker is not the row's noise rule", () => {
+    // #110 suppresses a `main` CHIP as noise; being on main still makes the
+    // folder a repo. The two rules must not be conflated.
+    const tree = buildTree([
+      s("a", "D:\\src\\csm", null, { gitBranch: "main" }),
+    ]);
+    expect(isGitRepo(at(tree, "src", "csm"))).toBe(true);
+  });
+
+  test("an intermediate nav folder is not a repo, even above a repo child", () => {
+    // D:\src owns no sessions; its child does. Own sessions only — a parent
+    // directory of a repo is not itself a repo.
+    const tree = buildTree([
+      s("a", "D:\\src\\csm", null, { gitBranch: "feature-x" }),
+    ]);
+    const src = child(tree.roots[0], "src");
+    expect(src.ownCount).toBe(0);
+    expect(isGitRepo(src)).toBe(false);
+    expect(isGitRepo(child(src, "csm"))).toBe(true);
+  });
+
+  test("a roll-up owner is a repo via its folded-in worktree sessions", () => {
+    // The project owns the worktrees, so branch-carrying sessions arriving by
+    // #101 roll-up legitimately mark it — including when the owner node was
+    // synthesized and has no sessions of its own.
+    const tree = rollUpWorktrees(
+      buildTree([
+        s("wt", "D:\\src\\csm\\.claude\\worktrees\\icon-rebrand", null, {
+          gitBranch: "feature-x",
+        }),
+      ]),
+    );
+    expect(isGitRepo(child(child(tree.roots[0], "src"), "csm"))).toBe(true);
+  });
+
+  test("a compacted chain follows the merged leaf's sessions", () => {
+    // #77 collapses D:\src\csm to one node; the marker must survive that
+    // rewrite rather than be lost with the intermediate nodes.
+    const tree = compactTree(
+      buildTree([s("a", "D:\\src\\csm", null, { gitBranch: "feature-x" })]),
+    );
+    expect(isGitRepo(tree.roots[0])).toBe(true);
+  });
+
+  test("the (unknown) group is not a repo", () => {
+    const tree = buildTree([s("u", UNKNOWN_CWD)]);
+    expect(isGitRepo(tree.unknown!)).toBe(false);
   });
 });

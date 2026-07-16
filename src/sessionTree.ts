@@ -182,6 +182,23 @@ export function findFolder(tree: SessionTree, path: string): FolderNode | null {
   return search(tree.roots);
 }
 
+/** Whether this folder was a git working tree at session time (#111) — true when
+ *  any of its OWN sessions carries a `gitBranch`. Derived on read rather than
+ *  stored on the node: `buildTree`, `compactTree` and `rollUpWorktrees` each
+ *  rebuild nodes, so a field would be three chances to drift out of sync with
+ *  `sessions`, while a predicate reads the same array every consumer already
+ *  trusts for `ownCount`.
+ *
+ *  Needs no fs, no `.git` probe and no git subprocess, which is exactly why it
+ *  still answers for a folder that has since been deleted (a removed worktree),
+ *  where an on-disk check is impossible. A repo whose sessions all predate the
+ *  `gitBranch` field reads as false — absence of evidence, and the safe
+ *  direction: a missing marker is a non-event, marking a non-repo would be a lie.
+ *  A live probe could later enrich this (#91). */
+export function isGitRepo(node: FolderNode): boolean {
+  return node.sessions.some((s) => s.gitBranch !== null);
+}
+
 export function buildTree(sessions: SessionMetadata[]): SessionTree {
   // Dedup by sessionId, last wins (defensive against overlapping tiers / rescan).
   const deduped = new Map<string, SessionMetadata>();

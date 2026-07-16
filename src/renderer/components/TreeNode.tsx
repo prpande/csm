@@ -1,5 +1,6 @@
-import type { FolderNode } from "../../sessionTree";
+import { isGitRepo, type FolderNode } from "../../sessionTree";
 import { truncatePathLabel } from "../pathLabel";
+import { GitBranchIcon } from "./GitBranchIcon";
 import styles from "./FolderTree.module.css";
 
 interface TreeNodeProps {
@@ -28,6 +29,9 @@ export function TreeNode({
   const isExpanded = hasChildren && expandedPaths.has(node.path);
   const isSelectable = node.ownCount > 0;
   const isSelected = isSelectable && selectedPath === node.path;
+  // Derived with zero I/O from the sessions already in the tree (#111), so it
+  // still marks a repo whose folder has since been deleted.
+  const isRepo = isGitRepo(node);
 
   const onRowClick = () => {
     if (isSelectable) onSelect(node);
@@ -90,6 +94,18 @@ export function TreeNode({
         <span className={styles.name} title={node.path}>
           {truncatePathLabel(node.name)}
         </span>
+        {/* Repo marker (#111). Decorative: the wrapper's title carries the
+            meaning on hover, and the row's accessible name stays the folder
+            name — a screen reader should not read a glyph per row. */}
+        {isRepo && (
+          <span
+            className={styles.repoMarker}
+            data-testid="git-repo-marker"
+            title="Git repository"
+          >
+            <GitBranchIcon className={styles.repoMarkerIcon} size={12} />
+          </span>
+        )}
         {isSelectable && <span className={styles.count}>{node.ownCount}</span>}
       </div>
       {isExpanded && (
