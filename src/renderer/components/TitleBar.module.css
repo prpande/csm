@@ -28,6 +28,9 @@
 }
 
 .brandText {
+  /* An <h1> (#83) — reset the UA's block margin + font-size so the title bar
+     keeps the exact metrics it had as a <span>. */
+  margin: 0;
   font-weight: 600;
   font-size: 0.9rem;
   white-space: nowrap;

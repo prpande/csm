@@ -64,3 +64,24 @@ To build and launch a dev copy detached from your terminal:
 Both preflight Node + npm, build, then launch the app detached. The launcher writes its own log
 and pidfile to the repo-local `.dev-run/` folder; if the window never appears, check
 `.dev-run/run-desktop.log`.
+
+### When the log says nothing
+
+`.dev-run/run-desktop.log` captures the **main** process only. Electron writes renderer and
+preload diagnostics — including `Unable to load preload script: …`, the failure behind
+[#81](https://github.com/prpande/csm/issues/81) — to its own console, which the detached
+launcher never sees. So a window that opens but shows **"Session bridge unavailable"** or
+**"Couldn't load sessions"** can leave an empty-looking log.
+
+To see those, re-run in the **foreground** with Electron's logging on:
+
+- **Windows (PowerShell):** `$env:ELECTRON_ENABLE_LOGGING=1; npm start`
+- **macOS / Linux:** `ELECTRON_ENABLE_LOGGING=1 npm start`
+
+The two notices point at different faults:
+
+- **"Session bridge unavailable"** — the preload never loaded, so `window.csm` is undefined.
+  A build/packaging fault, so restarting re-runs the same broken build. From source, check the
+  preload bundle step; on a downloaded build, reinstall from the latest release.
+- **"Couldn't load sessions"** — the bridge is fine but the scan threw. The main process logs
+  the real error as `[csm] sessions:scan failed: …`.

@@ -16,7 +16,11 @@ import { currentBridge } from "../bridge";
 // batch; see docs/plans/64-renderer-data-layer.md). All tree/sort/group logic
 // lives in sessionTree.ts so this stays a small, mostly-plumbing hook.
 
-export type ScanStatus = "scanning" | "done" | "error";
+// "error" and "unavailable" are deliberately distinct (#83): a scan that threw is
+// a runtime/data problem the user may be able to retry, while a missing preload
+// bridge is a build/packaging bug (#81) no retry can fix. Collapsing them is what
+// made #81 undiagnosable from the UI.
+export type ScanStatus = "scanning" | "done" | "error" | "unavailable";
 
 export interface SessionScan {
   tree: SessionTree;
@@ -60,10 +64,12 @@ export function useSessionScan(
   }, [bridge]);
 
   useEffect(() => {
-    // Non-desktop / plain browser (no preload): fail soft, don't throw.
+    // Non-desktop / plain browser (no preload): fail soft, don't throw. Reported
+    // as "unavailable", not "error" — nothing was scanned because there is no
+    // bridge to scan through.
     if (!bridge?.listSessions) {
       setSessions([]);
-      setStatus("error");
+      setStatus("unavailable");
       return;
     }
     // Fresh scan: clear prior results and show progress.

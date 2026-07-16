@@ -307,4 +307,26 @@ describe("FolderBrowser", () => {
     expect(screen.getByText("b")).toBeTruthy();
     expect(screen.getByText("c")).toBeTruthy();
   });
+
+  // ---- #83: the two failure states must read differently -------------------
+  // #81 shipped because "Couldn't load sessions" covered both a dead preload
+  // (build/packaging bug) and a thrown scan (runtime/data problem). These
+  // assert end-to-end through the hook that each cause gets its own notice.
+
+  it("shows a bridge-unavailable notice when the preload never loaded (#83)", () => {
+    window.csm = undefined;
+    render(<FolderBrowser />);
+
+    expect(screen.getByText(/session bridge unavailable/i)).toBeTruthy();
+    expect(screen.queryByText(/couldn’t load sessions/i)).toBe(null);
+  });
+
+  it("shows a scan-failed notice when the scan throws (#83)", () => {
+    const bridge = fakeBridge();
+    render(<FolderBrowser />);
+    act(() => bridge.emit().onError());
+
+    expect(screen.getByText(/couldn’t load sessions/i)).toBeTruthy();
+    expect(screen.queryByText(/session bridge unavailable/i)).toBe(null);
+  });
 });

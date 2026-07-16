@@ -102,13 +102,15 @@ describe("useSessionScan", () => {
     expect(result.current.status).toBe("scanning");
   });
 
-  it("fails soft to 'error' when the bridge is absent", () => {
+  it("fails soft to 'unavailable' when the bridge is absent (#83)", () => {
     // Real non-desktop case: no preload, so window.csm is undefined and the
     // hook's default resolves to no bridge. (Passing `undefined` explicitly
     // would instead trigger the default param and pick up window.csm.)
+    // Distinct from 'error': the preload never loaded, which is a build or
+    // packaging bug (#81), not a failed scan.
     window.csm = undefined;
     const { result } = renderHook(() => useSessionScan());
-    expect(result.current.status).toBe("error");
+    expect(result.current.status).toBe("unavailable");
     expect(result.current.tree).toEqual({ roots: [], unknown: null });
   });
 });

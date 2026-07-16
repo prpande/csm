@@ -84,8 +84,26 @@ export function FolderTree({
       {status === "done" && isEmpty && (
         <div className={styles.notice}>No Claude sessions found</div>
       )}
+      {/* Two failures, two causes, two remedies (#83). "error" = the scan threw
+          (runtime/data — transient, so a refresh may genuinely help).
+          "unavailable" = the preload bridge never loaded (a build/packaging bug
+          like #81). The preload path is a static __dirname join resolved from the
+          installed files on every launch, so restarting re-runs the identical
+          broken build — the copy must NOT invite a retry. Per TESTING.md the only
+          real remedy is a reinstall (there is no auto-update). */}
+      {/* The isEmpty asymmetry below is deliberate, not an oversight. On "error"
+          it is load-bearing: a scan can throw AFTER streaming batches, and
+          useSessionScan keeps those on purpose (fail soft, spec §12) — so this
+          notice must yield to a partial result. On "unavailable" the hook clears
+          sessions and returns before subscribing, so no batch can ever exist and
+          the guard would be dead code. */}
       {status === "error" && isEmpty && (
         <div className={styles.notice}>Couldn’t load sessions</div>
+      )}
+      {status === "unavailable" && (
+        <div className={styles.notice}>
+          Session bridge unavailable — reinstall CSM
+        </div>
       )}
     </nav>
   );
