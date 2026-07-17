@@ -26,6 +26,16 @@ export const DEFAULT_THEME: ThemePreference = "system";
 // The privacy opt-out default (spec §8): indexing is ON unless explicitly disabled.
 export const DEFAULT_INDEX_ENABLED = true;
 
+// The settings CSM knows how to write. Private: it types the write helper's
+// key/value pair against each other so `writeSetting("theme", 42)` cannot
+// compile. It is deliberately NOT the shape of settings.json — the file may hold
+// unknown keys from a newer build, which reads tolerate and writes preserve.
+interface KnownSettings {
+  claudePath: string;
+  theme: ThemePreference;
+  indexEnabled: boolean;
+}
+
 export function createSettingsStore(dir: string) {
   const file = join(dir, SETTINGS_FILENAME);
 
@@ -41,6 +51,21 @@ export function createSettingsStore(dir: string) {
     }
   }
 
+  // Read → merge one key → write, the single write path for every setter.
+  //
+  // The re-read on each write is what preserves unknown keys (§8): the merge base
+  // is always the file's current contents, so a key written by a newer build (or
+  // by hand) survives a write from this one. The 2-space indent and trailing
+  // newline keep the file hand-editable per §8 and are part of its contract.
+  async function writeSetting<K extends keyof KnownSettings>(
+    key: K,
+    value: KnownSettings[K],
+  ): Promise<void> {
+    const next = { ...(await readSettings()), [key]: value };
+    await mkdir(dir, { recursive: true });
+    await writeFile(file, JSON.stringify(next, null, 2) + "\n", "utf8");
+  }
+
   async function getClaudePath(): Promise<string> {
     const v = (await readSettings()).claudePath;
     // Honor only a non-blank string, and return it TRIMMED — the value flows to
@@ -51,10 +76,7 @@ export function createSettingsStore(dir: string) {
   }
 
   async function setClaudePath(value: string): Promise<void> {
-    // Spread-merge onto current settings so unknown keys are preserved.
-    const next = { ...(await readSettings()), claudePath: value };
-    await mkdir(dir, { recursive: true });
-    await writeFile(file, JSON.stringify(next, null, 2) + "\n", "utf8");
+    await writeSetting("claudePath", value);
   }
 
   async function getTheme(): Promise<ThemePreference> {
@@ -68,10 +90,7 @@ export function createSettingsStore(dir: string) {
   }
 
   async function setTheme(value: ThemePreference): Promise<void> {
-    // Spread-merge so unknown keys (e.g. claudePath) are preserved.
-    const next = { ...(await readSettings()), theme: value };
-    await mkdir(dir, { recursive: true });
-    await writeFile(file, JSON.stringify(next, null, 2) + "\n", "utf8");
+    await writeSetting("theme", value);
   }
 
   async function getIndexEnabled(): Promise<boolean> {
@@ -82,10 +101,7 @@ export function createSettingsStore(dir: string) {
   }
 
   async function setIndexEnabled(value: boolean): Promise<void> {
-    // Spread-merge so unknown keys (claudePath, theme) are preserved.
-    const next = { ...(await readSettings()), indexEnabled: value };
-    await mkdir(dir, { recursive: true });
-    await writeFile(file, JSON.stringify(next, null, 2) + "\n", "utf8");
+    await writeSetting("indexEnabled", value);
   }
 
   return {
