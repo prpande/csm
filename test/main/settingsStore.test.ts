@@ -94,6 +94,49 @@ test("only settings.json is written under the injected dir (never escapes it)", 
   expect(readdirSync(dir)).toEqual([SETTINGS_FILE]);
 });
 
+// The on-disk FORMAT, asserted on the raw bytes rather than through JSON.parse.
+// §8 wants settings.json hand-editable and its tampering detectable, so the
+// 2-space indent and the trailing newline are part of the contract, not
+// incidental. Every other test here parses the file, so all of them would stay
+// green if the indent or the newline were dropped — this is the only guard.
+test("writes human-editable JSON: 2-space indent and a trailing newline", async () => {
+  const store = createSettingsStore(dir);
+  await store.setClaudePath("claude-x");
+
+  const raw = readFileSync(join(dir, SETTINGS_FILE), "utf8");
+  expect(raw).toBe('{\n  "claudePath": "claude-x"\n}\n');
+});
+
+test("every setter writes the same format, and only its own key", async () => {
+  // One shape for all three setters: the write path must not diverge per key.
+  const store = createSettingsStore(dir);
+  await store.setTheme("dark");
+  expect(readFileSync(join(dir, SETTINGS_FILE), "utf8")).toBe(
+    '{\n  "theme": "dark"\n}\n',
+  );
+
+  await store.setIndexEnabled(false);
+  expect(readFileSync(join(dir, SETTINGS_FILE), "utf8")).toBe(
+    '{\n  "theme": "dark",\n  "indexEnabled": false\n}\n',
+  );
+});
+
+test("overwriting a key keeps its position — it does not move to the end", async () => {
+  // The load-bearing case for "no format change", and the only one where a
+  // computed key `{...base, [key]: v}` could plausibly differ from the literal
+  // `{...base, theme: v}` it replaced. Assigning an existing key updates it in
+  // place, so `theme` must stay in slot 1 rather than being re-appended after
+  // `indexEnabled`. Every other format test only ever ADDS a key, which cannot
+  // observe this.
+  writeSettings(JSON.stringify({ theme: "dark", terminalPreference: "iterm" }));
+  const store = createSettingsStore(dir);
+  await store.setTheme("light");
+
+  expect(readFileSync(join(dir, SETTINGS_FILE), "utf8")).toBe(
+    '{\n  "theme": "light",\n  "terminalPreference": "iterm"\n}\n',
+  );
+});
+
 test("setClaudePath creates settings.json when the dir starts empty", async () => {
   expect(readdirSync(dir)).toEqual([]);
   const store = createSettingsStore(dir);
