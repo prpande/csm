@@ -15,11 +15,19 @@ interface SessionRowProps {
   /** Fixed row height (px), supplied by the windowing list. */
   rowHeight: number;
   /** Stable DOM id for this `role="option"` (#70). The listbox points
-   * `aria-activedescendant` at this id when the row is the active one. */
+   * `aria-activedescendant` at this id when the row is the keyboard-active one. */
   id?: string;
-  /** True when this row is the listbox's active option (#70): sets
-   * `aria-selected` (selection-follows-focus) and the `data-active` focus ring. */
+  /** True when this row is the listbox's keyboard-active option (#70): the
+   * `aria-activedescendant` target, drawing the `data-active` focus ring. This is
+   * the keyboard cursor, distinct from `selected` below. */
   active?: boolean;
+  /** True when this row is the single-click-selected one (#70, spec §9): a
+   * persistent highlight (`data-selected`) that survives blur and sets
+   * `aria-selected`. Distinct from `active` (keyboard cursor) and from hover. */
+  selected?: boolean;
+  /** Single-click select gesture (#70, spec §9). Optional so the row stays a
+   * pure presentational unit in tests that don't wire selection. */
+  onSelect?: (session: SessionMetadata) => void;
   /** Open gesture (double-click) — reopen this session (#67). Optional so the
    * row stays a pure presentational unit in tests that don't wire reopen. */
   onOpen?: (session: SessionMetadata) => void;
@@ -41,6 +49,8 @@ export function SessionRow({
   rowHeight,
   id,
   active = false,
+  selected = false,
+  onSelect,
   onOpen,
   worktreeBranch,
   factState,
@@ -65,8 +75,14 @@ export function SessionRow({
       style={{ height: rowHeight }}
       id={id}
       role="option"
-      aria-selected={active}
+      // aria-selected reflects single-click SELECTION, not the keyboard cursor —
+      // omitted (not "false") on unselected rows so screen readers don't announce
+      // "not selected" per row while arrowing. The keyboard-active row is conveyed
+      // by the listbox's aria-activedescendant instead.
+      aria-selected={selected || undefined}
       data-active={active || undefined}
+      data-selected={selected || undefined}
+      onClick={onSelect ? () => onSelect(session) : undefined}
       onDoubleClick={onOpen ? () => onOpen(session) : undefined}
     >
       <div className={styles.text}>

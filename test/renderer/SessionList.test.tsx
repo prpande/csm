@@ -65,18 +65,58 @@ test("is a listbox and the pane's single tab stop (#70)", () => {
   expect(screen.getByRole("listbox").getAttribute("tabindex")).toBe("0");
 });
 
-test("seeds the active option to the first row (#70)", () => {
+test("an empty list is not a tab stop — no active row to carry focus (#70)", () => {
+  // With no option there is nothing to draw the focus ring on, so a focusable
+  // empty listbox would be focus-with-no-indicator (WCAG 2.4.7).
+  render(<SessionList sessions={[]} />);
+  expect(screen.getByRole("listbox").getAttribute("tabindex")).toBe("-1");
+});
+
+test("seeds the keyboard cursor to the first row, but selects nothing (#70)", () => {
   render(<SessionList sessions={makeSessions(5)} />);
   const listbox = screen.getByRole("listbox");
   expect(listbox.getAttribute("aria-activedescendant")).toBe(
     "session-opt-id000000",
   );
-  // The active option reflects it (selection-follows-focus).
+  // The seeded row is the active cursor (data-active) but is NOT selected —
+  // nothing is selected until the user single-clicks (spec §9).
+  const seeded = document.getElementById("session-opt-id000000");
+  expect(seeded?.getAttribute("data-active")).toBe("true");
+  expect(seeded?.hasAttribute("aria-selected")).toBe(false);
+  expect(document.querySelector("[data-selected]")).toBe(null);
+});
+
+test("single-click selects a row and moves the keyboard cursor onto it (#70)", () => {
+  render(<SessionList sessions={makeSessions(5)} />);
+  const listbox = screen.getByRole("listbox");
+  fireEvent.click(screen.getByText("session 2"));
+
+  const opt = document.getElementById("session-opt-id000002");
+  expect(opt?.getAttribute("aria-selected")).toBe("true");
+  expect(opt?.hasAttribute("data-selected")).toBe(true);
+  // The cursor followed the click, so a later arrow continues from row 2.
+  expect(listbox.getAttribute("aria-activedescendant")).toBe(
+    "session-opt-id000002",
+  );
+  fireEvent.keyDown(listbox, { key: "ArrowDown" });
+  expect(listbox.getAttribute("aria-activedescendant")).toBe(
+    "session-opt-id000003",
+  );
+});
+
+test("selection is a single persistent row; non-selected rows carry no aria-selected (#70)", () => {
+  render(<SessionList sessions={makeSessions(5)} />);
+  fireEvent.click(screen.getByText("session 1"));
+  fireEvent.click(screen.getByText("session 3")); // selection moves, not accretes
+  expect(document.querySelectorAll("[data-selected]").length).toBe(1);
   expect(
     document
-      .getElementById("session-opt-id000000")
-      ?.getAttribute("aria-selected"),
+      .getElementById("session-opt-id000003")
+      ?.getAttribute("data-selected"),
   ).toBe("true");
+  // aria-selected is omitted on unselected options (not "false") — no per-row
+  // "not selected" announcements while navigating.
+  expect(document.querySelectorAll('[aria-selected="false"]').length).toBe(0);
 });
 
 test("ArrowDown / ArrowUp move the active option (#70)", () => {

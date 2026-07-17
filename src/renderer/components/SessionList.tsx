@@ -42,6 +42,19 @@ export function SessionList({
   // survives the row array being rebuilt between streaming batches — the same
   // reason the tree holds focus as a path. The index is derived per render.
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  // The single-click-selected row (#70, spec §9): a persistent highlight, held
+  // separately from `focusedId` and starting null — nothing is selected until the
+  // user clicks, whereas the keyboard cursor is seeded to the first row. Like the
+  // tree, selection and the keyboard cursor are distinct states.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Single-click selects a row and also moves the keyboard cursor onto it, so a
+  // later arrow continues from where the user clicked (aria-activedescendant
+  // follows too). Double-click still reopens via onOpen; the two gestures coexist.
+  const onSelect = (session: SessionMetadata) => {
+    setSelectedId(session.sessionId);
+    setFocusedId(session.sessionId);
+  };
 
   // Measure the viewport height and keep it current on resize. ResizeObserver is
   // absent under jsdom (tests) — the guard falls back to a 0 height, which still
@@ -145,7 +158,13 @@ export function SessionList({
       // stop instead, and the active option is virtual (aria-activedescendant) —
       // the standard APG pattern for a virtualized listbox. (The tree can use
       // roving tabindex because it never unmounts a visible node.)
-      tabIndex={0}
+      //
+      // An empty list is NOT a tab stop: with no option there is no active row to
+      // carry the focus ring, so a focusable-but-empty listbox would be a
+      // focus-with-no-visible-indicator gap (WCAG 2.4.7). The app never renders it
+      // empty (FolderPane gates on ownCount>0), but this keeps the component's own
+      // contract sound.
+      tabIndex={sessions.length > 0 ? 0 : -1}
       aria-activedescendant={activeDescendant}
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       onKeyDown={onKeyDown}
@@ -171,6 +190,8 @@ export function SessionList({
               rowHeight={ROW_HEIGHT}
               id={optionId(session.sessionId)}
               active={session.sessionId === focusedId}
+              selected={session.sessionId === selectedId}
+              onSelect={onSelect}
               onOpen={onOpen}
               worktreeBranch={worktreeBranches?.get(session.sessionId)}
               factState={facts.get(session.sessionId)}

@@ -55,9 +55,13 @@ export function computeWindow(
  * minimal scroll: a row above the fold aligns to the top, one below aligns to the
  * bottom, and an already-visible row is left where it is (returns `scrollTop`).
  *
- * Overscan is intentionally absent: a row made fully VISIBLE is necessarily
- * inside the mounted window, because computeWindow's `firstVisible` always lands
- * in `[startIndex, endIndex)`. So visibility implies mounted without it.
+ * Overscan is intentionally absent from the signature. For a real viewport (at
+ * least one row tall), a row made fully VISIBLE by this offset is the first or
+ * last visible row, so it lands inside computeWindow's `[startIndex, endIndex)`
+ * on its own. Only in a degenerate zero/sub-row viewport (jsdom, unmeasured) does
+ * the bottom-align put `firstVisible` one row past the target — there the mount
+ * is covered by overscan (>=1). Either way the revealed row is mounted; the
+ * parameter would not change that.
  *
  * @param index          target row index
  * @param scrollTop      current scroll offset (px)

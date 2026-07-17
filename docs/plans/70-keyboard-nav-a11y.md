@@ -198,6 +198,15 @@ Consequences that follow from the choice:
   `requestReopen` → `needsBypassConfirm` → modal gate.
 - The per-row Open button becomes `tabIndex={-1}`: one tab stop per pane (the
   listbox), matching the tree chevron. Keyboard opens via Enter on the row.
+- **Single-click selection** (spec §9): a persistent highlight, distinct from
+  hover, using the tree's `--selection-bg`/`--selection-text` tokens. Held as a
+  `selectedId` **separate from** the keyboard cursor (`focusedId`) — nothing is
+  selected until the user clicks, whereas the cursor is seeded to the first row,
+  exactly as the tree keeps selection and focus distinct. `aria-selected` tracks
+  the *selected* row (omitted, not `false`, on the rest, so a screen reader does
+  not announce "not selected" per row while arrowing); the keyboard-active row is
+  conveyed by `aria-activedescendant`. A click also moves the cursor onto the
+  clicked row so a later arrow continues from there; double-click still reopens.
 - `BypassConfirmModal` gains a real Tab trap (it only handles Escape today). Every
   Tab transition is computed and applied (not delegated to native focus order) so
   the trap is deterministic and jsdom-testable, and cycles across the three
