@@ -13,6 +13,16 @@
   background: var(--hover-bg);
 }
 
+/* Single-click selection (#70, spec §9): a persistent highlight that outlives
+   blur, distinct from hover, using the same selection tokens as the tree so both
+   panes read alike in either theme. Kept below :hover so a hover tint doesn't
+   override the selected row. */
+.row[data-selected],
+.row[data-selected]:hover {
+  background: var(--selection-bg);
+  color: var(--selection-text);
+}
+
 /* The title-over-meta text block; grows and truncates so the trailing Open
    button always stays visible. */
 .text {
@@ -52,11 +62,6 @@
 .open:hover {
   background: var(--accent);
   color: var(--on-accent);
-}
-
-.open:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
 }
 
 @media (prefers-reduced-motion: reduce) {

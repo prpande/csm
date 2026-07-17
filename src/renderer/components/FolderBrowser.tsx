@@ -68,11 +68,11 @@ export function FolderBrowser() {
     setSelectedPath(node.path);
   }, []);
 
-  // Cross-modal gates (settings spec §3): there is no focus trap yet (#70), so
-  // backdrop coverage doesn't imply focus containment — the newly-enabled gear
-  // is keyboard-reachable behind the bypass-confirm backdrop and rows are
-  // reachable behind the settings backdrop. Two state gates keep the modals
-  // mutually exclusive.
+  // Cross-modal gates (settings spec §3): the bypass-confirm modal now traps Tab
+  // (#70), but SettingsModal does not yet, so backdrop coverage still doesn't
+  // imply focus containment on that side — rows stay keyboard-reachable behind the
+  // settings backdrop. Two state gates keep the modals mutually exclusive so the
+  // two backdrops can't stack.
   const openSettings = useCallback(() => {
     if (!pendingBypass) setSettingsOpen(true);
   }, [pendingBypass]);

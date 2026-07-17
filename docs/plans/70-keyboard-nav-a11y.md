@@ -157,25 +157,60 @@ scan is still streaming and restructuring) and transient, and it is the honest
 price of never stealing. Tracked as a follow-up rather than papered over with a
 heuristic that provably cannot be correct.
 
-## PR B — list pane + modal (outline)
+## PR B — list pane + modal
 
-- `scrollTopToReveal(index, scrollTop, viewportHeight, rowHeight, overscan)` in
-  `sessionListWindow.ts`, pure and unit-tested. **The hard part**: moving focus to
-  a row outside the mounted `[startIndex, endIndex)` window means recomputing
-  scrollTop *before* the row exists in the DOM, then focusing it post-render — and
-  updating both React state and the real `scrollRef.current.scrollTop` (state
-  alone won't move the scrollbar; the DOM write alone won't recompute the window
-  before the focus effect runs).
-  **Mounting all rows to sidestep this is not on the table** — spec §11 and
-  CLAUDE.md require large lists stay virtualized. Tested with the existing
-  2500-row fixture.
+### The list uses `aria-activedescendant`, NOT roving tabindex (deviation)
+
+The tree (PR A) uses roving tabindex: real DOM focus sits on the focused `<li>`,
+which works because the tree never unmounts a *visible* node. **The list is
+virtualized**, and that breaks roving tabindex outright: the single `tabindex="0"`
+element is the focused option, and mouse-scrolling it out of the window
+**unmounts** it — leaving the listbox with no tab stop at all, so Tab can no longer
+reach the pane. That is a keyboard-reachability regression, not an edge case.
+
+So the list is the standard APG *virtualized* listbox instead: the always-mounted
+scroll container is the single tab stop (`role="listbox"`, `tabIndex={0}`), and the
+active row is virtual via `aria-activedescendant`. Real focus never leaves the
+container, so nothing can unmount the tab stop. This reverses the "Out of scope"
+note below (which had picked roving tabindex); the note's two reasons don't hold
+up: the `:focus-visible` ring is drawn on `.scroll:focus-visible [data-active]`
+(keyboard-only, exactly like the tree), and the e2e observes
+`aria-activedescendant` + `data-active` just as readably as real focus.
+
+Consequences that follow from the choice:
+- `scrollTopToReveal(index, scrollTop, viewportHeight, rowHeight)` in
+  `sessionListWindow.ts`, pure and unit-tested. **The hard part is still here**:
+  the active option must be *mounted* for `aria-activedescendant` to resolve to a
+  real element, so an arrow to a row outside `[startIndex, endIndex)` recomputes
+  scrollTop first, then `flushSync`-commits the new window (mounting the row),
+  then syncs the real `scrollRef.current.scrollTop`. But it never juggles real
+  `.focus()` across mount/unmount — the container keeps focus throughout.
+  `overscan` is not a param: a row made fully *visible* is necessarily inside the
+  mounted window. **Mounting all rows is off the table** (spec §11 / CLAUDE.md);
+  tested with the 2500-row fixture.
+- A dangling `aria-activedescendant` (pointing at an unmounted id, e.g. after a
+  mouse scroll) is invalid ARIA, so the attribute is gated on the active row being
+  mounted and re-resolves on the next arrow (which reveals it).
 - `list`/`listitem` → `listbox`/`option`. **This breaks existing passing
-  assertions** in `SessionList.test.tsx` and `FolderPane.test.tsx` — they must be
-  updated, and are easy to miss precisely because they pass today.
+  assertions** in `SessionList.test.tsx` and `FolderPane.test.tsx` — updated.
 - Enter calls the existing `onOpen` prop. **No parallel keyboard-reopen path** —
   a second invocation route would silently bypass the reviewed
   `requestReopen` → `needsBypassConfirm` → modal gate.
-- `BypassConfirmModal` gains a real Tab trap (it only handles Escape today).
+- The per-row Open button becomes `tabIndex={-1}`: one tab stop per pane (the
+  listbox), matching the tree chevron. Keyboard opens via Enter on the row.
+- **Single-click selection** (spec §9): a persistent highlight, distinct from
+  hover, using the tree's `--selection-bg`/`--selection-text` tokens. Held as a
+  `selectedId` **separate from** the keyboard cursor (`focusedId`) — nothing is
+  selected until the user clicks, whereas the cursor is seeded to the first row,
+  exactly as the tree keeps selection and focus distinct. `aria-selected` tracks
+  the *selected* row (omitted, not `false`, on the rest, so a screen reader does
+  not announce "not selected" per row while arrowing); the keyboard-active row is
+  conveyed by `aria-activedescendant`. A click also moves the cursor onto the
+  clicked row so a later arrow continues from there; double-click still reopens.
+- `BypassConfirmModal` gains a real Tab trap (it only handles Escape today). Every
+  Tab transition is computed and applied (not delegated to native focus order) so
+  the trap is deterministic and jsdom-testable, and cycles across the three
+  actions.
 
 ## Test list (PR A)
 
@@ -212,6 +247,9 @@ still verified in real Electron, which is the only place it is decidable.
 ## Out of scope
 
 - New reopen behavior — PR B reuses slice 4 unchanged.
-- `aria-activedescendant` as an alternative to roving tabindex: both are valid APG
-  patterns; roving tabindex is chosen because real DOM focus is what the existing
-  `:focus-visible` styling and the e2e can observe.
+- Roving tabindex for the *list*: rejected during PR B — see "The list uses
+  `aria-activedescendant`" above. (The **tree** keeps roving tabindex: it is not
+  virtualized, so its tab stop never unmounts.) The two panes deliberately use
+  different APG patterns because they have different mount invariants.
+- Trapping `SettingsModal` too: out of scope here (this PR's modal work is the
+  bypass-confirm dialog). File separately if the settings modal needs the same.

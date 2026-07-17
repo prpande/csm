@@ -24,6 +24,54 @@ test("renders the title, short id, and a time string", () => {
   expect(screen.getByText("unknown")).toBeTruthy();
 });
 
+test("is a listbox option with a stable id; active and selected are distinct (#70)", () => {
+  const { container, rerender } = render(
+    <SessionRow session={makeSession()} rowHeight={56} id="opt-1" />,
+  );
+  const opt = () => container.querySelector('[role="option"]');
+  expect(opt()).toBeTruthy();
+  expect(opt()?.id).toBe("opt-1");
+  // Default: neither active nor selected — aria-selected omitted (not "false").
+  expect(opt()?.hasAttribute("aria-selected")).toBe(false);
+  expect(opt()?.hasAttribute("data-active")).toBe(false);
+  expect(opt()?.hasAttribute("data-selected")).toBe(false);
+
+  // active = the keyboard cursor (aria-activedescendant target): data-active only,
+  // NOT aria-selected — arrowing must not announce every row as "selected".
+  rerender(
+    <SessionRow session={makeSession()} rowHeight={56} id="opt-1" active />,
+  );
+  expect(opt()?.getAttribute("data-active")).toBe("true");
+  expect(opt()?.hasAttribute("aria-selected")).toBe(false);
+
+  // selected = the single-click selection: aria-selected + persistent highlight.
+  rerender(
+    <SessionRow session={makeSession()} rowHeight={56} id="opt-1" selected />,
+  );
+  expect(opt()?.getAttribute("aria-selected")).toBe("true");
+  expect(opt()?.getAttribute("data-selected")).toBe("true");
+});
+
+test("single-click fires onSelect with the session (spec §9 select gesture) (#70)", () => {
+  const onSelect = vi.fn();
+  const session = makeSession();
+  render(<SessionRow session={session} rowHeight={56} onSelect={onSelect} />);
+  fireEvent.click(screen.getByText("Refactor the parser"));
+  expect(onSelect).toHaveBeenCalledTimes(1);
+  expect(onSelect).toHaveBeenCalledWith(session);
+});
+
+test("the Open button is not a tab stop — the listbox owns the single tab stop (#70)", () => {
+  render(
+    <SessionRow session={makeSession()} rowHeight={56} onOpen={vi.fn()} />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: /open session:/i })
+      .getAttribute("tabindex"),
+  ).toBe("-1");
+});
+
 test("chip carries the risk-coded variant and the raw mode label", () => {
   const cases: Array<[PermissionMode, string]> = [
     ["bypassPermissions", "bypass"],

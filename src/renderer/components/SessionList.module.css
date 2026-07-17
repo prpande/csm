@@ -6,6 +6,24 @@
   position: relative;
 }
 
+/* The listbox is the pane's single tab stop (#70). It uses aria-activedescendant
+   rather than roving tabindex because the list is virtualized — a roving tab stop
+   would unmount when scrolled away, leaving the pane keyboard-unreachable. Its own
+   outline is suppressed; the active option carries the visible ring below. */
+.scroll:focus-visible {
+  outline: none;
+}
+
+/* Focus ring on the active option, shown only while the listbox holds keyboard
+   focus (:focus-visible) — the same keyboard-only ring the tree draws, so a
+   merely-seeded active row shows nothing until the user Tabs in. `data-active`
+   is a plain attribute (SessionRow is a separate CSS module), so it is matched by
+   attribute here rather than by the row's scoped class. */
+.scroll:focus-visible [data-active] {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 /* Reserves the full list height so the scrollbar thumb is sized correctly even
    though only the visible window is mounted. */
 .spacer {
