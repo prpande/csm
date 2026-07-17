@@ -1,5 +1,6 @@
 import { WindowControls } from "./WindowControls";
 import { ThemeToggle } from "./ThemeToggle";
+import { currentBridge } from "../bridge";
 import brandIcon from "../../../assets/icons/png/icon_32.png";
 import styles from "./TitleBar.module.css";
 
@@ -9,12 +10,25 @@ interface TitleBarProps {
   /** True while a scan is in flight — the refresh control disables to avoid
    *  stacking scans. */
   refreshing: boolean;
+  /** Opens the settings modal (#68). The gear renders a disabled placeholder
+   *  when absent or when there is no preload bridge to load/save through. */
+  onOpenSettings?: () => void;
 }
 
-// Full-width app title bar (spec §9): brand + global controls. Refresh and the
-// theme toggle (#86) are wired; search (phase C) and settings (#68) remain greyed
-// disabled placeholders that establish the layout.
-export function TitleBar({ onRefresh, refreshing }: TitleBarProps) {
+// Full-width app title bar (spec §9): brand + global controls. Refresh, the
+// theme toggle (#86), and settings (#68) are wired; search (phase C) remains a
+// greyed disabled placeholder that establishes the layout.
+export function TitleBar({
+  onRefresh,
+  refreshing,
+  onOpenSettings,
+}: TitleBarProps) {
+  // Whole-bridge gate: get/setClaudePath are non-optional bridge members
+  // (unlike the optional theme/windowControls sub-objects), so bridge presence
+  // is the availability signal. Without it the modal could neither load nor
+  // save, so the gear stays a labelled placeholder.
+  const settingsReady = onOpenSettings !== undefined && !!currentBridge();
+  const settingsLabel = settingsReady ? "Settings" : "Settings (unavailable)";
   return (
     <header className={styles.titleBar}>
       <div className={styles.brand}>
@@ -53,9 +67,10 @@ export function TitleBar({ onRefresh, refreshing }: TitleBarProps) {
         <button
           type="button"
           className={styles.iconButton}
-          disabled
-          aria-label="Settings (coming soon)"
-          title="Settings (coming soon)"
+          onClick={onOpenSettings}
+          disabled={!settingsReady}
+          aria-label={settingsLabel}
+          title={settingsLabel}
         >
           ⚙
         </button>
