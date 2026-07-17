@@ -38,6 +38,16 @@ describe("isUnderAnyRoot", () => {
     );
   });
 
+  test("POSIX is case-SENSITIVE — /TMP is not under /tmp", () => {
+    // The mirror of the Windows case-folding above, and the asymmetry is the
+    // point: folding case on a POSIX path would hide a real /TMP project.
+    // Restored here by #114 — this was previously covered only incidentally, by
+    // the deleted pathAdapter.isTempPath suite. sessionFilter is the production
+    // path for temp matching now (#113), so it belongs here.
+    expect(isUnderAnyRoot("/TMP/x", ["/tmp"])).toBe(false);
+    expect(isUnderAnyRoot("/Var/Folders/xy/s", ["/var/folders"])).toBe(false);
+  });
+
   test("empty roots never match", () => {
     expect(isUnderAnyRoot(WIN_TEMP, [])).toBe(false);
   });

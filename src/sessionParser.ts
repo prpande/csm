@@ -5,6 +5,8 @@
 // parsing, and malformed-line skipping live INSIDE this unit per the design spec
 // (docs/specs/2026-06-30-csm-design.md §4.1, §12 fail-soft).
 
+import { isRecord, isNonEmptyString } from "./typeGuards";
+
 // The complete set of --permission-mode values the CLI accepts (CLAUDE.md; design
 // spec §13). This is the "known CLI set" that gates pass-through: a recognized
 // value is passed through unchanged, and only an absent/unrecognized value falls
@@ -68,18 +70,14 @@ export interface SessionMetadata {
   messageCount?: number;
 }
 
-type Record_ = { [k: string]: unknown };
+type Record_ = Record<string, unknown>;
 
-// Excludes arrays: a top-level JSON array line is not a session record (all its
-// named-field reads would be undefined), so it is dropped rather than pushed.
-const isRecord = (v: unknown): v is Record_ =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 const asString = (v: unknown): string | undefined =>
   typeof v === "string" ? v : undefined;
-const asNonEmptyString = (v: unknown): string | undefined => {
-  const s = asString(v);
-  return s && s.trim() ? s : undefined;
-};
+// Returns the value UNTRIMMED — this is session metadata rendered as-is, unlike
+// settingsStore's claudePath, which trims because it reaches spawn.
+const asNonEmptyString = (v: unknown): string | undefined =>
+  isNonEmptyString(v) ? v : undefined;
 
 // Parse the JSONL body into records, skipping blank and malformed lines. A
 // broken line is dropped, never fatal (spec §12): a partly-corrupt or entirely
