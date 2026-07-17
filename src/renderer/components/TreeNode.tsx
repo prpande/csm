@@ -1,5 +1,7 @@
-import type { FolderNode } from "../../sessionTree";
+import { useRef } from "react";
+import { isGitRepo, type FolderNode } from "../../sessionTree";
 import { truncatePathLabel } from "../pathLabel";
+import { GitBranchIcon } from "./GitBranchIcon";
 import styles from "./FolderTree.module.css";
 
 interface TreeNodeProps {
@@ -10,6 +12,12 @@ interface TreeNodeProps {
   selectedPath: string | null;
   onToggle: (path: string) => void;
   onSelect: (node: FolderNode) => void;
+  /** The one keyboard-focused node in the whole tree (#70), or null before the
+   *  tree has any rows. Drives the roving tabindex. */
+  focusedPath?: string | null;
+  /** Report a click so the keyboard's focus follows the mouse — otherwise an
+   *  arrow key after a click would resume from a stale row. */
+  onFocusNode?: (path: string) => void;
 }
 
 // One tree row plus (when expanded) its children. A collapsed node does NOT
@@ -23,23 +31,44 @@ export function TreeNode({
   selectedPath,
   onToggle,
   onSelect,
+  focusedPath,
+  onFocusNode,
 }: TreeNodeProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = hasChildren && expandedPaths.has(node.path);
   const isSelectable = node.ownCount > 0;
   const isSelected = isSelectable && selectedPath === node.path;
+  // Derived with zero I/O from the sessions already in the tree (#111), so it
+  // still marks a repo whose folder has since been deleted.
+  const isRepo = isGitRepo(node);
+  const isFocused = focusedPath === node.path;
+  const itemRef = useRef<HTMLLIElement>(null);
 
+  // No focus effect here, deliberately — see FolderTree. DOM focus moves only
+  // from a user gesture, never from a render, so there is nothing to reconcile
+  // after the fact.
   const onRowClick = () => {
+    // A click is a gesture, so focusing is intent, not theft: take DOM focus
+    // directly rather than leaving it to a render. Also keeps the keyboard in
+    // step with the mouse — the next arrow must resume from what was clicked,
+    // not from wherever the keyboard last was.
+    itemRef.current?.focus();
+    onFocusNode?.(node.path);
     if (isSelectable) onSelect(node);
     else if (hasChildren) onToggle(node.path);
   };
 
   return (
     <li
+      ref={itemRef}
       className={styles.item}
       role="treeitem"
       aria-expanded={hasChildren ? isExpanded : undefined}
       aria-selected={isSelectable ? isSelected : undefined}
+      // Roving tabindex: the tree is ONE tab stop. tabIndex/focus must sit on the
+      // same element as aria-expanded/aria-selected — putting them on the inner
+      // row div would give a tree that navigates but announces wrong.
+      tabIndex={isFocused ? 0 : -1}
     >
       <div
         className={isSelected ? `${styles.row} ${styles.selected}` : styles.row}
@@ -51,8 +80,18 @@ export function TreeNode({
             type="button"
             className={styles.chevron}
             aria-label={isExpanded ? "Collapse folder" : "Expand folder"}
+            // Out of the natural Tab order (#70): the tree is a composite widget
+            // with ONE tab stop, so Tab must reach the tree — not every visible
+            // node's chevron in turn. Still mouse-clickable, and keyboard users
+            // expand/collapse via the row's own Right/Left/Space (ARIA APG).
+            tabIndex={-1}
             onClick={(e) => {
               e.stopPropagation();
+              // Same gesture rule as the row: focus this row, not the (tabIndex
+              // -1) chevron, so the ring lands on what the user sees and the
+              // next arrow resumes from here.
+              itemRef.current?.focus();
+              onFocusNode?.(node.path);
               onToggle(node.path);
             }}
           >
@@ -90,6 +129,18 @@ export function TreeNode({
         <span className={styles.name} title={node.path}>
           {truncatePathLabel(node.name)}
         </span>
+        {/* Repo marker (#111). Decorative: the wrapper's title carries the
+            meaning on hover, and the row's accessible name stays the folder
+            name — a screen reader should not read a glyph per row. */}
+        {isRepo && (
+          <span
+            className={styles.repoMarker}
+            data-testid="git-repo-marker"
+            title="Git repository"
+          >
+            <GitBranchIcon className={styles.repoMarkerIcon} size={12} />
+          </span>
+        )}
         {isSelectable && <span className={styles.count}>{node.ownCount}</span>}
       </div>
       {isExpanded && (
@@ -103,6 +154,8 @@ export function TreeNode({
               selectedPath={selectedPath}
               onToggle={onToggle}
               onSelect={onSelect}
+              focusedPath={focusedPath}
+              onFocusNode={onFocusNode}
             />
           ))}
         </ul>

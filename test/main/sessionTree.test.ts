@@ -3,7 +3,10 @@ import {
   buildTree,
   compactTree,
   findFolder,
+  flattenVisible,
+  isGitRepo,
   rollUpWorktrees,
+  treeKeyAction,
   UNKNOWN_CWD,
   type FolderNode,
   type SessionTree,
@@ -464,5 +467,271 @@ describe("rollUpWorktrees", () => {
   test("the (unknown) group passes through unchanged", () => {
     const tree = rollUpWorktrees(buildTree([s("u", UNKNOWN_CWD)]));
     expect(tree.unknown?.ownCount).toBe(1);
+  });
+});
+
+// isGitRepo (#111) — a folder whose sessions carry a gitBranch WAS a git working
+// tree at session time. Derived on read from the node's own sessions: no fs, no
+// .git probe, no git subprocess — which is why it still answers for a folder
+// that has since been deleted.
+describe("isGitRepo", () => {
+  const at = (tree: SessionTree, ...names: string[]): FolderNode =>
+    names.reduce((n, name) => child(n, name), tree.roots[0]);
+
+  test("false when none of the folder's own sessions carry a branch", () => {
+    const tree = buildTree([s("a", "D:\\scratch\\notes")]);
+    expect(isGitRepo(at(tree, "scratch", "notes"))).toBe(false);
+  });
+
+  test("true when at least one own session carries a branch", () => {
+    const tree = buildTree([
+      s("a", "D:\\src\\csm", null, { gitBranch: "feature-x" }),
+    ]);
+    expect(isGitRepo(at(tree, "src", "csm"))).toBe(true);
+  });
+
+  test("a mix of branch-carrying and branchless sessions is still a repo", () => {
+    // `some`, not `every`: older sessions predating the gitBranch field must not
+    // mask a repo that later sessions prove.
+    const tree = buildTree([
+      s("old", "D:\\src\\csm", "2026-07-01T00:00:00.000Z"),
+      s("new", "D:\\src\\csm", "2026-07-02T00:00:00.000Z", {
+        gitBranch: "main",
+      }),
+    ]);
+    expect(isGitRepo(at(tree, "src", "csm"))).toBe(true);
+  });
+
+  test("`main` counts — the repo marker is not the row's noise rule", () => {
+    // #110 suppresses a `main` CHIP as noise; being on main still makes the
+    // folder a repo. The two rules must not be conflated.
+    const tree = buildTree([
+      s("a", "D:\\src\\csm", null, { gitBranch: "main" }),
+    ]);
+    expect(isGitRepo(at(tree, "src", "csm"))).toBe(true);
+  });
+
+  test("an intermediate nav folder is not a repo, even above a repo child", () => {
+    // D:\src owns no sessions; its child does. Own sessions only — a parent
+    // directory of a repo is not itself a repo.
+    const tree = buildTree([
+      s("a", "D:\\src\\csm", null, { gitBranch: "feature-x" }),
+    ]);
+    const src = child(tree.roots[0], "src");
+    expect(src.ownCount).toBe(0);
+    expect(isGitRepo(src)).toBe(false);
+    expect(isGitRepo(child(src, "csm"))).toBe(true);
+  });
+
+  test("a roll-up owner is a repo via its folded-in worktree sessions", () => {
+    // The project owns the worktrees, so branch-carrying sessions arriving by
+    // #101 roll-up legitimately mark it — including when the owner node was
+    // synthesized and has no sessions of its own.
+    const tree = rollUpWorktrees(
+      buildTree([
+        s("wt", "D:\\src\\csm\\.claude\\worktrees\\icon-rebrand", null, {
+          gitBranch: "feature-x",
+        }),
+      ]),
+    );
+    expect(isGitRepo(child(child(tree.roots[0], "src"), "csm"))).toBe(true);
+  });
+
+  test("a compacted chain follows the merged leaf's sessions", () => {
+    // #77 collapses D:\src\csm to one node; the marker must survive that
+    // rewrite rather than be lost with the intermediate nodes.
+    const tree = compactTree(
+      buildTree([s("a", "D:\\src\\csm", null, { gitBranch: "feature-x" })]),
+    );
+    expect(isGitRepo(tree.roots[0])).toBe(true);
+  });
+
+  test("the (unknown) group is not a repo, even holding a branch-carrying session", () => {
+    // NOT a vacuous case. parseSession resolves cwd and gitBranch in
+    // independent passes — cwd from the first record carrying one (else the
+    // "(unknown)" fallback), gitBranch from the last non-empty one — so a file
+    // whose records carry a gitBranch but never a cwd genuinely lands in this
+    // bucket WITH a branch. (The parser suite builds exactly that record shape.)
+    // "(unknown)" is a bucket, not a working tree, and must never claim to be.
+    const tree = buildTree([s("u", UNKNOWN_CWD, null, { gitBranch: "main" })]);
+    // Precondition: the branch really did survive into the bucket. Without this
+    // the assertion below could pass for the wrong reason — which is exactly how
+    // the first version of this test passed while the defect was live.
+    expect(tree.unknown!.sessions[0].gitBranch).toBe("main");
+    expect(isGitRepo(tree.unknown!)).toBe(false);
+  });
+});
+
+// flattenVisible (#70) — the visible row order, for keyboard traversal. Must
+// mirror TreeNode's render EXACTLY (roots in order, unknown pinned last, and
+// children only when expanded), because arrow keys walk this array while the
+// user sees the render. Any divergence is an off-by-one the user feels.
+describe("flattenVisible", () => {
+  const paths = (tree: SessionTree, expanded: string[]) =>
+    flattenVisible(tree, new Set(expanded)).map((f) => f.node.path);
+
+  test("an empty tree flattens to nothing", () => {
+    expect(flattenVisible(buildTree([]), new Set())).toEqual([]);
+  });
+
+  test("a collapsed node's children are excluded", () => {
+    // Mirrors the render: a collapsed node does not mount its child <ul> at all,
+    // so those rows must not be arrow-reachable either.
+    const tree = buildTree([s("a", "D:\\src\\csm"), s("b", "D:\\src\\prism")]);
+    expect(paths(tree, [])).toEqual(["D:"]);
+  });
+
+  test("expanding walks children in render order, depth-first", () => {
+    const tree = buildTree([s("a", "D:\\src\\csm"), s("b", "D:\\src\\prism")]);
+    expect(paths(tree, ["D:", "D:\\src"])).toEqual([
+      "D:",
+      "D:\\src",
+      "D:\\src\\csm",
+      "D:\\src\\prism",
+    ]);
+  });
+
+  test("a partially expanded subtree stops at the collapsed node", () => {
+    const tree = buildTree([s("a", "D:\\src\\csm\\deep"), s("b", "D:\\other")]);
+    // D: expanded, src expanded, csm NOT expanded -> deep is not reachable.
+    expect(paths(tree, ["D:", "D:\\src"])).toEqual([
+      "D:",
+      "D:\\other",
+      "D:\\src",
+      "D:\\src\\csm",
+    ]);
+  });
+
+  test("the (unknown) group is pinned last, after every root", () => {
+    // FolderTree renders roots then unknown; traversal must agree or Down from
+    // the last root would jump somewhere the user isn't looking.
+    const tree = buildTree([s("u", UNKNOWN_CWD), s("a", "D:\\proj")]);
+    expect(paths(tree, [])).toEqual(["D:", UNKNOWN_CWD]);
+  });
+
+  test("depth and parentPath describe each row's place in the tree", () => {
+    const tree = buildTree([s("a", "D:\\src\\csm"), s("b", "D:\\src\\prism")]);
+    const flat = flattenVisible(tree, new Set(["D:", "D:\\src"]));
+    expect(flat.map((f) => [f.node.path, f.depth, f.parentPath])).toEqual([
+      ["D:", 0, null],
+      ["D:\\src", 1, "D:"],
+      ["D:\\src\\csm", 2, "D:\\src"],
+      ["D:\\src\\prism", 2, "D:\\src"],
+    ]);
+  });
+
+  test("a root's parentPath is null, so Left from a root goes nowhere", () => {
+    const tree = buildTree([s("u", UNKNOWN_CWD), s("a", "D:\\proj")]);
+    expect(flattenVisible(tree, new Set()).map((f) => f.parentPath)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  test("expanding a path that isn't in the tree changes nothing", () => {
+    const tree = buildTree([s("a", "D:\\src\\csm")]);
+    expect(paths(tree, ["D:\\nope"])).toEqual(["D:"]);
+  });
+});
+
+// treeKeyAction (#70) — the whole key map, pure. Kept out of the component so it
+// is testable with no DOM, and so FolderTree stays a dispatcher.
+describe("treeKeyAction", () => {
+  // D: > src > {csm (1 session), prism (1 session)} — a nav chain over two leaves.
+  const tree = buildTree([s("a", "D:\\src\\csm"), s("b", "D:\\src\\prism")]);
+  const OPEN = new Set(["D:", "D:\\src"]);
+  const act = (
+    key: string,
+    focused: string | null,
+    expanded: ReadonlySet<string> = OPEN,
+  ) => treeKeyAction(key, flattenVisible(tree, expanded), focused, expanded);
+
+  test("Down/Up step through the visible rows", () => {
+    expect(act("ArrowDown", "D:")).toEqual({ type: "focus", path: "D:\\src" });
+    expect(act("ArrowUp", "D:\\src")).toEqual({ type: "focus", path: "D:" });
+  });
+
+  test("the ends of the list are dead-stops, not wraps", () => {
+    // Wrapping would silently teleport the user across the whole sidebar.
+    expect(act("ArrowUp", "D:")).toEqual({ type: "focus", path: "D:" });
+    expect(act("ArrowDown", "D:\\src\\prism")).toEqual({
+      type: "focus",
+      path: "D:\\src\\prism",
+    });
+  });
+
+  test("Down from nothing-focused lands on the first row, not the second", () => {
+    // The fallback treats "no focus" as index 0; it must not then step off it,
+    // or the very first keypress would skip a row.
+    expect(act("ArrowDown", null)).toEqual({ type: "focus", path: "D:" });
+  });
+
+  test("a focused path that vanished mid-scan falls back to the first row", () => {
+    expect(act("ArrowDown", "D:\\gone")).toEqual({ type: "focus", path: "D:" });
+  });
+
+  test("Right opens a closed node in place, then descends once open", () => {
+    expect(act("ArrowRight", "D:", new Set())).toEqual({
+      type: "toggle",
+      path: "D:",
+    });
+    expect(act("ArrowRight", "D:\\src")).toEqual({
+      type: "focus",
+      path: "D:\\src\\csm",
+    });
+  });
+
+  test("Right on a leaf does nothing", () => {
+    expect(act("ArrowRight", "D:\\src\\csm")).toBeNull();
+  });
+
+  test("Left closes an open node in place, then ascends once closed", () => {
+    expect(act("ArrowLeft", "D:\\src")).toEqual({
+      type: "toggle",
+      path: "D:\\src",
+    });
+    expect(act("ArrowLeft", "D:\\src\\csm")).toEqual({
+      type: "focus",
+      path: "D:\\src",
+    });
+  });
+
+  test("Left on a collapsed root does nothing — there is nowhere further out", () => {
+    expect(act("ArrowLeft", "D:", new Set())).toBeNull();
+  });
+
+  test("Enter and Space select a folder that owns sessions", () => {
+    for (const key of ["Enter", " "]) {
+      const a = act(key, "D:\\src\\csm");
+      expect(a?.type).toBe("select");
+      expect(a?.type === "select" && a.node.path).toBe("D:\\src\\csm");
+    }
+  });
+
+  test("Enter on a pure nav folder toggles instead of selecting", () => {
+    // Mirrors the mouse: a 0-session folder isn't selectable, so it expands.
+    expect(act("Enter", "D:\\src")).toEqual({
+      type: "toggle",
+      path: "D:\\src",
+    });
+  });
+
+  test("an unhandled key returns null so the tree doesn't swallow it", () => {
+    // Tab in particular MUST pass through — it's how focus leaves the pane.
+    expect(act("Tab", "D:")).toBeNull();
+    expect(act("a", "D:")).toBeNull();
+    expect(act("Escape", "D:")).toBeNull();
+  });
+
+  test("an empty tree yields no action for any key", () => {
+    const empty = buildTree([]);
+    expect(
+      treeKeyAction(
+        "ArrowDown",
+        flattenVisible(empty, new Set()),
+        null,
+        new Set(),
+      ),
+    ).toBeNull();
   });
 });
