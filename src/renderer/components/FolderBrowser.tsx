@@ -6,8 +6,11 @@ import { TitleBar } from "./TitleBar";
 import { FolderTree } from "./FolderTree";
 import { FolderPane } from "./FolderPane";
 import { BypassConfirmModal } from "./BypassConfirmModal";
+import { SettingsModal } from "./SettingsModal";
 import { Toast } from "./Toast";
 import styles from "./FolderBrowser.module.css";
+
+const SAVED_MESSAGE = "Claude path saved.";
 
 // Slice-2 shell (decision A): the single owner of the tree's expansion and
 // selection state, wrapping the #64 data layer. Children are presentational.
@@ -27,6 +30,8 @@ export function FolderBrowser() {
   } = useReopen();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   // Keyboard focus (#70) is held as a PATH for the same reason selection is:
   // buildTree rebuilds every node between streaming batches, so a node reference
   // would go stale. treeKeyAction falls back to the first row if the path is gone.
@@ -63,6 +68,33 @@ export function FolderBrowser() {
     setSelectedPath(node.path);
   }, []);
 
+  // Cross-modal gates (settings spec §3): there is no focus trap yet (#70), so
+  // backdrop coverage doesn't imply focus containment — the newly-enabled gear
+  // is keyboard-reachable behind the bypass-confirm backdrop and rows are
+  // reachable behind the settings backdrop. Two state gates keep the modals
+  // mutually exclusive.
+  const openSettings = useCallback(() => {
+    if (!pendingBypass) setSettingsOpen(true);
+  }, [pendingBypass]);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+
+  // Newest-message-wins toast slot (settings spec §3): a fresh save
+  // confirmation dismisses a live reopen error, and a reopen error arriving
+  // later clears the confirmation — superseded messages are dropped, never
+  // queued for redisplay.
+  const handleSaved = useCallback(() => {
+    dismissToast();
+    setSavedMessage(SAVED_MESSAGE);
+  }, [dismissToast]);
+  // Stable identity: Toast's auto-dismiss effect keys on [message, onDismiss],
+  // so an inline closure here would restart the 6s timer on every unrelated
+  // FolderBrowser re-render (scan batches, tree toggles).
+  const dismissSaved = useCallback(() => setSavedMessage(null), []);
+
+  useEffect(() => {
+    if (toast) setSavedMessage(null);
+  }, [toast]);
+
   // "Focus lands on the tree on load" (spec §9), implemented as: the tree's
   // roving tab stop is seeded and ready — NOT as stealing the user's focus.
   // This seeds STATE only; TreeNode pulls real DOM focus solely when the tree
@@ -95,7 +127,11 @@ export function FolderBrowser() {
 
   return (
     <div className={styles.layout}>
-      <TitleBar onRefresh={refresh} refreshing={scanning} />
+      <TitleBar
+        onRefresh={refresh}
+        refreshing={scanning}
+        onOpenSettings={openSettings}
+      />
       <div className={styles.body}>
         <FolderTree
           tree={tree}
@@ -113,7 +149,9 @@ export function FolderBrowser() {
           selected={selected}
           onRefreshFolder={refresh}
           refreshDisabled={scanning}
-          onOpen={(session) => void requestReopen(session)}
+          onOpen={(session) => {
+            if (!settingsOpen) void requestReopen(session);
+          }}
         />
       </div>
       {pendingBypass && (
@@ -123,7 +161,14 @@ export function FolderBrowser() {
           onCancel={cancelReopen}
         />
       )}
-      {toast && <Toast message={toast.message} onDismiss={dismissToast} />}
+      {settingsOpen && (
+        <SettingsModal onClose={closeSettings} onSaved={handleSaved} />
+      )}
+      {toast ? (
+        <Toast message={toast.message} onDismiss={dismissToast} />
+      ) : savedMessage ? (
+        <Toast message={savedMessage} onDismiss={dismissSaved} />
+      ) : null}
     </div>
   );
 }

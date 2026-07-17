@@ -61,4 +61,34 @@ describe("TitleBar", () => {
     ) as HTMLButtonElement;
     expect(toggle.disabled).toBe(true);
   });
+
+  it("enables the settings gear and fires onOpenSettings with the bridge present", () => {
+    const onOpenSettings = vi.fn();
+    render(
+      <TitleBar
+        onRefresh={vi.fn()}
+        refreshing={false}
+        onOpenSettings={onOpenSettings}
+      />,
+    );
+    const gear = screen.getByLabelText("Settings") as HTMLButtonElement;
+    expect(gear.disabled).toBe(false);
+    fireEvent.click(gear);
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it("renders the gear as a disabled placeholder without the bridge", () => {
+    delete (window as { csm?: unknown }).csm;
+    render(
+      <TitleBar
+        onRefresh={vi.fn()}
+        refreshing={false}
+        onOpenSettings={vi.fn()}
+      />,
+    );
+    const gear = screen.getByLabelText(
+      "Settings (unavailable)",
+    ) as HTMLButtonElement;
+    expect(gear.disabled).toBe(true);
+  });
 });
