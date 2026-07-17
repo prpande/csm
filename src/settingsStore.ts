@@ -13,6 +13,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { THEME_PREFERENCES, type ThemePreference } from "./ipcTypes";
+import { isRecord, isNonEmptyString } from "./typeGuards";
 
 const SETTINGS_FILENAME = "settings.json";
 // The product-wide default Claude executable (spec §8). Exported so the IPC
@@ -24,14 +25,6 @@ export const DEFAULT_CLAUDE_PATH = "claude";
 export const DEFAULT_THEME: ThemePreference = "system";
 // The privacy opt-out default (spec §8): indexing is ON unless explicitly disabled.
 export const DEFAULT_INDEX_ENABLED = true;
-
-// Local minimal guard: JSON.parse can yield any type; `null`/array/primitive must
-// not be spread or property-accessed as settings. (A shared type-guard util with
-// sessionParser's equivalents is a possible future extraction, not this slice —
-// see the plan.)
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
 
 export function createSettingsStore(dir: string) {
   const file = join(dir, SETTINGS_FILENAME);
@@ -54,8 +47,7 @@ export function createSettingsStore(dir: string) {
     // spawn as the `file` argument, and surrounding whitespace (from a hand-edited
     // settings.json) would otherwise fail to resolve as an executable. Absent /
     // blank / non-string → default.
-    const trimmed = typeof v === "string" ? v.trim() : "";
-    return trimmed !== "" ? trimmed : DEFAULT_CLAUDE_PATH;
+    return isNonEmptyString(v) ? v.trim() : DEFAULT_CLAUDE_PATH;
   }
 
   async function setClaudePath(value: string): Promise<void> {

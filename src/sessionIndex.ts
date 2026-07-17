@@ -12,6 +12,7 @@
 import { readFile, writeFile, rename, mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { PermissionMode } from "./sessionParser";
+import { isRecord } from "./typeGuards";
 
 export const INDEX_FILENAME = "session-index.json";
 export const INDEX_SCHEMA_VERSION = 1;
@@ -56,12 +57,6 @@ export interface SessionIndex {
   prune(observedIds: Set<string>): void;
   flush(): Promise<void>;
   isDirty(): boolean;
-}
-
-// Minimal guard: JSON.parse yields any type; null/array/primitive must not be
-// treated as the index object (mirrors settingsStore.isRecord).
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 export function createSessionIndex(deps: SessionIndexDeps): SessionIndex {

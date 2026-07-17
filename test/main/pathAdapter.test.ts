@@ -1,11 +1,7 @@
 import { test, expect, describe } from "vitest";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  defaultProjectsRoot,
-  isTempPath,
-  isWorktreePath,
-} from "../../src/pathAdapter";
+import { defaultProjectsRoot, tempRoots } from "../../src/pathAdapter";
 
 // pathAdapter is the OS seam that resolves the Claude projects root that
 // sessionStore scans. `home` is injectable so per-OS resolution is asserted
@@ -29,144 +25,112 @@ test("is pure resolution — does not verify the home exists (no I/O)", () => {
   expect(() => defaultProjectsRoot(missing)).not.toThrow();
 });
 
-// isTempPath / isWorktreePath classify a session's cwd for the §10 hide filter.
-// They take a platform-injected options bag so BOTH per-OS matrices are provable
-// on any runner (a Windows temp-root case must pass on a Linux host) — the real
-// caller lets platform/tmpdir/env default to the host. Pure: string/path logic
-// only, no I/O.
+// tempRoots discovers the system temp roots for the §10 hide filter. main ships
+// them over `paths:getTempRoots` and the renderer prefix-matches against them
+// (#69/#113) — so this list IS the filter's input.
+//
+// These assert `tempRoots` DIRECTLY. Until #114 its per-OS matrix was only
+// covered transitively, through the `isTempPath` tests that were deleted with the
+// predicate; every consumer test (ipc, FolderBrowser) mocks it. The options bag
+// is platform-injected so both matrices are provable on any runner — a Windows
+// case must pass on a Linux host.
+//
+// Every case asserts the EXACT list, never just `toContain`. The output is an
+// exhaustive prefix-match allowlist, so a WRONG root is as harmful as a missing
+// one and only exact assertions catch it: emitting `%LOCALAPPDATA%` alongside
+// `%LOCALAPPDATA%\Temp`, for instance, would hide every session under
+// AppData\Local. Presence-only assertions pass that mutation happily.
 
-describe("isTempPath — win32", () => {
-  // env empty so injected tmpdir / the always-on C:\Windows\Temp are the roots.
+describe("tempRoots — win32", () => {
   const WIN = (tmpdir: string, env: NodeJS.ProcessEnv = {}) =>
     ({ platform: "win32", tmpdir, env }) as const;
+  // Always a root on Windows, with or without env — the tail of every case.
+  const WINDOWS_TEMP = "C:\\Windows\\Temp";
 
-  test("true under the injected tmpdir", () => {
+  test("the injected tmpdir, and nothing else invented", () => {
     const t = "C:\\Users\\me\\AppData\\Local\\Temp";
-    expect(isTempPath(`${t}\\claude-xyz\\proj`, WIN(t))).toBe(true);
+    expect(tempRoots(WIN(t))).toEqual([t, WINDOWS_TEMP]);
   });
 
-  test("true when cwd equals the temp root itself", () => {
-    const t = "C:\\Users\\me\\AppData\\Local\\Temp";
-    expect(isTempPath(t, WIN(t))).toBe(true);
+  test("%TEMP% and %TMP%, both honored", () => {
+    expect(tempRoots(WIN("", { TEMP: "D:\\t", TMP: "D:\\u" }))).toEqual([
+      "D:\\t",
+      "D:\\u",
+      WINDOWS_TEMP,
+    ]);
   });
 
-  test("true under %LOCALAPPDATA%\\Temp (derived root)", () => {
-    const env = { LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local" };
+  test("derives %LOCALAPPDATA%\\Temp — the Temp subdir only, not the parent", () => {
+    // Exact: emitting the bare %LOCALAPPDATA% here would silently hide every
+    // session under AppData\Local, since these are matched as path prefixes.
     expect(
-      isTempPath("C:\\Users\\me\\AppData\\Local\\Temp\\foo", WIN("", env)),
-    ).toBe(true);
+      tempRoots(WIN("", { LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local" })),
+    ).toEqual(["C:\\Users\\me\\AppData\\Local\\Temp", WINDOWS_TEMP]);
   });
 
-  test("true under %TEMP% and %TMP%", () => {
-    expect(isTempPath("D:\\t\\x", WIN("", { TEMP: "D:\\t" }))).toBe(true);
-    expect(isTempPath("D:\\u\\x", WIN("", { TMP: "D:\\u" }))).toBe(true);
+  test("C:\\Windows\\Temp is always a root, with no tmpdir and no env at all", () => {
+    expect(tempRoots(WIN(""))).toEqual([WINDOWS_TEMP]);
   });
 
-  test("true under the always-on C:\\Windows\\Temp", () => {
-    expect(isTempPath("C:\\Windows\\Temp\\svc\\proj", WIN(""))).toBe(true);
+  test("drops blank and unset entries", () => {
+    // Load-bearing: "" is a prefix of EVERY path, so a single blank root would
+    // hide the entire tree. Whitespace-only must drop too, not merely empty —
+    // this is what fails if the filter degrades to a truthiness check.
+    expect(tempRoots(WIN("   ", { TEMP: "", TMP: "  " }))).toEqual([
+      WINDOWS_TEMP,
+    ]);
   });
 
-  test("case-insensitive match (Windows paths fold case)", () => {
-    const t = "C:\\Users\\me\\AppData\\Local\\Temp";
-    expect(isTempPath("C:\\USERS\\ME\\APPDATA\\LOCAL\\TEMP\\x", WIN(t))).toBe(
-      true,
-    );
+  test("omits the LOCALAPPDATA-derived root when LOCALAPPDATA is unset", () => {
+    expect(tempRoots(WIN("", {}))).toEqual([WINDOWS_TEMP]);
   });
 
-  test("false for a normal project path", () => {
-    const t = "C:\\Users\\me\\AppData\\Local\\Temp";
-    expect(isTempPath("C:\\Users\\me\\project", WIN(t))).toBe(false);
-  });
-
-  test("boundary: C:\\Tempfoo is not under C:\\Temp", () => {
-    expect(isTempPath("C:\\Tempfoo\\x", WIN("C:\\Temp"))).toBe(false);
-  });
-
-  test("blank/unset roots never match everything", () => {
-    // tmpdir '' + empty env → only C:\Windows\Temp is a real root; an unrelated
-    // path must stay false (a blank root string prefix-matches all paths).
-    expect(isTempPath("C:\\Users\\me\\project", WIN("", {}))).toBe(false);
+  test("full env: every source contributes, in order, with no duplicates or extras", () => {
+    expect(
+      tempRoots(
+        WIN("C:\\tmpdir", {
+          TEMP: "D:\\t",
+          TMP: "D:\\u",
+          LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local",
+        }),
+      ),
+    ).toEqual([
+      "C:\\tmpdir",
+      "D:\\t",
+      "D:\\u",
+      "C:\\Users\\me\\AppData\\Local\\Temp",
+      WINDOWS_TEMP,
+    ]);
   });
 });
 
-describe("isTempPath — posix", () => {
+describe("tempRoots — posix", () => {
   const POSIX = (tmpdir: string, env: NodeJS.ProcessEnv = {}) =>
     ({ platform: "darwin", tmpdir, env }) as const;
+  // /private/tmp and /private/var/folders are macOS's canonical symlink targets
+  // — a session's cwd can surface either form, so both are always roots.
+  const STANDARD = [
+    "/tmp",
+    "/private/tmp",
+    "/var/folders",
+    "/private/var/folders",
+  ];
 
-  test("true under the injected tmpdir", () => {
-    const t = "/var/folders/ab/xyz/T";
-    expect(isTempPath(`${t}/proj`, POSIX(t))).toBe(true);
-  });
-
-  test("true under the always-on /tmp and /private/tmp", () => {
-    expect(isTempPath("/tmp/proj", POSIX(""))).toBe(true);
-    expect(isTempPath("/private/tmp/proj", POSIX(""))).toBe(true);
-  });
-
-  test("true under /var/folders and /private/var/folders", () => {
-    expect(isTempPath("/var/folders/ab/xyz/T/p", POSIX(""))).toBe(true);
-    expect(isTempPath("/private/var/folders/ab/xyz/T/p", POSIX(""))).toBe(true);
-  });
-
-  test("true under $TMPDIR", () => {
+  test("the injected tmpdir and $TMPDIR, ahead of the standard roots", () => {
     expect(
-      isTempPath("/custom/tmp/x", POSIX("", { TMPDIR: "/custom/tmp" })),
-    ).toBe(true);
+      tempRoots(POSIX("/var/folders/ab/xyz/T", { TMPDIR: "/custom/tmp" })),
+    ).toEqual(["/var/folders/ab/xyz/T", "/custom/tmp", ...STANDARD]);
   });
 
-  test("true when cwd equals the temp root itself", () => {
-    expect(isTempPath("/tmp", POSIX(""))).toBe(true);
+  test("the standard roots are always present, with no tmpdir and no env", () => {
+    expect(tempRoots(POSIX(""))).toEqual(STANDARD);
   });
 
-  test("false for a normal project path", () => {
-    expect(isTempPath("/home/me/proj", POSIX(""))).toBe(false);
+  test("drops blank and unset entries", () => {
+    expect(tempRoots(POSIX("  ", { TMPDIR: "" }))).toEqual(STANDARD);
   });
 
-  test("boundary: /tmpfoo is not under /tmp", () => {
-    expect(isTempPath("/tmpfoo/x", POSIX(""))).toBe(false);
-  });
-
-  test("case-sensitive: /TMP is not /tmp on posix", () => {
-    expect(isTempPath("/TMP/x", POSIX(""))).toBe(false);
-  });
-});
-
-describe("isWorktreePath", () => {
-  test("posix: true inside .claude/worktrees/<name> and deeper", () => {
-    const o = { platform: "darwin" } as const;
-    expect(isWorktreePath("/home/me/csm/.claude/worktrees/49-foo", o)).toBe(
-      true,
-    );
-    expect(
-      isWorktreePath("/home/me/csm/.claude/worktrees/49-foo/src/x", o),
-    ).toBe(true);
-  });
-
-  test("win32: true inside .claude\\worktrees\\<name>", () => {
-    expect(
-      isWorktreePath("C:\\src\\csm\\.claude\\worktrees\\49-foo", {
-        platform: "win32",
-      }),
-    ).toBe(true);
-  });
-
-  test("false for .claude/projects (sibling, not worktrees)", () => {
-    expect(
-      isWorktreePath("/home/me/csm/.claude/projects/enc/x", {
-        platform: "darwin",
-      }),
-    ).toBe(false);
-  });
-
-  test("false for a 'worktrees' dir not under .claude", () => {
-    expect(isWorktreePath("/home/me/worktrees/x", { platform: "darwin" })).toBe(
-      false,
-    );
-  });
-
-  test("false when nothing follows .claude/worktrees (no worktree dir)", () => {
-    expect(
-      isWorktreePath("/home/me/csm/.claude/worktrees", { platform: "darwin" }),
-    ).toBe(false);
+  test("never emits Windows roots", () => {
+    expect(tempRoots(POSIX(""))).not.toContain("C:\\Windows\\Temp");
   });
 });
