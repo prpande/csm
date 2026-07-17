@@ -1,5 +1,5 @@
 import { test, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, createEvent } from "@testing-library/react";
 import { BypassConfirmModal } from "../../src/renderer/components/BypassConfirmModal";
 import type { SessionMetadata } from "../../src/sessionParser";
 
@@ -95,4 +95,83 @@ test("Escape cancels the modal", () => {
   );
   fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
   expect(onCancel).toHaveBeenCalledTimes(1);
+});
+
+test("Tab cycles forward through the actions and wraps (focus trap, #70)", () => {
+  render(
+    <BypassConfirmModal
+      session={session}
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />,
+  );
+  const dialog = screen.getByRole("dialog");
+  const downgrade = screen.getByTestId("confirm-downgrade");
+  const cancel = screen.getByTestId("confirm-cancel");
+  const bypass = screen.getByTestId("confirm-bypass");
+
+  // Initial focus is on the safe downgrade; Tab steps in DOM order and wraps.
+  expect(document.activeElement).toBe(downgrade);
+  fireEvent.keyDown(dialog, { key: "Tab" });
+  expect(document.activeElement).toBe(cancel);
+  fireEvent.keyDown(dialog, { key: "Tab" });
+  expect(document.activeElement).toBe(bypass);
+  fireEvent.keyDown(dialog, { key: "Tab" });
+  expect(document.activeElement).toBe(downgrade); // wrapped
+});
+
+test("Shift+Tab cycles backward and wraps to the last action (focus trap, #70)", () => {
+  render(
+    <BypassConfirmModal
+      session={session}
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />,
+  );
+  const dialog = screen.getByRole("dialog");
+  const downgrade = screen.getByTestId("confirm-downgrade");
+  const bypass = screen.getByTestId("confirm-bypass");
+
+  expect(document.activeElement).toBe(downgrade);
+  fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(bypass); // wrapped backward to the last
+});
+
+test("Tab is trapped: focus never lands outside the three actions (#70)", () => {
+  render(
+    <BypassConfirmModal
+      session={session}
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />,
+  );
+  const dialog = screen.getByRole("dialog");
+  const actions = new Set([
+    screen.getByTestId("confirm-downgrade"),
+    screen.getByTestId("confirm-cancel"),
+    screen.getByTestId("confirm-bypass"),
+  ]);
+  // Many tabs in both directions — focus stays within the action set every step.
+  for (let i = 0; i < 7; i++) {
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(actions.has(document.activeElement as HTMLElement)).toBe(true);
+  }
+  for (let i = 0; i < 7; i++) {
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(actions.has(document.activeElement as HTMLElement)).toBe(true);
+  }
+});
+
+test("the Tab trap preventDefaults so the browser's own focus move is suppressed (#70)", () => {
+  render(
+    <BypassConfirmModal
+      session={session}
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />,
+  );
+  const dialog = screen.getByRole("dialog");
+  const ev = createEvent.keyDown(dialog, { key: "Tab" });
+  fireEvent(dialog, ev);
+  expect(ev.defaultPrevented).toBe(true);
 });

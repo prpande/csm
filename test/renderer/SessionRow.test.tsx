@@ -24,6 +24,36 @@ test("renders the title, short id, and a time string", () => {
   expect(screen.getByText("unknown")).toBeTruthy();
 });
 
+test("is a listbox option carrying a stable id and its active state (#70)", () => {
+  const { container, rerender } = render(
+    <SessionRow session={makeSession()} rowHeight={56} id="opt-1" />,
+  );
+  const opt = container.querySelector('[role="option"]');
+  expect(opt).toBeTruthy();
+  expect(opt?.id).toBe("opt-1");
+  // Default (inactive): aria-selected is present-and-false, no data-active.
+  expect(opt?.getAttribute("aria-selected")).toBe("false");
+  expect(opt?.hasAttribute("data-active")).toBe(false);
+
+  rerender(
+    <SessionRow session={makeSession()} rowHeight={56} id="opt-1" active />,
+  );
+  const activeOpt = container.querySelector('[role="option"]');
+  expect(activeOpt?.getAttribute("aria-selected")).toBe("true");
+  expect(activeOpt?.getAttribute("data-active")).toBe("true");
+});
+
+test("the Open button is not a tab stop — the listbox owns the single tab stop (#70)", () => {
+  render(
+    <SessionRow session={makeSession()} rowHeight={56} onOpen={vi.fn()} />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: /open session:/i })
+      .getAttribute("tabindex"),
+  ).toBe("-1");
+});
+
 test("chip carries the risk-coded variant and the raw mode label", () => {
   const cases: Array<[PermissionMode, string]> = [
     ["bypassPermissions", "bypass"],

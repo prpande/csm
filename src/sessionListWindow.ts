@@ -45,3 +45,81 @@ export function computeWindow(
 
   return { startIndex, endIndex: Math.max(startIndex, endIndex) };
 }
+
+/**
+ * Compute the scrollTop that brings row `index` fully into the viewport (#70).
+ *
+ * Keyboard navigation can move the active option to a row outside the mounted
+ * `[startIndex, endIndex)` window; scrolling to this offset mounts the row (via
+ * computeWindow) so aria-activedescendant can point at a real element. Uses the
+ * minimal scroll: a row above the fold aligns to the top, one below aligns to the
+ * bottom, and an already-visible row is left where it is (returns `scrollTop`).
+ *
+ * Overscan is intentionally absent: a row made fully VISIBLE is necessarily
+ * inside the mounted window, because computeWindow's `firstVisible` always lands
+ * in `[startIndex, endIndex)`. So visibility implies mounted without it.
+ *
+ * @param index          target row index
+ * @param scrollTop      current scroll offset (px)
+ * @param viewportHeight visible height (px)
+ * @param rowHeight      fixed row height (px); non-positive leaves scroll as-is
+ * @returns the new scroll offset (px), never negative
+ */
+export function scrollTopToReveal(
+  index: number,
+  scrollTop: number,
+  viewportHeight: number,
+  rowHeight: number,
+): number {
+  if (rowHeight <= 0) return scrollTop;
+  const rowTop = index * rowHeight;
+  const rowBottom = rowTop + rowHeight;
+  if (rowTop < scrollTop) return Math.max(0, rowTop);
+  if (rowBottom > scrollTop + viewportHeight) {
+    return Math.max(0, rowBottom - viewportHeight);
+  }
+  return scrollTop;
+}
+
+/** A keyboard navigation intent from the listbox key map. */
+export type ListKeyAction =
+  { type: "focus"; index: number } | { type: "open"; index: number };
+
+/**
+ * Pure key map for the virtualized session listbox (#70).
+ *
+ * Given the pressed key, the currently-focused index (`-1` = nothing focused
+ * yet) and the item count, returns the navigation intent, or `null` to let the
+ * event through untouched (e.g. Tab, so focus can leave the pane).
+ *
+ * Arrow/Home/End clamp to the ends and still return a `focus` action at the
+ * boundary (never null) so the handler can `preventDefault` — arrow keys belong
+ * to the listbox and must not also scroll the page. Enter opens the focused row.
+ */
+export function listKeyAction(
+  key: string,
+  focusedIndex: number,
+  itemCount: number,
+): ListKeyAction | null {
+  if (itemCount <= 0) return null;
+  const last = itemCount - 1;
+  const clamp = (i: number): number => Math.min(last, Math.max(0, i));
+  switch (key) {
+    case "ArrowDown":
+      // From -1 (unseeded), +1 lands on 0 — the first row.
+      return { type: "focus", index: clamp(focusedIndex + 1) };
+    case "ArrowUp":
+      return { type: "focus", index: clamp(focusedIndex - 1) };
+    case "Home":
+      return { type: "focus", index: 0 };
+    case "End":
+      return { type: "focus", index: last };
+    case "Enter":
+      // Only a real, in-range focused row can be opened.
+      return focusedIndex >= 0 && focusedIndex <= last
+        ? { type: "open", index: focusedIndex }
+        : null;
+    default:
+      return null;
+  }
+}

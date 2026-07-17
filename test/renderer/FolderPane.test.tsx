@@ -91,7 +91,7 @@ test("renders the selected folder's session list", () => {
       refreshDisabled={false}
     />,
   );
-  expect(screen.getByRole("list")).toBeTruthy();
+  expect(screen.getByRole("listbox")).toBeTruthy();
   expect(screen.getByText("A session 0")).toBeTruthy();
 });
 
@@ -120,7 +120,7 @@ test("switching folders resets the list to the top", () => {
       refreshDisabled={false}
     />,
   );
-  const list = screen.getByRole("list");
+  const list = screen.getByRole("listbox");
   fireEvent.scroll(list, { target: { scrollTop: 8 * ROW_HEIGHT } });
   // Scrolled down in A: its first row has left the mounted window.
   expect(screen.queryByText("A session 0")).toBe(null);

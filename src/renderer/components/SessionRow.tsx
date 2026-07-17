@@ -14,6 +14,12 @@ interface SessionRowProps {
   session: SessionMetadata;
   /** Fixed row height (px), supplied by the windowing list. */
   rowHeight: number;
+  /** Stable DOM id for this `role="option"` (#70). The listbox points
+   * `aria-activedescendant` at this id when the row is the active one. */
+  id?: string;
+  /** True when this row is the listbox's active option (#70): sets
+   * `aria-selected` (selection-follows-focus) and the `data-active` focus ring. */
+  active?: boolean;
   /** Open gesture (double-click) — reopen this session (#67). Optional so the
    * row stays a pure presentational unit in tests that don't wire reopen. */
   onOpen?: (session: SessionMetadata) => void;
@@ -33,6 +39,8 @@ interface SessionRowProps {
 export function SessionRow({
   session,
   rowHeight,
+  id,
+  active = false,
   onOpen,
   worktreeBranch,
   factState,
@@ -55,7 +63,10 @@ export function SessionRow({
     <div
       className={styles.row}
       style={{ height: rowHeight }}
-      role="listitem"
+      id={id}
+      role="option"
+      aria-selected={active}
+      data-active={active || undefined}
       onDoubleClick={onOpen ? () => onOpen(session) : undefined}
     >
       <div className={styles.text}>
@@ -128,6 +139,10 @@ export function SessionRow({
         <button
           type="button"
           className={styles.open}
+          // Not a tab stop: the listbox is the pane's single tab stop (spec §9,
+          // matching the tree chevron). Keyboard users open via Enter on the row;
+          // the button stays mouse-clickable and its accessible name is per-row.
+          tabIndex={-1}
           aria-label={`Open session: ${session.title}`}
           onClick={(e) => {
             e.stopPropagation();
