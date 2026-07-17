@@ -7,10 +7,17 @@ benefit.
 
 ## #61 — extract the shared guards
 
-### The duplicate set is larger than the issue says
+### #116 is what tipped `isRecord` over the threshold
 
-#61 was filed during #58 and names three sites. #116 (session index) landed
-afterwards and added a fourth copy of `isRecord`. Current state:
+#61 was filed during #58 and names three *sites* — but only **two** of them held
+an `isRecord` copy (`sessionParser`, `settingsStore`); `pathAdapter`'s site is the
+non-blank-string check, not `isRecord`. So at filing time `isRecord` was a
+two-copy duplicate, below the rule of three.
+
+#116 (session index) landed afterwards and added the **third** `isRecord` copy.
+That is what makes this extraction due now rather than deferrable again — the
+predicate reached the threshold *after* the issue was written, and the next
+module to parse untrusted JSON would have made a fourth. Current state:
 
 | predicate | site | form |
 | --- | --- | --- |
@@ -24,8 +31,7 @@ afterwards and added a fourth copy of `isRecord`. Current state:
 All three `isRecord` bodies are byte-identical
 (`typeof v === "object" && v !== null && !Array.isArray(v)`). `sessionIndex`'s
 comment already says "mirrors settingsStore.isRecord" — the drift is documented
-in-tree and still unfixed. That copy arriving *after* the issue was filed is the
-argument for doing the extraction now rather than deferring again.
+in-tree and still unfixed.
 
 ### The non-empty-string predicate is shared; the value handling is NOT
 

@@ -5,7 +5,7 @@
 // node runtime deps, so this is importable from the main process AND the
 // DOM-only renderer.
 //
-// Extracted at the rule-of-three threshold: `isRecord` had drifted into four
+// Extracted at the rule-of-three threshold: `isRecord` had drifted into three
 // byte-identical copies (sessionParser, sessionIndex, settingsStore) and the
 // non-blank-string test into three (sessionParser, settingsStore, pathAdapter).
 
