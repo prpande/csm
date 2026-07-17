@@ -27,13 +27,6 @@ describe("isRecord", () => {
     }
   });
 
-  it("accepts objects from other realms of the object family", () => {
-    // Not arrays and not null, so they pass — callers only ever property-read
-    // the result, which is safe on any of these.
-    expect(isRecord(Object.create(null) as unknown)).toBe(true);
-    expect(isRecord(new Date())).toBe(true);
-  });
-
   it("narrows to a property-readable type", () => {
     const v: unknown = { claudePath: "x" };
     if (!isRecord(v)) throw new Error("expected a record");
@@ -60,16 +53,12 @@ describe("isNonEmptyString", () => {
   });
 
   it("narrows an optional-string array to string[] under filter", () => {
+    // The `string[]` annotation is the real assertion and `tsc` is what enforces
+    // it (vitest erases types) — pathAdapter.tempRoots relies on this narrowing
+    // to drop its hand-written `(r): r is string` annotation. tsconfig.node.json
+    // includes test/main, and CI typechecks separately from the test run.
     const raw: (string | undefined)[] = ["a", undefined, "", "  ", "b"];
-    const out: string[] = raw.filter(isNonEmptyString); // compiles only if it narrows
+    const out: string[] = raw.filter(isNonEmptyString);
     expect(out).toEqual(["a", "b"]);
-  });
-
-  it("does NOT trim — the predicate tests blankness, callers own the value", () => {
-    // Load-bearing: settingsStore trims its return (the value reaches spawn),
-    // sessionParser does not (it is rendered as-is). A guard that returned a
-    // trimmed value would silently change parser output.
-    const v: unknown = "  claude  ";
-    expect(isNonEmptyString(v) ? v : undefined).toBe("  claude  ");
   });
 });

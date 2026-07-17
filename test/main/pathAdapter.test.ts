@@ -27,88 +27,107 @@ test("is pure resolution — does not verify the home exists (no I/O)", () => {
 
 // tempRoots discovers the system temp roots for the §10 hide filter. main ships
 // them over `paths:getTempRoots` and the renderer prefix-matches against them
-// (#69/#113) — so this list IS the filter's input, and a wrong entry either hides
-// real sessions or leaks temp ones.
+// (#69/#113) — so this list IS the filter's input.
 //
 // These assert `tempRoots` DIRECTLY. Until #114 its per-OS matrix was only
 // covered transitively, through the `isTempPath` tests that were deleted with the
 // predicate; every consumer test (ipc, FolderBrowser) mocks it. The options bag
 // is platform-injected so both matrices are provable on any runner — a Windows
 // case must pass on a Linux host.
+//
+// Every case asserts the EXACT list, never just `toContain`. The output is an
+// exhaustive prefix-match allowlist, so a WRONG root is as harmful as a missing
+// one and only exact assertions catch it: emitting `%LOCALAPPDATA%` alongside
+// `%LOCALAPPDATA%\Temp`, for instance, would hide every session under
+// AppData\Local. Presence-only assertions pass that mutation happily.
 
 describe("tempRoots — win32", () => {
   const WIN = (tmpdir: string, env: NodeJS.ProcessEnv = {}) =>
     ({ platform: "win32", tmpdir, env }) as const;
+  // Always a root on Windows, with or without env — the tail of every case.
+  const WINDOWS_TEMP = "C:\\Windows\\Temp";
 
-  test("includes the injected tmpdir", () => {
+  test("the injected tmpdir, and nothing else invented", () => {
     const t = "C:\\Users\\me\\AppData\\Local\\Temp";
-    expect(tempRoots(WIN(t))).toContain(t);
+    expect(tempRoots(WIN(t))).toEqual([t, WINDOWS_TEMP]);
   });
 
-  test("includes %TEMP% and %TMP%", () => {
-    const roots = tempRoots(WIN("", { TEMP: "D:\\t", TMP: "D:\\u" }));
-    expect(roots).toContain("D:\\t");
-    expect(roots).toContain("D:\\u");
+  test("%TEMP% and %TMP%, both honored", () => {
+    expect(tempRoots(WIN("", { TEMP: "D:\\t", TMP: "D:\\u" }))).toEqual([
+      "D:\\t",
+      "D:\\u",
+      WINDOWS_TEMP,
+    ]);
   });
 
-  test("derives %LOCALAPPDATA%\\Temp", () => {
-    const roots = tempRoots(
-      WIN("", { LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local" }),
-    );
-    expect(roots).toContain("C:\\Users\\me\\AppData\\Local\\Temp");
+  test("derives %LOCALAPPDATA%\\Temp — the Temp subdir only, not the parent", () => {
+    // Exact: emitting the bare %LOCALAPPDATA% here would silently hide every
+    // session under AppData\Local, since these are matched as path prefixes.
+    expect(
+      tempRoots(WIN("", { LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local" })),
+    ).toEqual(["C:\\Users\\me\\AppData\\Local\\Temp", WINDOWS_TEMP]);
   });
 
-  test("always includes C:\\Windows\\Temp, with no env at all", () => {
-    expect(tempRoots(WIN(""))).toContain("C:\\Windows\\Temp");
+  test("C:\\Windows\\Temp is always a root, with no tmpdir and no env at all", () => {
+    expect(tempRoots(WIN(""))).toEqual([WINDOWS_TEMP]);
   });
 
   test("drops blank and unset entries", () => {
-    // Load-bearing: the renderer prefix-matches these, and "" is a prefix of
-    // EVERY path — one blank root would hide the entire tree. A whitespace-only
-    // tmpdir must be dropped too, not merely an empty one.
+    // Load-bearing: "" is a prefix of EVERY path, so a single blank root would
+    // hide the entire tree. Whitespace-only must drop too, not merely empty —
+    // this is what fails if the filter degrades to a truthiness check.
     expect(tempRoots(WIN("   ", { TEMP: "", TMP: "  " }))).toEqual([
-      "C:\\Windows\\Temp",
+      WINDOWS_TEMP,
     ]);
   });
 
   test("omits the LOCALAPPDATA-derived root when LOCALAPPDATA is unset", () => {
-    expect(tempRoots(WIN("", {}))).toEqual(["C:\\Windows\\Temp"]);
+    expect(tempRoots(WIN("", {}))).toEqual([WINDOWS_TEMP]);
+  });
+
+  test("full env: every source contributes, in order, with no duplicates or extras", () => {
+    expect(
+      tempRoots(
+        WIN("C:\\tmpdir", {
+          TEMP: "D:\\t",
+          TMP: "D:\\u",
+          LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local",
+        }),
+      ),
+    ).toEqual([
+      "C:\\tmpdir",
+      "D:\\t",
+      "D:\\u",
+      "C:\\Users\\me\\AppData\\Local\\Temp",
+      WINDOWS_TEMP,
+    ]);
   });
 });
 
 describe("tempRoots — posix", () => {
   const POSIX = (tmpdir: string, env: NodeJS.ProcessEnv = {}) =>
     ({ platform: "darwin", tmpdir, env }) as const;
+  // /private/tmp and /private/var/folders are macOS's canonical symlink targets
+  // — a session's cwd can surface either form, so both are always roots.
+  const STANDARD = [
+    "/tmp",
+    "/private/tmp",
+    "/var/folders",
+    "/private/var/folders",
+  ];
 
-  test("includes the injected tmpdir and $TMPDIR", () => {
-    const roots = tempRoots(
-      POSIX("/var/folders/ab/xyz/T", { TMPDIR: "/custom/tmp" }),
-    );
-    expect(roots).toContain("/var/folders/ab/xyz/T");
-    expect(roots).toContain("/custom/tmp");
+  test("the injected tmpdir and $TMPDIR, ahead of the standard roots", () => {
+    expect(
+      tempRoots(POSIX("/var/folders/ab/xyz/T", { TMPDIR: "/custom/tmp" })),
+    ).toEqual(["/var/folders/ab/xyz/T", "/custom/tmp", ...STANDARD]);
   });
 
-  test("always includes the standard roots, including the macOS /private forms", () => {
-    // /private/tmp and /private/var/folders are macOS's canonical symlink
-    // targets — a session's cwd can surface either form.
-    const roots = tempRoots(POSIX(""));
-    for (const r of [
-      "/tmp",
-      "/private/tmp",
-      "/var/folders",
-      "/private/var/folders",
-    ]) {
-      expect(roots).toContain(r);
-    }
+  test("the standard roots are always present, with no tmpdir and no env", () => {
+    expect(tempRoots(POSIX(""))).toEqual(STANDARD);
   });
 
   test("drops blank and unset entries", () => {
-    expect(tempRoots(POSIX("  ", { TMPDIR: "" }))).toEqual([
-      "/tmp",
-      "/private/tmp",
-      "/var/folders",
-      "/private/var/folders",
-    ]);
+    expect(tempRoots(POSIX("  ", { TMPDIR: "" }))).toEqual(STANDARD);
   });
 
   test("never emits Windows roots", () => {

@@ -84,14 +84,24 @@ prefix-matching in the renderer. `tempRoots` stays — it is a live IPC dependen
 **`isWorktreePath` → delete.** The issue offers "keep it and have #56/#91 build
 on it". Rejected on two independent grounds:
 
-1. **Its only plausible caller cannot import it.** The convention is re-encoded
+1. **Its only plausible caller must not import it.** The convention is re-encoded
    in `sessionTree.rollUpWorktrees`, and `sessionTree`'s header contract is "no
    DOM and no node runtime deps … so it is safe to import from the DOM-only
-   renderer". `pathAdapter` imports `node:os`/`node:path`. Importing it into
-   `sessionTree` would pull `os` into the renderer bundle and break that
-   guarantee. `sessionFilter` already faced exactly this and chose to *mirror*
-   `canon` as string-only rather than import it — the boundary is established
-   precedent, not a new opinion.
+   renderer" — it is imported directly by five renderer modules. `pathAdapter`
+   imports `node:os`/`node:path`. Importing it into `sessionTree` would pull `os`
+   into the renderer bundle and break that guarantee. `sessionFilter` already
+   faced exactly this and chose to *mirror* `canon` as string-only rather than
+   import it — established precedent, not a new opinion.
+
+   Precision, because the first draft of this plan overstated it: nothing
+   *mechanically blocks* that import. There is no `import/no-nodejs-modules` lint
+   rule, and `tsconfig.renderer.json`'s `types` restriction only limits ambient
+   globals — an explicit `import … from "node:os"` would still typecheck. The
+   real backstop is Vite's renderer bundle failing to resolve `node:os` (no
+   polyfill plugin is configured), plus `contextIsolation: true` /
+   `nodeIntegration: false` at runtime. So the boundary is a **comment-enforced
+   convention with a late, build-time backstop** — which is an argument for
+   deleting the tempting import target, not for keeping it around.
 2. **#56/#91 need a different function.** They want *generic* git-worktree
    detection, which requires reading the worktree's `.git` file (I/O).
    `isWorktreePath` is a pure `.claude/worktrees` path-convention matcher — the
