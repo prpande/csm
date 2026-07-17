@@ -15,8 +15,9 @@ const isWindowsPath = (p: string): boolean =>
   p.includes("\\") || /^[A-Za-z]:/.test(p);
 
 // Canonical comparable form: unify+collapse separators, drop a trailing one, and
-// fold case on Windows. String-only mirror of pathAdapter's `canon` (which uses
-// node:path) so the renderer needs no node runtime.
+// fold case on Windows. Deliberately string-only (no node:path) so the renderer
+// needs no node runtime — that constraint is why this filter lives here rather
+// than in pathAdapter, which needs `os` and is main-process only.
 function canonPath(p: string): { path: string; sep: string } {
   const win = isWindowsPath(p);
   const sep = win ? "\\" : "/";

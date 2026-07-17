@@ -1,16 +1,22 @@
 // OS seam for spec §5's "OS-aware path handling": resolving the Claude projects
-// root AND classifying a session's cwd for the §10 hide filter.
+// root AND discovering the system temp roots the §10 hide filter matches against.
 // Sessions live at <root>/<encoded-cwd>/<sessionId>.jsonl where <root> defaults
 // to ~/.claude/projects. `os.homedir()` absorbs the Windows/macOS home
 // difference and the relative .claude/projects structure is identical on both
 // OSes, so no per-OS branch is needed. Pure: imports only node:os/node:path and
-// does no I/O — the path is returned/classified, not verified to exist (a missing
-// root is sessionStore's concern; §12 surfaces it as the "No Claude sessions
-// found" empty state). The path-classification half (isTempPath/isWorktreePath,
-// #49) completes the charter below; the root-resolution half shipped in #48.
+// does no I/O — the path is returned, not verified to exist (a missing root is
+// sessionStore's concern; §12 surfaces it as the "No Claude sessions found"
+// empty state).
+//
+// This module needs `os`, so it is main-process only. The §10 filter itself runs
+// in the RENDERER: main ships these roots over `paths:getTempRoots` and
+// `sessionFilter.ts` does the pure prefix-matching (#69/#113). That split is why
+// the cwd-classifying predicates this module used to own (isTempPath /
+// isWorktreePath, #49) were deleted in #114 — see docs/plans/61-114-shared-type-guards.md.
 
 import { homedir, platform as osPlatform, tmpdir as osTmpdir } from "node:os";
 import { join, win32, posix } from "node:path";
+import { isNonEmptyString } from "./typeGuards";
 
 /**
  * Resolve the default Claude projects root, `<home>/.claude/projects`.
@@ -22,12 +28,11 @@ export function defaultProjectsRoot(home: string = homedir()): string {
   return join(home, ".claude", "projects");
 }
 
-// --- §10 hide-filter classification (temp / worktree path predicates).
+// --- §10 hide-filter support (temp-root discovery).
 //
-// Both predicates take a platform-injected options bag so BOTH per-OS matrices
-// are provable on any runner (a Windows temp-root case must pass on a Linux
-// host); the real caller lets platform/tmpdir/env default to the host. Pure:
-// string/path logic only, no I/O — the cwd is classified, never stat'd.
+// Takes a platform-injected options bag so BOTH per-OS matrices are provable on
+// any runner (a Windows temp-root case must pass on a Linux host); the real
+// caller lets platform/tmpdir/env default to the host.
 
 /** Injectable host context; each field defaults to the real host value. */
 export interface PathClassOpts {
@@ -39,25 +44,9 @@ export interface PathClassOpts {
   env?: NodeJS.ProcessEnv;
 }
 
-// A path module + case-folding, chosen from the target platform so parsing is
-// host-independent. Windows paths fold case and use `\`; POSIX is exact with `/`.
-function semantics(platform: NodeJS.Platform) {
-  const isWin = platform === "win32";
-  const P = isWin ? win32 : posix;
-  const fold = isWin ? (s: string) => s.toLowerCase() : (s: string) => s;
-  return { P, fold };
-}
-
-// Normalize a path to its comparable canonical form: collapse `.`/`..` and
-// separators, drop a trailing separator, and fold case on Windows.
-function canon(
-  P: typeof win32 | typeof posix,
-  fold: (s: string) => string,
-  raw: string,
-): string {
-  let n = P.normalize(raw);
-  if (n.length > 1 && n.endsWith(P.sep)) n = n.slice(0, -1);
-  return fold(n);
+// The path module for the target platform, so root joining is host-independent.
+function pathModule(platform: NodeJS.Platform) {
+  return platform === "win32" ? win32 : posix;
 }
 
 /**
@@ -66,16 +55,15 @@ function canon(
  * `%TEMP%`/`%TMP%`, `%LOCALAPPDATA%\Temp`, and `C:\Windows\Temp`; POSIX uses
  * `os.tmpdir()`, `$TMPDIR`, `/tmp`, `/private/tmp`, `/var/folders`, and
  * `/private/var/folders` (the `/private/*` forms are macOS's canonical symlink
- * targets). `isTempPath` matches against these, and the `paths:getTempRoots` IPC
- * ships them to the renderer so it applies the §10 hide filter without
- * re-implementing root DISCOVERY (which needs `os`) — the renderer only does
- * pure prefix matching (#69).
+ * targets). The `paths:getTempRoots` IPC ships them to the renderer so it applies
+ * the §10 hide filter without re-implementing root DISCOVERY (which needs `os`)
+ * — the renderer only does pure prefix matching (#69).
  */
 export function tempRoots(opts: PathClassOpts = {}): string[] {
   const platform = opts.platform ?? osPlatform();
   const tmp = opts.tmpdir ?? osTmpdir();
   const env = opts.env ?? process.env;
-  const { P } = semantics(platform);
+  const P = pathModule(platform);
 
   const raw =
     platform === "win32"
@@ -94,37 +82,5 @@ export function tempRoots(opts: PathClassOpts = {}): string[] {
           "/var/folders",
           "/private/var/folders",
         ];
-  return raw.filter(
-    (r): r is string => typeof r === "string" && r.trim() !== "",
-  );
-}
-
-/** True when `cwd` is under (or equal to) any system temp root — the §10 filter
- *  hides such throwaway sessions by default. Blank/unset roots can't match. */
-export function isTempPath(cwd: string, opts: PathClassOpts = {}): boolean {
-  const platform = opts.platform ?? osPlatform();
-  const { P, fold } = semantics(platform);
-  const cwdN = canon(P, fold, cwd);
-  return tempRoots(opts)
-    .map((r) => canon(P, fold, r))
-    .some((root) => cwdN === root || cwdN.startsWith(root + P.sep));
-}
-
-/**
- * True when `cwd` lives inside a `.../.claude/worktrees/<name>` path — the
- * disposable git worktrees the §10 filter hides. Pure, so it recognizes only the
- * path *convention* (consecutive `.claude` → `worktrees` segments with a worktree
- * dir after them); detecting an arbitrary git worktree needs reading its `.git`
- * file (I/O) and is out of scope.
- */
-export function isWorktreePath(cwd: string, opts: PathClassOpts = {}): boolean {
-  const platform = opts.platform ?? osPlatform();
-  const { P, fold } = semantics(platform);
-  const segs = P.normalize(cwd).split(P.sep).filter(Boolean).map(fold);
-  // Require a segment AFTER "worktrees" (the worktree dir itself): `i + 2` must
-  // be a valid index, so `.../.claude/worktrees` with nothing after is not a hit.
-  for (let i = 0; i + 2 < segs.length; i++) {
-    if (segs[i] === ".claude" && segs[i + 1] === "worktrees") return true;
-  }
-  return false;
+  return raw.filter(isNonEmptyString);
 }
