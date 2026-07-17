@@ -272,6 +272,62 @@ test("an unexpected (untyped) reopen throw falls back to SPAWN_FAILED", async ()
   expect(result).toEqual({ ok: false, code: "SPAWN_FAILED" });
 });
 
+test("a reopen that throws logs the real error in the main process (#147)", async () => {
+  // The mirror of the scan sink above. SPAWN_FAILED is also the catch-all bucket
+  // for an unexpected throw, so it is exactly the case where a maintainer needs
+  // the cause — and the code alone cannot carry it. The thrown error itself, not
+  // a stringified stand-in, must reach the sink so the stack survives.
+  const boom = new Error("spawn ENOENT C:\\bad\\claude.exe");
+  const { call, logError } = setup({
+    reopen: vi.fn(async () => {
+      throw boom;
+    }),
+  });
+  await call(CH.sessionReopen, REQ);
+
+  expect(logError).toHaveBeenCalledTimes(1);
+  expect(logError).toHaveBeenCalledWith("session:reopen", boom);
+});
+
+test("a typed reopen error is logged too — the code alone loses the cause", async () => {
+  // A typed error already carries a precise code across IPC, but its own detail
+  // (SpawnFailedError's wrapped cause) still only exists in the main process.
+  const cause = new Error("EACCES");
+  const err = new SpawnFailedError(cause);
+  const { call, logError } = setup({
+    reopen: vi.fn(async () => {
+      throw err;
+    }),
+  });
+  await call(CH.sessionReopen, REQ);
+
+  expect(logError).toHaveBeenCalledWith("session:reopen", err);
+});
+
+test("the logged reopen error never leaks into the ReopenResult (#147)", async () => {
+  // The invariant #147 must not break: `err` goes to the main-process log ONLY.
+  // cwd and claudePath are untrusted and must never cross IPC — so the result
+  // must stay code-only even though the same error was just logged in full.
+  const secret = new Error("failed at C:\\Users\\me\\secret-project");
+  const { call, logError } = setup({
+    reopen: vi.fn(async () => {
+      throw secret;
+    }),
+  });
+  const result = await call(CH.sessionReopen, REQ);
+
+  expect(result).toEqual({ ok: false, code: "SPAWN_FAILED" });
+  expect(JSON.stringify(result)).not.toContain("secret-project");
+  // The detail exists — it just went to the log, not to the renderer.
+  expect(logError).toHaveBeenCalledWith("session:reopen", secret);
+});
+
+test("a successful reopen logs nothing", async () => {
+  const { call, logError } = setup();
+  await expect(call(CH.sessionReopen, REQ)).resolves.toEqual({ ok: true });
+  expect(logError).not.toHaveBeenCalled();
+});
+
 test("session:reopen resolves (never rejects) on a malformed req from a trusted sender", async () => {
   // A null/undefined req throws at destructuring (inside the guard-scoped try);
   // the handler must map that to a ReopenResult, not reject the invoke — the

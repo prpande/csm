@@ -117,7 +117,7 @@ independently testable units.
 | `sessionStore` | main | Tiered scan, read files, call parser, cache by mtime | `fs`, `pathAdapter`, `sessionParser` |
 | `terminalLauncher` | main | OS-aware: build launch command + spawn terminal at cwd | `child_process` (win/mac strategies behind one interface) |
 | `settingsStore` | main | Read/write `settings.json` in Electron `userData` | `fs` |
-| `ipc` (preload bridge) | preload | Expose `listSessions()` (streaming), `openSession(id)`, settings get/set (+ later `deleteSession`) | the above |
+| `ipc` (preload bridge) | preload | Expose `listSessions(listener)` (streaming), `reopenSession(req: { cwd, sessionId, mode })` → `{ ok: true } \| { ok: false, code }`, settings get/set (+ later `deleteSession`) | the above |
 | `Sidebar` / tree | renderer | Expandable file tree of folders | IPC |
 | `FolderHeader` + `SessionList` + `SessionRow` | renderer | Right-pane folder view | IPC |
 
