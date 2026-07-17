@@ -121,6 +121,22 @@ test("every setter writes the same format, and only its own key", async () => {
   );
 });
 
+test("overwriting a key keeps its position — it does not move to the end", async () => {
+  // The load-bearing case for "no format change", and the only one where a
+  // computed key `{...base, [key]: v}` could plausibly differ from the literal
+  // `{...base, theme: v}` it replaced. Assigning an existing key updates it in
+  // place, so `theme` must stay in slot 1 rather than being re-appended after
+  // `indexEnabled`. Every other format test only ever ADDS a key, which cannot
+  // observe this.
+  writeSettings(JSON.stringify({ theme: "dark", terminalPreference: "iterm" }));
+  const store = createSettingsStore(dir);
+  await store.setTheme("light");
+
+  expect(readFileSync(join(dir, SETTINGS_FILE), "utf8")).toBe(
+    '{\n  "theme": "light",\n  "terminalPreference": "iterm"\n}\n',
+  );
+});
+
 test("setClaudePath creates settings.json when the dir starts empty", async () => {
   expect(readdirSync(dir)).toEqual([]);
   const store = createSettingsStore(dir);
