@@ -160,6 +160,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         });
         return { ok: true };
       } catch (err) {
+        // The code is all the renderer gets, by design — so the cause lives on
+        // only here (#147). Matters most for the SPAWN_FAILED bucket, which is
+        // also where any unexpected throw lands.
+        logError("session:reopen", err);
         return { ok: false, code: reopenCodeOf(err) };
       }
     },
