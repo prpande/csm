@@ -14,8 +14,9 @@ import { join } from "node:path";
 import {
   reopenSession,
   buildPlainCmdArgs,
-  buildWtWrappedArgs,
+  buildWtArgs,
   assertNoCmdMetachars,
+  assertNoWtMetachars,
   cwdExists,
   UnsupportedOsError,
   FolderMissingError,
@@ -153,6 +154,19 @@ test("win32: any wt error (not just ENOENT) falls back to cmd", async () => {
   const { spawn, calls } = fakeSpawn([{ errorCode: "EACCES" }, "spawn"]);
   await reopenSession(req(), { spawn, cwdExists: alwaysExists });
   expect(calls.map((c) => c.file)).toEqual(["wt.exe", "cmd.exe"]);
+});
+
+test("win32: a ';' in the cwd is rejected before any spawn (wt injection guard)", async () => {
+  // wt.exe would split its command line on the ';' and run a second command, so
+  // a cwd like this must never reach the wt argv — reject as UNSAFE_PATH.
+  const { spawn, calls } = fakeSpawn(["spawn"]);
+  await expect(
+    reopenSession(req({ cwd: "C:\\work;calc" }), {
+      spawn,
+      cwdExists: alwaysExists,
+    }),
+  ).rejects.toMatchObject({ code: "UNSAFE_PATH" });
+  expect(calls).toHaveLength(0);
 });
 
 test("win32: wt and cmd both fail → SpawnFailedError, no throw escapes", async () => {
@@ -309,8 +323,9 @@ test("default deps are wired: a missing cwd rejects FolderMissingError without s
 // Pure helpers (used by the integration block and by callers)
 // ---------------------------------------------------------------------------
 
-test("buildPlainCmdArgs / buildWtWrappedArgs shapes", () => {
-  expect(buildPlainCmdArgs(VALID_ID, "plan", "claude")).toEqual([
+test("buildPlainCmdArgs / buildWtArgs shapes", () => {
+  const tail = buildPlainCmdArgs(VALID_ID, "plan", "claude");
+  expect(tail).toEqual([
     "/k",
     "claude",
     "--resume",
@@ -318,7 +333,8 @@ test("buildPlainCmdArgs / buildWtWrappedArgs shapes", () => {
     "--permission-mode",
     "plan",
   ]);
-  expect(buildWtWrappedArgs("C:\\w", VALID_ID, "plan", "claude")).toEqual([
+  // buildWtArgs wraps ANY cmd tail — the shape spawnWindowsTerminal spawns.
+  expect(buildWtArgs("C:\\w", tail)).toEqual([
     "new-tab",
     "-d",
     "C:\\w",
@@ -330,6 +346,19 @@ test("buildPlainCmdArgs / buildWtWrappedArgs shapes", () => {
     "--permission-mode",
     "plan",
   ]);
+});
+
+test("assertNoWtMetachars rejects only a ';' (wt command separator)", () => {
+  expect(() =>
+    assertNoWtMetachars("C:\\Program Files (x86)\\a", "cwd"),
+  ).not.toThrow();
+  expect(() =>
+    assertNoWtMetachars("C:\\ok\\claude.cmd", "claudePath"),
+  ).not.toThrow();
+  expect(() => assertNoWtMetachars("C:\\a;calc", "cwd")).toThrow(
+    UnsafePathError,
+  );
+  expect(() => assertNoWtMetachars("foo;bar", "argument")).toThrow(/wt\.exe/);
 });
 
 test("assertNoCmdMetachars throws UnsafePathError only on metacharacters", () => {

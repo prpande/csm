@@ -129,6 +129,41 @@ describe("launchNewSession — win32", () => {
     },
   );
 
+  test("gates ';' in an arg token — wt.exe would run it as a second command", async () => {
+    const { spawn, calls } = fakeSpawn();
+    const err = await launchNewSession(
+      { ...REQ, rawArgs: "foo ; calc" },
+      { spawn, cwdExists: exists },
+    ).catch((e: unknown) => e);
+    expect((err as InvalidArgsError).code).toBe("INVALID_ARGS");
+    expect((err as InvalidArgsError).detail).toContain(";");
+    expect(calls).toHaveLength(0);
+  });
+
+  test("gates ';' in the claudePath at the wt chokepoint (UNSAFE_PATH)", async () => {
+    // ';' is not a CMD_METACHAR, so it slips past assertNoCmdMetachars — the
+    // spawnWindowsTerminal backstop catches it before the wt argv is built.
+    const { spawn, calls } = fakeSpawn();
+    await expect(
+      launchNewSession(
+        { ...REQ, claudePath: "C:\\a;calc\\claude.cmd" },
+        { spawn, cwdExists: exists },
+      ),
+    ).rejects.toMatchObject({ code: "UNSAFE_PATH" });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("gates ';' in the cwd (UNSAFE_PATH), spawning nothing", async () => {
+    const { spawn, calls } = fakeSpawn();
+    await expect(
+      launchNewSession(
+        { ...REQ, cwd: "C:\\work;calc" },
+        { spawn, cwdExists: exists },
+      ),
+    ).rejects.toMatchObject({ code: "UNSAFE_PATH" });
+    expect(calls).toHaveLength(0);
+  });
+
   test("rejects a quoted (whitespace-carrying) token on Windows", async () => {
     const { spawn, calls } = fakeSpawn();
     await expect(
@@ -196,6 +231,15 @@ describe("launchNewSession — darwin", () => {
     expect(calls[0].args[0]).toBe("-e");
     expect(calls[0].args[1]).toContain("--permission-mode default");
     expect(calls[0].args[1]).toContain("'be brief'");
+  });
+
+  test("allows ';' in a macOS arg — single-quoting keeps it literal (no wt here)", async () => {
+    const { spawn, calls } = fakeSpawn();
+    await launchNewSession(
+      { ...REQ, rawArgs: "--prompt echo;ls" },
+      { spawn, cwdExists: exists },
+    );
+    expect(calls[0].args[1]).toContain("'echo;ls'");
   });
 });
 

@@ -16,7 +16,6 @@ import type { ReopenRequest } from "./reopenSession";
 import type { NewSessionRequest, OpenTerminalRequest } from "./newSession";
 import type { LaunchOS } from "./terminalLauncher";
 import type {
-  NewSessionErrorCode,
   NewSessionResult,
   NewSessionRequestDto,
   PickFolderResult,
@@ -83,28 +82,34 @@ export interface IpcHandlerDeps {
   now: () => number;
 }
 
-// Map a thrown reopen error to its stable code; an unexpected (non-typed) throw
-// is bucketed as SPAWN_FAILED. error.message is deliberately never read.
-function reopenCodeOf(err: unknown): ReopenErrorCode {
+// Narrow a thrown error's `code` to a known enum value, bucketing anything
+// unexpected (non-typed throw, foreign code) as SPAWN_FAILED. error.message is
+// deliberately never read — it may embed an untrusted path. One helper so the
+// reopen and new-session mappings can't drift on the fallback logic.
+function codeFromError<T extends string>(
+  err: unknown,
+  allowed: readonly T[],
+  fallback: T,
+): T {
   const code = (err as { code?: unknown } | null | undefined)?.code;
   return typeof code === "string" &&
-    (REOPEN_ERROR_CODES as readonly string[]).includes(code)
-    ? (code as ReopenErrorCode)
-    : "SPAWN_FAILED";
+    (allowed as readonly string[]).includes(code)
+    ? (code as T)
+    : fallback;
+}
+
+function reopenCodeOf(err: unknown): ReopenErrorCode {
+  return codeFromError(err, REOPEN_ERROR_CODES, "SPAWN_FAILED");
 }
 
 // Same mapping for the new-session flow (#165), whose enum adds INVALID_ARGS.
 // Only INVALID_ARGS carries a display detail (the offending token — a field the
 // error class marks display-safe); every other message stays main-side only.
 function newSessionFailureOf(err: unknown): NewSessionResult {
-  const e = err as { code?: unknown; detail?: unknown } | null | undefined;
-  const code =
-    typeof e?.code === "string" &&
-    (NEW_SESSION_ERROR_CODES as readonly string[]).includes(e.code)
-      ? (e.code as NewSessionErrorCode)
-      : "SPAWN_FAILED";
-  if (code === "INVALID_ARGS" && typeof e?.detail === "string") {
-    return { ok: false, code, detail: e.detail };
+  const code = codeFromError(err, NEW_SESSION_ERROR_CODES, "SPAWN_FAILED");
+  const detail = (err as { detail?: unknown } | null | undefined)?.detail;
+  if (code === "INVALID_ARGS" && typeof detail === "string") {
+    return { ok: false, code, detail };
   }
   return { ok: false, code };
 }

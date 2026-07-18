@@ -19,6 +19,7 @@ import {
 } from "./terminalLauncher";
 import {
   CMD_METACHARS,
+  WT_METACHARS,
   FolderMissingError,
   UnsupportedOsError,
   assertNoCmdMetachars,
@@ -71,10 +72,13 @@ function tokenizeOrThrow(rawArgs: string): string[] {
 }
 
 // A surviving token must never force Node's argv quoting (whitespace — only
-// reachable via a quoted span) nor carry a cmd.exe first-parser metacharacter:
-// either would hand cmd's re-parse something we cannot reason about. Charset
-// restriction, never escaping.
-function assertTokensSafeForCmd(tokens: readonly string[]): void {
+// reachable via a quoted span), carry a cmd.exe first-parser metacharacter, or
+// carry wt.exe's `;` command separator: any of the three would hand a re-parse
+// (cmd's or wt's) something we cannot reason about. Charset restriction, never
+// escaping. Windows-only — macOS single-quotes each token, so `;` and friends
+// are literal there. The spawnWindowsTerminal chokepoint re-checks `;` as a
+// backstop; this runs first so the user gets a precise, actionable message.
+function assertTokensSafeForWindows(tokens: readonly string[]): void {
   for (const token of tokens) {
     if (/\s/.test(token)) {
       throw new InvalidArgsError(
@@ -84,6 +88,11 @@ function assertTokensSafeForCmd(tokens: readonly string[]): void {
     if (CMD_METACHARS.test(token)) {
       throw new InvalidArgsError(
         `argument contains a cmd.exe metacharacter: ${token}`,
+      );
+    }
+    if (WT_METACHARS.test(token)) {
+      throw new InvalidArgsError(
+        `argument contains ';', which Windows Terminal runs as a command separator: ${token}`,
       );
     }
   }
@@ -113,7 +122,7 @@ export async function launchNewSession(
   }
   if (os === "win32") {
     assertNoCmdMetachars(claudePath);
-    assertTokensSafeForCmd(extra);
+    assertTokensSafeForWindows(extra);
     await spawnWindowsTerminal(
       spawn,
       cwd,

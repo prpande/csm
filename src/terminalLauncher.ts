@@ -56,6 +56,18 @@ export function assertLaunchInputs(
   if (!UUID_RE.test(sessionId)) {
     throw new Error("Invalid sessionId: expected a UUID");
   }
+  assertModeAndPaths(cwd, mode, claudePath);
+}
+
+// The mode-allowlist + cwd/claudePath checks shared by the reopen and
+// new-session validators. Factored out so the two entry points genuinely cannot
+// drift (the same body, not a copy): reopen adds the UUID gate on top, the new
+// session flow uses this alone.
+function assertModeAndPaths(
+  cwd: string,
+  mode: string,
+  claudePath: string,
+): void {
   // Reuse the parser's canonical set (it produces `mode`) so the two can't drift.
   // `mode` is typed `string` because it can arrive un-parsed via the bypass-modal
   // downgrade IPC path — the cast only satisfies Set.has; membership is the gate.
@@ -84,11 +96,7 @@ export function assertNewSessionInputs(
   mode: string,
   claudePath: string,
 ): void {
-  if (!KNOWN_PERMISSION_MODES.has(mode as PermissionMode)) {
-    throw new Error(`Invalid permissionMode: ${mode}`);
-  }
-  assertPathish(cwd, "cwd");
-  assertPathish(claudePath, "claudePath");
+  assertModeAndPaths(cwd, mode, claudePath);
 }
 
 // Tokenizer for the new-session modal's free-form CLI arguments (#165). Splits

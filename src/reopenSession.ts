@@ -88,11 +88,31 @@ export class SpawnFailedError extends Error {
 // use the SAME charset so the two cannot drift.
 export const CMD_METACHARS = /[&|<>^%!"]/;
 
+// wt.exe's OWN parser is a SEPARATE hazard from cmd.exe's. Windows Terminal
+// re-parses its flat command line and treats `;` as a COMMAND delimiter: a `;`
+// anywhere in the wt argv — even inside one Node-discrete element, since libuv
+// joins argv into a single string for the Win32 API — starts a second wt
+// command (e.g. a new tab running an arbitrary program). CMD_METACHARS does not
+// cover this. Every value that reaches the wt argv (cwd via `-d`, claudePath,
+// each user arg) is gated against this; `;` has no legitimate use in a path or a
+// claude arg that must survive to the shell intact.
+export const WT_METACHARS = /;/;
+
 /** Reject a claudePath that would perturb cmd.exe's re-parse (§3.3). */
 export function assertNoCmdMetachars(claudePath: string): void {
   if (CMD_METACHARS.test(claudePath)) {
     throw new UnsafePathError(
       `claudePath contains a cmd.exe metacharacter: ${claudePath}`,
+    );
+  }
+}
+
+/** Reject a value that would inject a second wt.exe command via a bare/embedded
+ * `;`. Applied to everything landing in the wt argv, for both flows (#165). */
+export function assertNoWtMetachars(value: string, name: string): void {
+  if (WT_METACHARS.test(value)) {
+    throw new UnsafePathError(
+      `${name} contains a wt.exe command separator ';': ${value}`,
     );
   }
 }
@@ -107,21 +127,14 @@ export function buildPlainCmdArgs(
   return ["/k", claudePath, "--resume", sessionId, "--permission-mode", mode];
 }
 
-// wt wraps the SAME cmd.exe invocation; `-d <cwd>` is wt's start-directory (an OS
-// API parameter to the tab's shell, not a re-parsed string — cwd metachars inert).
-export function buildWtWrappedArgs(
-  cwd: string,
-  sessionId: string,
-  mode: string,
-  claudePath: string,
-): string[] {
-  return [
-    "new-tab",
-    "-d",
-    cwd,
-    "cmd.exe",
-    ...buildPlainCmdArgs(sessionId, mode, claudePath),
-  ];
+// The wt.exe wrapper argv: a new tab started in `cwd` running `cmd.exe
+// <cmdTail…>`. Pure so the exact shape stays unit-tested on the LIVE path
+// (spawnWindowsTerminal calls this). `new-tab` MUST lead, else wt parses the
+// trailing cmdTail as its own options. `-d <cwd>` is wt's start-directory API
+// parameter (not a re-parsed string), so the `cwd` here is inert to cmd.exe —
+// but NOT to wt's own `;` splitter, which spawnWindowsTerminal gates.
+export function buildWtArgs(cwd: string, cmdTail: readonly string[]): string[] {
+  return ["new-tab", "-d", cwd, "cmd.exe", ...cmdTail];
 }
 
 /** True only when `cwd` exists AND is a directory (a file/missing path → false). */
@@ -217,13 +230,16 @@ export async function spawnWindowsTerminal(
   cwd: string,
   cmdTail: readonly string[],
 ): Promise<void> {
+  // Backstop for BOTH flows at the single chokepoint where the wt argv is built:
+  // nothing reaching it may carry wt's `;` command separator. The wt attempt is
+  // the default success path, so this must run before either spawn — and because
+  // the fallback dynamically picks wt OR cmd, we gate for the stricter (wt) case
+  // regardless. cmd.exe's own re-parse is gated separately by CMD_METACHARS /
+  // the per-token arg gate at the call sites.
+  assertNoWtMetachars(cwd, "cwd");
+  for (const part of cmdTail) assertNoWtMetachars(part, "argument");
   try {
-    await trySpawn(
-      spawn,
-      "wt.exe",
-      ["new-tab", "-d", cwd, "cmd.exe", ...cmdTail],
-      cwd,
-    );
+    await trySpawn(spawn, "wt.exe", buildWtArgs(cwd, cmdTail), cwd);
     return;
   } catch {
     // fall through to the plain cmd.exe window

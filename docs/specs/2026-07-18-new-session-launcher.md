@@ -112,8 +112,14 @@ does; the renderer never sends it.
 - **I1**: every spawn is `shell: false` with discrete argv.
 - **I2**: `cwd` never appears inside a cmd.exe-re-parsed string; it travels as
   the spawn `cwd` option (and as wt's `-d`, an OS-API parameter).
-- **I3**: cmd.exe re-parse safety is by **charset restriction** (per-token
-  `CMD_METACHARS` gate), never by escaping.
+- **I3**: Windows re-parse safety is by **charset restriction**, never by
+  escaping — and there are TWO re-parsers to gate, not one. cmd.exe's first
+  parser is gated by `CMD_METACHARS` (`/[&|<>^%!"]/`), applied per argument
+  token and to `claudePath`. Windows Terminal has its OWN parser that treats
+  `;` as a command separator (a `;` anywhere in the wt argv starts a second wt
+  command), so `WT_METACHARS` (`/;/`) additionally gates every value reaching
+  the wt argv — `cwd` (via `-d`), `claudePath`, and each arg token — at the
+  shared `spawnWindowsTerminal` chokepoint, covering the reopen flow too.
 - **I4**: macOS escaping order is fixed: per-value `shellSingleQuote` first,
   whole-line `appleScriptEscape` second.
 - **I5**: all validation errors cross IPC as stable `code`s; raw
