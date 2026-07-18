@@ -10,3 +10,34 @@
   flex: 1 1 auto;
   min-height: 0;
 }
+
+/* Splitter (#164): the 1px divider between sidebar and pane IS the drag
+   handle — it replaces the sidebar's old border-right so there is exactly one
+   divider line. ::after widens the hit target to 7px without occupying layout
+   space (pointer events on a pseudo-element land on its element). */
+.splitter {
+  flex: 0 0 1px;
+  position: relative;
+  background: var(--border);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.splitter::after {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+  z-index: 1;
+}
+
+.splitter:hover,
+.splitter[data-dragging] {
+  background: var(--accent);
+}
+
+/* Keyboard-only ring, consistent with the rest of the app. The outline wraps
+   the 1px strip, so the visible affordance is ~5px wide — enough to find. */
+.splitter:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}

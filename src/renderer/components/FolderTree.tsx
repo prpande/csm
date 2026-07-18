@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { memo, useRef } from "react";
 import { flushSync } from "react-dom";
 import {
   flattenVisible,
@@ -25,13 +25,20 @@ interface FolderTreeProps {
    *  expansion/selection, so it survives a buildTree rebuild between batches. */
   focusedPath: string | null;
   onFocusNode: (path: string) => void;
+  /** Char budget for compacted chain labels, derived from the resizable
+   *  sidebar width (#164) so widening the sidebar reveals longer labels.
+   *  Quantized upstream, so it changes rarely mid-drag and the memo holds. */
+  labelBudget?: number;
 }
 
 // Left sidebar: the expandable folder tree over the #64 view-model. Renders the
 // named roots, then the pinned "(unknown)" group last (spec §9). Shows a
 // streaming indicator while lower tiers load, and a friendly empty state once a
 // completed scan turns up nothing (spec §12).
-export function FolderTree({
+// Memoized (#164): FolderBrowser re-renders on every pointermove of a splitter
+// drag; all props here are referentially stable across those renders, so memo
+// skips re-walking the visible tree per frame.
+export const FolderTree = memo(function FolderTree({
   tree,
   status,
   expandedPaths,
@@ -42,6 +49,7 @@ export function FolderTree({
   onToggleDeclutter,
   focusedPath,
   onFocusNode,
+  labelBudget,
 }: FolderTreeProps) {
   const isEmpty = tree.roots.length === 0 && tree.unknown === null;
 
@@ -136,6 +144,7 @@ export function FolderTree({
             onSelect={onSelect}
             focusedPath={focusedPath}
             onFocusNode={onFocusNode}
+            labelBudget={labelBudget}
           />
         ))}
         {/* Pinned last (spec §9) — flattenVisible mirrors this, so Down from the
@@ -151,6 +160,7 @@ export function FolderTree({
             onSelect={onSelect}
             focusedPath={focusedPath}
             onFocusNode={onFocusNode}
+            labelBudget={labelBudget}
           />
         )}
       </ul>
@@ -183,4 +193,4 @@ export function FolderTree({
       )}
     </nav>
   );
-}
+});

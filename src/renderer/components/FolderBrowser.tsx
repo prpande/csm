@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSessionScan } from "../hooks/useSessionScan";
 import { useReopen } from "../hooks/useReopen";
+import { useSidebarWidth } from "../hooks/useSidebarWidth";
 import { findFolder, flattenVisible, type FolderNode } from "../../sessionTree";
+import type { SessionMetadata } from "../../sessionParser";
+import { SIDEBAR_MIN_WIDTH, maxSidebarWidth } from "../../sidebarWidth";
+import { pathLabelBudget } from "../pathLabel";
 import { TitleBar } from "./TitleBar";
 import { FolderTree } from "./FolderTree";
 import { FolderPane } from "./FolderPane";
@@ -41,6 +45,18 @@ export function FolderBrowser() {
   // already been seeded so a re-streamed root (a refresh, or a root that spans
   // tiers) does not undo the user's manual collapses by re-expanding.
   const seededRoots = useRef<Set<string>>(new Set());
+  // Resizable sidebar (#164): all state and handlers live in the hook; this
+  // component only wires them onto the separator element below.
+  const {
+    sidebarWidth,
+    windowWidth,
+    dragging: draggingSplitter,
+    onSplitterPointerDown,
+    onSplitterPointerMove,
+    endSplitterDrag,
+    onSplitterKeyDown,
+    resetSplitter,
+  } = useSidebarWidth();
 
   useEffect(() => {
     const fresh = tree.roots
@@ -95,6 +111,15 @@ export function FolderBrowser() {
     if (toast) setSavedMessage(null);
   }, [toast]);
 
+  // Stable identity so FolderPane's memo holds through per-frame splitter-drag
+  // renders — an inline closure would re-render the pane on every frame.
+  const openSession = useCallback(
+    (session: SessionMetadata) => {
+      if (!settingsOpen) void requestReopen(session);
+    },
+    [settingsOpen, requestReopen],
+  );
+
   // "Focus lands on the tree on load" (spec §9), implemented as: the tree's
   // roving tab stop is seeded and ready — NOT as stealing the user's focus.
   // This seeds STATE only; TreeNode pulls real DOM focus solely when the tree
@@ -122,7 +147,13 @@ export function FolderBrowser() {
   // 0-session intermediate) — only ownCount>0 folders are selectable, matching
   // TreeNode — so the pane self-clears to the empty state instead of showing a
   // stale "0 sessions" header the tree can't highlight or clear.
-  const resolved = selectedPath ? findFolder(tree, selectedPath) : null;
+  // Memoized like `visible` above: a splitter drag re-renders this component
+  // per pointermove, and an inline findFolder would re-walk the whole tree on
+  // every frame for an unchanged selection.
+  const resolved = useMemo(
+    () => (selectedPath ? findFolder(tree, selectedPath) : null),
+    [tree, selectedPath],
+  );
   const selected = resolved && resolved.ownCount > 0 ? resolved : null;
 
   return (
@@ -132,7 +163,12 @@ export function FolderBrowser() {
         refreshing={scanning}
         onOpenSettings={openSettings}
       />
-      <div className={styles.body}>
+      <div
+        className={styles.body}
+        style={
+          { "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties
+        }
+      >
         <FolderTree
           tree={tree}
           status={status}
@@ -144,14 +180,34 @@ export function FolderBrowser() {
           onToggleDeclutter={toggleDeclutter}
           focusedPath={focusedPath}
           onFocusNode={setFocusedPath}
+          labelBudget={pathLabelBudget(sidebarWidth)}
+        />
+        {/* APG window-splitter (#164): a real value-bearing separator, in the
+            Tab order, arrows/Home/End on the keyboard, drag on the pointer.
+            It IS the visual divider (the sidebar's old border-right), with a
+            widened invisible hit area in CSS. */}
+        <div
+          className={styles.splitter}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the folder sidebar"
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={maxSidebarWidth(windowWidth)}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          data-dragging={draggingSplitter || undefined}
+          onPointerDown={onSplitterPointerDown}
+          onPointerMove={onSplitterPointerMove}
+          onPointerUp={endSplitterDrag}
+          onLostPointerCapture={endSplitterDrag}
+          onDoubleClick={resetSplitter}
+          onKeyDown={onSplitterKeyDown}
         />
         <FolderPane
           selected={selected}
           onRefreshFolder={refresh}
           refreshDisabled={scanning}
-          onOpen={(session) => {
-            if (!settingsOpen) void requestReopen(session);
-          }}
+          onOpen={openSession}
         />
       </div>
       {pendingBypass && (

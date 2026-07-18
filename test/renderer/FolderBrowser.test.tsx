@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   render,
   screen,
@@ -531,5 +531,219 @@ describe("FolderBrowser", () => {
     expect(within(ownRow).queryByTestId("git-repo-marker")).toBe(null);
     // ...while the repo children below it ARE marked.
     expect(screen.getAllByTestId("git-repo-marker")).toHaveLength(2);
+  });
+
+  // ---- #164: resizable sidebar splitter -------------------------------------
+  // The width math (clamp/restore/keyboard) is unit-tested in
+  // test/main/sidebarWidth.test.ts. These assert the WIRING: the separator's
+  // ARIA value semantics, that gestures reach the pure map, persistence, and
+  // the CSS variable the sidebar consumes. jsdom applies no stylesheets, so
+  // the inline --sidebar-width on the flex row is the observable width.
+
+  describe("sidebar splitter (#164)", () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+    afterEach(() => {
+      // The re-clamp test shrinks the window; every other test assumes the
+      // jsdom default (1024 -> max 614).
+      window.innerWidth = 1024;
+    });
+
+    const splitter = () =>
+      screen.getByRole("separator", { name: /resize the folder sidebar/i });
+
+    it("renders a focusable vertical separator with value semantics", () => {
+      renderScanned([]);
+      const sep = splitter();
+      expect(sep.getAttribute("aria-orientation")).toBe("vertical");
+      expect(sep.getAttribute("tabindex")).toBe("0");
+      expect(sep.getAttribute("aria-valuenow")).toBe("260");
+      expect(sep.getAttribute("aria-valuemin")).toBe("160");
+      // jsdom window is 1024 wide -> max = round(1024 * 0.6).
+      expect(sep.getAttribute("aria-valuemax")).toBe("614");
+    });
+
+    it("ArrowRight/ArrowLeft resize by a step and persist the width", () => {
+      renderScanned([]);
+      fireEvent.keyDown(splitter(), { key: "ArrowRight" });
+      expect(splitter().getAttribute("aria-valuenow")).toBe("276");
+      expect(localStorage.getItem("csm.sidebar-width")).toBe("276");
+
+      fireEvent.keyDown(splitter(), { key: "ArrowLeft" });
+      expect(splitter().getAttribute("aria-valuenow")).toBe("260");
+      expect(localStorage.getItem("csm.sidebar-width")).toBe("260");
+    });
+
+    it("Home/End jump to min/max", () => {
+      renderScanned([]);
+      fireEvent.keyDown(splitter(), { key: "Home" });
+      expect(splitter().getAttribute("aria-valuenow")).toBe("160");
+      fireEvent.keyDown(splitter(), { key: "End" });
+      expect(splitter().getAttribute("aria-valuenow")).toBe("614");
+    });
+
+    it("does not swallow keys it doesn't own, so Tab can leave", () => {
+      renderScanned([]);
+      const e = createEvent.keyDown(splitter(), { key: "Tab" });
+      fireEvent(splitter(), e);
+      expect(e.defaultPrevented).toBe(false);
+    });
+
+    it("feeds the width to the sidebar via the CSS variable", () => {
+      renderScanned([]);
+      const body = splitter().parentElement!;
+      expect(body.style.getPropertyValue("--sidebar-width")).toBe("260px");
+      fireEvent.keyDown(splitter(), { key: "ArrowRight" });
+      expect(body.style.getPropertyValue("--sidebar-width")).toBe("276px");
+    });
+
+    it("restores a persisted width on mount, clamped to the window", () => {
+      localStorage.setItem("csm.sidebar-width", "320");
+      renderScanned([]);
+      expect(splitter().getAttribute("aria-valuenow")).toBe("320");
+    });
+
+    it("clamps an out-of-range persisted width on mount", () => {
+      localStorage.setItem("csm.sidebar-width", "5000");
+      renderScanned([]);
+      expect(splitter().getAttribute("aria-valuenow")).toBe("614");
+    });
+
+    it("falls back to the default on a corrupt persisted value", () => {
+      localStorage.setItem("csm.sidebar-width", "garbage");
+      renderScanned([]);
+      expect(splitter().getAttribute("aria-valuenow")).toBe("260");
+    });
+
+    it("drag resizes relative to the pointer-down origin and persists on move", () => {
+      renderScanned([]);
+      const sep = splitter();
+      fireEvent.pointerDown(sep, { clientX: 260, pointerId: 1 });
+      fireEvent.pointerMove(sep, { clientX: 320, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("320");
+
+      // Still the SAME drag: the delta is against the down-origin, not the
+      // previous move, so a jittery pointer can't accumulate rounding drift.
+      fireEvent.pointerMove(sep, { clientX: 300, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("300");
+
+      fireEvent.pointerUp(sep, { pointerId: 1 });
+      expect(localStorage.getItem("csm.sidebar-width")).toBe("300");
+
+      // After release, a stray move must not resize.
+      fireEvent.pointerMove(sep, { clientX: 500, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("300");
+    });
+
+    it("clamps a drag that outruns the max", () => {
+      renderScanned([]);
+      const sep = splitter();
+      fireEvent.pointerDown(sep, { clientX: 260, pointerId: 1 });
+      fireEvent.pointerMove(sep, { clientX: 5000, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("614");
+    });
+
+    it("double-click resets to the default width", () => {
+      renderScanned([]);
+      fireEvent.keyDown(splitter(), { key: "End" });
+      expect(splitter().getAttribute("aria-valuenow")).toBe("614");
+      fireEvent.dblClick(splitter());
+      expect(splitter().getAttribute("aria-valuenow")).toBe("260");
+      expect(localStorage.getItem("csm.sidebar-width")).toBe("260");
+    });
+
+    it("Enter resets to the default width from the keyboard", () => {
+      renderScanned([]);
+      fireEvent.keyDown(splitter(), { key: "End" });
+      expect(splitter().getAttribute("aria-valuenow")).toBe("614");
+      fireEvent.keyDown(splitter(), { key: "Enter" });
+      expect(splitter().getAttribute("aria-valuenow")).toBe("260");
+      expect(localStorage.getItem("csm.sidebar-width")).toBe("260");
+    });
+
+    it("re-clamps the width when the window shrinks under it", () => {
+      renderScanned([]);
+      fireEvent.keyDown(splitter(), { key: "End" }); // 614
+      act(() => {
+        window.innerWidth = 500;
+        fireEvent(window, new Event("resize"));
+      });
+      // max is now round(500 * 0.6) = 300; the width and the announced range follow.
+      expect(splitter().getAttribute("aria-valuenow")).toBe("300");
+      expect(splitter().getAttribute("aria-valuemax")).toBe("300");
+    });
+
+    it("a second pointer cannot hijack or end an active drag", () => {
+      renderScanned([]);
+      const sep = splitter();
+      fireEvent.pointerDown(sep, { clientX: 260, pointerId: 1 });
+      fireEvent.pointerMove(sep, { clientX: 300, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("300");
+
+      // A stray second pointer (a touch on the widened hit area) lands
+      // mid-drag: its down must not re-seed the origin, its moves must not
+      // steer, and its up must not end pointer 1's drag.
+      fireEvent.pointerDown(sep, { clientX: 500, pointerId: 2 });
+      fireEvent.pointerMove(sep, { clientX: 520, pointerId: 2 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("300");
+      fireEvent.pointerUp(sep, { pointerId: 2 });
+
+      // Pointer 1 still drags against ITS original origin, and its up ends it.
+      fireEvent.pointerMove(sep, { clientX: 340, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("340");
+      fireEvent.pointerUp(sep, { pointerId: 1 });
+      fireEvent.pointerMove(sep, { clientX: 400, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("340");
+    });
+
+    it("renders with the default width when reading storage throws", () => {
+      const spy = vi
+        .spyOn(Storage.prototype, "getItem")
+        .mockImplementation(() => {
+          throw new Error("storage disabled");
+        });
+      try {
+        renderScanned([]);
+        expect(splitter().getAttribute("aria-valuenow")).toBe("260");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("keeps resizing when persisting to storage throws", () => {
+      const spy = vi
+        .spyOn(Storage.prototype, "setItem")
+        .mockImplementation(() => {
+          throw new Error("quota exceeded");
+        });
+      try {
+        renderScanned([]);
+        fireEvent.keyDown(splitter(), { key: "ArrowRight" });
+        expect(splitter().getAttribute("aria-valuenow")).toBe("276");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("ignores a non-primary-button pointerdown (right-click is not a drag)", () => {
+      renderScanned([]);
+      const sep = splitter();
+      fireEvent.pointerDown(sep, { clientX: 260, pointerId: 1, button: 2 });
+      fireEvent.pointerMove(sep, { clientX: 320, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("260");
+    });
+
+    it("widening the sidebar reveals more of a long compacted label", () => {
+      // A single deep session compacts into one chain node whose label is the
+      // full path (#77) — 46 chars, past the default 36-char budget.
+      const longCwd = "D:\\alpha\\bravo\\charlie\\delta\\echo\\foxtrot\\golf";
+      renderScanned([sess("a", longCwd)]);
+      expect(screen.queryByText(longCwd)).toBe(null); // middle-elided at 260px
+      // End jumps to the max width; the width-derived budget now fits the
+      // whole label, so the row shows the full path.
+      fireEvent.keyDown(splitter(), { key: "End" });
+      expect(screen.getByText(longCwd)).toBeTruthy();
+    });
   });
 });

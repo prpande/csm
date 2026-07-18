@@ -1,10 +1,12 @@
+/* Width is driven by the resizable splitter (#164) via --sidebar-width on the
+   FolderBrowser flex row; the fallback keeps FolderTree renderable standalone
+   (tests, harnesses). The divider line lives on the splitter, not here. */
 .sidebar {
   display: flex;
   flex-direction: column;
-  width: 260px;
-  flex: 0 0 260px;
+  width: var(--sidebar-width, 260px);
+  flex: 0 0 var(--sidebar-width, 260px);
   background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
   overflow-y: auto;
   user-select: none;
 }

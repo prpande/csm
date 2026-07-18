@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { truncatePathLabel } from "../../src/renderer/pathLabel";
+import {
+  pathLabelBudget,
+  truncatePathLabel,
+} from "../../src/renderer/pathLabel";
 
 // truncatePathLabel is a pure string transform (no DOM), so plain vitest matchers
 // exercise it directly. It middle-truncates a #77 compacted folder label to keep
@@ -59,5 +62,28 @@ describe("truncatePathLabel", () => {
     // CSS end-ellipsis rather than emit a misleading "root…leaf".
     const label = "D:\\a-single-very-long-leaf-folder-name-with-no-middle";
     expect(truncatePathLabel(label)).toBe(label);
+  });
+});
+
+// The budget scales with the resizable sidebar (#164): anchored at the tuned
+// (260px → 36 chars) point, ~1 char per 7px, quantized to steps of 4.
+describe("pathLabelBudget", () => {
+  it("returns the tuned default at the default sidebar width", () => {
+    expect(pathLabelBudget(260)).toBe(36);
+  });
+
+  it("shrinks at the minimum width and grows when widened", () => {
+    expect(pathLabelBudget(160)).toBe(20);
+    expect(pathLabelBudget(600)).toBe(84);
+  });
+
+  it("is quantized so tiny drags reuse the same budget", () => {
+    // A few px either side of the default stays on the 36 plateau.
+    expect(pathLabelBudget(255)).toBe(36);
+    expect(pathLabelBudget(265)).toBe(36);
+  });
+
+  it("never drops below the floor", () => {
+    expect(pathLabelBudget(0)).toBe(16);
   });
 });
