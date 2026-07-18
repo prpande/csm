@@ -653,6 +653,15 @@ describe("FolderBrowser", () => {
       expect(localStorage.getItem("csm.sidebar-width")).toBe("260");
     });
 
+    it("Enter resets to the default width from the keyboard", () => {
+      renderScanned([]);
+      fireEvent.keyDown(splitter(), { key: "End" });
+      expect(splitter().getAttribute("aria-valuenow")).toBe("614");
+      fireEvent.keyDown(splitter(), { key: "Enter" });
+      expect(splitter().getAttribute("aria-valuenow")).toBe("260");
+      expect(localStorage.getItem("csm.sidebar-width")).toBe("260");
+    });
+
     it("re-clamps the width when the window shrinks under it", () => {
       renderScanned([]);
       fireEvent.keyDown(splitter(), { key: "End" }); // 614

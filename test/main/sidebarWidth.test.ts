@@ -89,9 +89,14 @@ describe("splitterKeyWidth", () => {
     expect(splitterKeyWidth("End", 300, 1000)).toBe(600);
   });
 
+  it("Enter restores the (clamped) default — the keyboard reset", () => {
+    expect(splitterKeyWidth("Enter", 500, 1000)).toBe(SIDEBAR_DEFAULT_WIDTH);
+    // A window too small for the default clamps it, same as every other path.
+    expect(splitterKeyWidth("Enter", 200, 300)).toBe(maxSidebarWidth(300));
+  });
+
   it("returns null for keys the splitter does not own", () => {
     expect(splitterKeyWidth("ArrowUp", 300, 1000)).toBe(null);
-    expect(splitterKeyWidth("Enter", 300, 1000)).toBe(null);
     expect(splitterKeyWidth("a", 300, 1000)).toBe(null);
   });
 });

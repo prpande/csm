@@ -43,9 +43,10 @@ export function restoreSidebarWidth(
 }
 
 /** Keyboard map for the focused splitter (APG window-splitter pattern): arrows
- * step, Home/End jump to the extremes. Null = not the splitter's key, so the
- * caller lets the event through (e.g. Tab). Left/Right only — the splitter is
- * vertical, so Up/Down have no spatial meaning here. */
+ * step, Home/End jump to the extremes, Enter restores the default — the
+ * keyboard twin of the double-click reset. Null = not the splitter's key, so
+ * the caller lets the event through (e.g. Tab). Left/Right only — the splitter
+ * is vertical, so Up/Down have no spatial meaning here. */
 export function splitterKeyWidth(
   key: string,
   width: number,
@@ -60,6 +61,8 @@ export function splitterKeyWidth(
       return SIDEBAR_MIN_WIDTH;
     case "End":
       return maxSidebarWidth(windowWidth);
+    case "Enter":
+      return clampSidebarWidth(SIDEBAR_DEFAULT_WIDTH, windowWidth);
     default:
       return null;
   }
