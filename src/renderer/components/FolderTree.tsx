@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { memo, useRef } from "react";
 import { flushSync } from "react-dom";
 import {
   flattenVisible,
@@ -31,7 +31,10 @@ interface FolderTreeProps {
 // named roots, then the pinned "(unknown)" group last (spec §9). Shows a
 // streaming indicator while lower tiers load, and a friendly empty state once a
 // completed scan turns up nothing (spec §12).
-export function FolderTree({
+// Memoized (#164): FolderBrowser re-renders on every pointermove of a splitter
+// drag; all props here are referentially stable across those renders, so memo
+// skips re-walking the visible tree per frame.
+export const FolderTree = memo(function FolderTree({
   tree,
   status,
   expandedPaths,
@@ -183,4 +186,4 @@ export function FolderTree({
       )}
     </nav>
   );
-}
+});

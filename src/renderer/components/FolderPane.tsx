@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { SessionMetadata } from "../../sessionParser";
 import type { FolderNode } from "../../sessionTree";
 import { SessionList } from "./SessionList";
@@ -17,7 +18,9 @@ interface FolderPaneProps {
 // Right pane shell. With no selection it shows a centered prompt and NO folder
 // header (spec §9). With a folder selected it shows the header (path + count +
 // per-folder refresh) and the virtualized session list (#66) filling the body.
-export function FolderPane({
+// Memoized (#164): same reason as FolderTree — skip the pane subtree during
+// per-frame splitter-drag renders (all props, incl. onOpen, are stable).
+export const FolderPane = memo(function FolderPane({
   selected,
   onRefreshFolder,
   refreshDisabled,
@@ -64,4 +67,4 @@ export function FolderPane({
       />
     </section>
   );
-}
+});
