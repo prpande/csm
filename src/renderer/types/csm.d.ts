@@ -3,6 +3,9 @@
 // `contextBridge.exposeInMainWorld("csm", …)` in src/preload.ts.
 
 import type {
+  NewSessionRequestDto,
+  NewSessionResult,
+  PickFolderResult,
   ReopenRequestDto,
   ReopenResult,
   SessionsListener,
@@ -48,6 +51,17 @@ export interface CsmBridge {
   /** Reopen a closed session; resolves to a discriminated result (never throws
    * an untrusted error message across IPC). */
   reopenSession(req: ReopenRequestDto): Promise<ReopenResult>;
+  /** Launch a NEW session in an arbitrary directory (#165). rawArgs is the
+   * modal's free-form argument string — tokenized and validated in main.
+   * Optional like windowControls/theme: absent in a plain browser / a unit
+   * test without the preload, so consumers must guard. */
+  newSession?(req: NewSessionRequestDto): Promise<NewSessionResult>;
+  /** Native directory picker (#165), for starting sessions in folders with no
+   * prior history. Optional — see newSession. */
+  pickFolder?(): Promise<PickFolderResult>;
+  /** The escape hatch (#165): a plain terminal cd'd into `cwd`. Optional — see
+   * newSession. */
+  openTerminalHere?(cwd: string): Promise<ReopenResult>;
   /** Batch fact fetch for enriched rows (#115). Always wired under the preload,
    *  like listSessions/reopenSession. */
   getFacts(ids: string[]): Promise<SessionFactsResult>;

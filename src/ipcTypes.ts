@@ -22,6 +22,35 @@ export const REOPEN_ERROR_CODES = [
 
 export type ReopenErrorCode = (typeof REOPEN_ERROR_CODES)[number];
 
+/** New-session failure codes (#165): the reopen codes plus INVALID_ARGS for a
+ * rejected argument string. Runtime array for the same allowlist-derivation
+ * reason as REOPEN_ERROR_CODES above. */
+export const NEW_SESSION_ERROR_CODES = [
+  ...REOPEN_ERROR_CODES,
+  "INVALID_ARGS",
+] as const;
+
+export type NewSessionErrorCode = (typeof NEW_SESSION_ERROR_CODES)[number];
+
+/** Discriminated result of a new-session launch. `detail` is present only for
+ * INVALID_ARGS: a display-safe reason naming the offending token, which the
+ * renderer must insert via textContent only. */
+export type NewSessionResult =
+  { ok: true } | { ok: false; code: NewSessionErrorCode; detail?: string };
+
+/** What the renderer supplies to launch a new session; os/claudePath are filled
+ * in by main (process.platform / settingsStore), never trusted from the
+ * renderer. `rawArgs` is tokenized and validated in main's pure layer. */
+export interface NewSessionRequestDto {
+  cwd: string;
+  mode: string;
+  rawArgs: string;
+}
+
+/** Result of the native directory picker (#165). */
+export type PickFolderResult =
+  { canceled: true } | { canceled: false; path: string };
+
 /** User theme preference (#86 theme switch). 'system' follows the OS theme via
  * Electron's nativeTheme.themeSource; 'light'/'dark' pin it. A runtime `as const`
  * array (not just a union) so the main-side bridge validates an untrusted renderer

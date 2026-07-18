@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   nativeTheme,
@@ -27,6 +28,7 @@ import { createSessionIndex } from "./sessionIndex";
 import { createBeforeQuitHandler } from "./quitFlush";
 import { createSettingsStore } from "./settingsStore";
 import { reopenSession } from "./reopenSession";
+import { launchNewSession, openTerminalHere } from "./newSession";
 import { defaultProjectsRoot, tempRoots } from "./pathAdapter";
 
 let mainWindow: BrowserWindow | null = null;
@@ -186,6 +188,20 @@ if (!gotLock) {
         createSessionStore(root, { index: sessionIndex }),
       settingsStore,
       reopen: reopenSession,
+      newSession: launchNewSession,
+      openTerminal: openTerminalHere,
+      // Native directory picker (#165). Parented to the main window so it is
+      // modal to the app; a destroyed window degrades to an unparented dialog.
+      pickFolder: async () => {
+        const opts = { properties: ["openDirectory" as const] };
+        const result =
+          mainWindow && !mainWindow.isDestroyed()
+            ? await dialog.showOpenDialog(mainWindow, opts)
+            : await dialog.showOpenDialog(opts);
+        return result.canceled || result.filePaths.length === 0
+          ? { canceled: true as const }
+          : { canceled: false as const, path: result.filePaths[0] };
+      },
       // The theme switch (#86) drives Electron's nativeTheme, which forces the
       // renderer's prefers-color-scheme (and native menus/dialogs) to the chosen
       // mode; injected here so ipc.ts stays Electron-free for unit tests.

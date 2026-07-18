@@ -13,13 +13,21 @@
 
 import type { ScanOptions, GroupedSessions } from "./sessionStore";
 import type { ReopenRequest } from "./reopenSession";
+import type { NewSessionRequest, OpenTerminalRequest } from "./newSession";
 import type { LaunchOS } from "./terminalLauncher";
 import type {
+  NewSessionResult,
+  NewSessionRequestDto,
+  PickFolderResult,
   ReopenErrorCode,
   ReopenResult,
   ReopenRequestDto,
 } from "./ipcTypes";
-import { REOPEN_ERROR_CODES, THEME_PREFERENCES } from "./ipcTypes";
+import {
+  NEW_SESSION_ERROR_CODES,
+  REOPEN_ERROR_CODES,
+  THEME_PREFERENCES,
+} from "./ipcTypes";
 import type { ThemePreference } from "./ipcTypes";
 import { DEFAULT_CLAUDE_PATH, DEFAULT_THEME } from "./settingsStore";
 import { CH } from "./ipcChannels";
@@ -50,6 +58,13 @@ export interface IpcHandlerDeps {
     setTheme(value: ThemePreference): Promise<void>;
   };
   reopen: (req: ReopenRequest) => Promise<void>;
+  /** New-session launcher (#165). Injected like `reopen` so the handlers stay
+   * unit-testable without spawning anything. */
+  newSession: (req: NewSessionRequest) => Promise<void>;
+  openTerminal: (req: OpenTerminalRequest) => Promise<void>;
+  /** Native directory picker (#165) — wraps dialog.showOpenDialog in main.ts so
+   * ipc.ts stays Electron-free for unit tests. */
+  pickFolder: () => Promise<PickFolderResult>;
   /** Apply a theme to Electron's nativeTheme.themeSource. Injected (not imported)
    * so the handlers stay unit-testable without an Electron runtime. */
   setNativeTheme: (source: ThemePreference) => void;
@@ -67,14 +82,36 @@ export interface IpcHandlerDeps {
   now: () => number;
 }
 
-// Map a thrown reopen error to its stable code; an unexpected (non-typed) throw
-// is bucketed as SPAWN_FAILED. error.message is deliberately never read.
-function reopenCodeOf(err: unknown): ReopenErrorCode {
+// Narrow a thrown error's `code` to a known enum value, bucketing anything
+// unexpected (non-typed throw, foreign code) as SPAWN_FAILED. error.message is
+// deliberately never read — it may embed an untrusted path. One helper so the
+// reopen and new-session mappings can't drift on the fallback logic.
+function codeFromError<T extends string>(
+  err: unknown,
+  allowed: readonly T[],
+  fallback: T,
+): T {
   const code = (err as { code?: unknown } | null | undefined)?.code;
   return typeof code === "string" &&
-    (REOPEN_ERROR_CODES as readonly string[]).includes(code)
-    ? (code as ReopenErrorCode)
-    : "SPAWN_FAILED";
+    (allowed as readonly string[]).includes(code)
+    ? (code as T)
+    : fallback;
+}
+
+function reopenCodeOf(err: unknown): ReopenErrorCode {
+  return codeFromError(err, REOPEN_ERROR_CODES, "SPAWN_FAILED");
+}
+
+// Same mapping for the new-session flow (#165), whose enum adds INVALID_ARGS.
+// Only INVALID_ARGS carries a display detail (the offending token — a field the
+// error class marks display-safe); every other message stays main-side only.
+function newSessionFailureOf(err: unknown): NewSessionResult {
+  const code = codeFromError(err, NEW_SESSION_ERROR_CODES, "SPAWN_FAILED");
+  const detail = (err as { detail?: unknown } | null | undefined)?.detail;
+  if (code === "INVALID_ARGS" && typeof detail === "string") {
+    return { ok: false, code, detail };
+  }
+  return { ok: false, code };
 }
 
 export function registerIpcHandlers(deps: IpcHandlerDeps): void {
@@ -84,6 +121,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     createSessionStore,
     settingsStore,
     reopen,
+    newSession,
+    openTerminal,
+    pickFolder,
     setNativeTheme,
     tempRoots,
     logError,
@@ -165,6 +205,72 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // also where any unexpected throw lands.
         logError("session:reopen", err);
         return { ok: false, code: reopenCodeOf(err) };
+      }
+    },
+  );
+
+  // new session (#165): same trust/error discipline as reopen — os from
+  // process.platform, claudePath from settingsStore, a malformed request or an
+  // unexpected throw maps to a result, never a rejection. INVALID_ARGS is the
+  // one code that carries a display detail (the offending token).
+  ipcMain.handle(
+    CH.sessionNew,
+    async (event, req): Promise<NewSessionResult> => {
+      if (!isTrustedSender(event.sender))
+        return { ok: false, code: "SPAWN_FAILED" };
+      try {
+        // Coerce every field of a buggy/compromised renderer's DTO to a string
+        // up front, so a non-string cwd/mode/rawArgs degrades to a clean typed
+        // validation error (empty cwd, out-of-set mode, no extra args) rather
+        // than a raw TypeError deep in assertPathish / the tokenizer.
+        const dto = (req ?? {}) as Partial<NewSessionRequestDto>;
+        const claudePath = await settingsStore.getClaudePath();
+        await newSession({
+          os: platform as LaunchOS,
+          cwd: typeof dto.cwd === "string" ? dto.cwd : "",
+          mode: typeof dto.mode === "string" ? dto.mode : "",
+          rawArgs: typeof dto.rawArgs === "string" ? dto.rawArgs : "",
+          claudePath,
+        });
+        return { ok: true };
+      } catch (err) {
+        logError("session:new", err);
+        return newSessionFailureOf(err);
+      }
+    },
+  );
+
+  // openTerminalHere (#165 escape hatch): plain terminal at cwd, no claudePath.
+  // Result reuses the reopen enum (INVALID_ARGS is unreachable — no args).
+  ipcMain.handle(
+    CH.terminalOpenHere,
+    async (event, cwd): Promise<ReopenResult> => {
+      if (!isTrustedSender(event.sender))
+        return { ok: false, code: "SPAWN_FAILED" };
+      try {
+        await openTerminal({
+          os: platform as LaunchOS,
+          cwd: typeof cwd === "string" ? cwd : "",
+        });
+        return { ok: true };
+      } catch (err) {
+        logError("terminal:openHere", err);
+        return { ok: false, code: reopenCodeOf(err) };
+      }
+    },
+  );
+
+  // pickFolder (#165): the native directory dialog. An untrusted frame gets a
+  // benign "canceled" — it must not be able to pop OS chrome.
+  ipcMain.handle(
+    CH.dialogPickFolder,
+    async (event): Promise<PickFolderResult> => {
+      if (!isTrustedSender(event.sender)) return { canceled: true };
+      try {
+        return await pickFolder();
+      } catch (err) {
+        logError("dialog:pickFolder", err);
+        return { canceled: true };
       }
     },
   );

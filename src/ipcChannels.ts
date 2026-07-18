@@ -13,6 +13,12 @@ export const CH = {
   sessionsError: "sessions:error",
   // reopen (invoke → discriminated result) and settings get/set (invoke).
   sessionReopen: "session:reopen",
+  // New-session launcher (#165): start a fresh session in an arbitrary dir
+  // (invoke → discriminated result), the native directory picker, and the
+  // plain "open terminal here" escape hatch.
+  sessionNew: "session:new",
+  dialogPickFolder: "dialog:pickFolder",
+  terminalOpenHere: "terminal:openHere",
   settingsGet: "settings:getClaudePath",
   settingsSet: "settings:setClaudePath",
   // Theme preference (#86 theme switch). get seeds the title-bar control; set

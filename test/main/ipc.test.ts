@@ -61,6 +61,12 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
     setTheme: vi.fn(async () => {}),
   };
   const reopen = vi.fn(async () => {});
+  const newSession = vi.fn(async () => {});
+  const openTerminal = vi.fn(async () => {});
+  const pickFolder = vi.fn(async () => ({
+    canceled: false as const,
+    path: "C:\\picked",
+  }));
   const setNativeTheme = vi.fn();
   const tempRoots = vi.fn(() => ["C:\\Users\\p\\AppData\\Local\\Temp"]);
   const logError = vi.fn();
@@ -70,6 +76,9 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
     createSessionStore,
     settingsStore,
     reopen,
+    newSession,
+    openTerminal,
+    pickFolder,
     setNativeTheme,
     tempRoots,
     logError,
@@ -88,6 +97,9 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
     createSessionStore,
     settingsStore,
     reopen,
+    newSession,
+    openTerminal,
+    pickFolder,
     setNativeTheme,
     tempRoots,
     logError,
@@ -475,5 +487,165 @@ describe("session:getFacts handler", () => {
     expect(
       await handlers.get(CH.sessionGetFacts)!({ sender: trusted }, "nope"),
     ).toEqual({});
+  });
+});
+
+// ---- new-session launcher (#165): session:new / terminal:openHere / pickFolder
+
+describe("session:new handler", () => {
+  const DTO = { cwd: "C:\\work\\proj", mode: "plan", rawArgs: "--model opus" };
+
+  test("success composes the request from platform + settingsStore", async () => {
+    const { call, newSession, settingsStore } = setup();
+    const result = await call(CH.sessionNew, DTO);
+    expect(result).toEqual({ ok: true });
+    expect(settingsStore.getClaudePath).toHaveBeenCalled();
+    expect(newSession).toHaveBeenCalledWith({
+      os: "win32",
+      cwd: DTO.cwd,
+      mode: DTO.mode,
+      rawArgs: DTO.rawArgs,
+      claudePath: "claude-configured",
+    });
+  });
+
+  test("a non-string rawArgs degrades to empty, not a crash", async () => {
+    const { call, newSession } = setup();
+    await call(CH.sessionNew, { cwd: "C:\\w", mode: "default", rawArgs: 42 });
+    expect(newSession).toHaveBeenCalledWith(
+      expect.objectContaining({ rawArgs: "" }),
+    );
+  });
+
+  test("non-string cwd/mode also degrade to empty strings", async () => {
+    const { call, newSession } = setup();
+    await call(CH.sessionNew, { cwd: 7, mode: null, rawArgs: "x" });
+    expect(newSession).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "", mode: "", rawArgs: "x" }),
+    );
+  });
+
+  test("a null request degrades to empty fields without rejecting", async () => {
+    // The real launcher would reject empty cwd; here the injected launcher is a
+    // stub, so the point is only that the handler coerces null → {} safely
+    // instead of throwing on the destructure.
+    const { call, newSession } = setup();
+    await expect(call(CH.sessionNew, null)).resolves.toBeDefined();
+    expect(newSession).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "", mode: "", rawArgs: "" }),
+    );
+  });
+
+  test("INVALID_ARGS surfaces code AND display-safe detail, nothing else", async () => {
+    const err = Object.assign(new Error("invalid arguments: bad&token"), {
+      code: "INVALID_ARGS",
+      detail: "argument contains a cmd.exe metacharacter: bad&token",
+    });
+    const { call, logError } = setup({
+      newSession: vi.fn(async () => {
+        throw err;
+      }),
+    });
+    const result = await call(CH.sessionNew, DTO);
+    expect(result).toEqual({
+      ok: false,
+      code: "INVALID_ARGS",
+      detail: "argument contains a cmd.exe metacharacter: bad&token",
+    });
+    expect(logError).toHaveBeenCalledWith("session:new", err);
+  });
+
+  test("typed launch errors map to bare codes with no detail or message", async () => {
+    const { call } = setup({
+      newSession: vi.fn(async () => {
+        throw new FolderMissingError("C:\\gone\\secret");
+      }),
+    });
+    const result = await call(CH.sessionNew, DTO);
+    expect(result).toEqual({ ok: false, code: "FOLDER_MISSING" });
+    expect(JSON.stringify(result)).not.toContain("secret");
+  });
+
+  test("an unexpected throw buckets to SPAWN_FAILED", async () => {
+    const { call } = setup({
+      newSession: vi.fn(async () => {
+        throw new Error("surprise");
+      }),
+    });
+    expect(await call(CH.sessionNew, DTO)).toEqual({
+      ok: false,
+      code: "SPAWN_FAILED",
+    });
+  });
+
+  test("an untrusted sender gets a failure and no launch", async () => {
+    const { handlers, newSession } = setup();
+    const other = fakeSender();
+    expect(
+      await handlers.get(CH.sessionNew)!({ sender: other.sender }, DTO),
+    ).toEqual({ ok: false, code: "SPAWN_FAILED" });
+    expect(newSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("terminal:openHere handler", () => {
+  test("success passes platform + cwd through", async () => {
+    const { call, openTerminal } = setup();
+    expect(await call(CH.terminalOpenHere, "C:\\work\\proj")).toEqual({
+      ok: true,
+    });
+    expect(openTerminal).toHaveBeenCalledWith({
+      os: "win32",
+      cwd: "C:\\work\\proj",
+    });
+  });
+
+  test("a typed error maps to its code; an untrusted sender launches nothing", async () => {
+    const { call } = setup({
+      openTerminal: vi.fn(async () => {
+        throw new FolderMissingError("C:\\gone");
+      }),
+    });
+    expect(await call(CH.terminalOpenHere, "C:\\gone")).toEqual({
+      ok: false,
+      code: "FOLDER_MISSING",
+    });
+
+    const { handlers, openTerminal } = setup();
+    const other = fakeSender();
+    expect(
+      await handlers.get(CH.terminalOpenHere)!({ sender: other.sender }, "C:"),
+    ).toEqual({ ok: false, code: "SPAWN_FAILED" });
+    expect(openTerminal).not.toHaveBeenCalled();
+  });
+});
+
+describe("dialog:pickFolder handler", () => {
+  test("returns the injected picker's result for a trusted sender", async () => {
+    const { call } = setup();
+    expect(await call(CH.dialogPickFolder)).toEqual({
+      canceled: false,
+      path: "C:\\picked",
+    });
+  });
+
+  test("a picker throw degrades to canceled and is logged", async () => {
+    const boom = new Error("dialog broke");
+    const { call, logError } = setup({
+      pickFolder: vi.fn(async () => {
+        throw boom;
+      }),
+    });
+    expect(await call(CH.dialogPickFolder)).toEqual({ canceled: true });
+    expect(logError).toHaveBeenCalledWith("dialog:pickFolder", boom);
+  });
+
+  test("an untrusted sender gets canceled and no OS dialog", async () => {
+    const { handlers, pickFolder } = setup();
+    const other = fakeSender();
+    expect(
+      await handlers.get(CH.dialogPickFolder)!({ sender: other.sender }),
+    ).toEqual({ canceled: true });
+    expect(pickFolder).not.toHaveBeenCalled();
   });
 });
