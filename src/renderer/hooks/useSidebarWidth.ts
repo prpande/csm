@@ -81,6 +81,9 @@ export function useSidebarWidth(): SidebarWidthControl {
   }, [sidebarWidth]);
 
   const onSplitterPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    // Primary button/contact only: a right-click on the splitter is a context
+    // menu gesture, not a drag. (Touch and pen contact also report button 0.)
+    if (e.button !== 0) return;
     if (dragStart.current) return; // a drag is active — ignore other pointers
     dragStart.current = {
       pointerId: e.pointerId,

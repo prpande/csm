@@ -18,6 +18,9 @@ interface TreeNodeProps {
   /** Report a click so the keyboard's focus follows the mouse — otherwise an
    *  arrow key after a click would resume from a stale row. */
   onFocusNode?: (path: string) => void;
+  /** Char budget for the label (#164) — width-derived; undefined falls back to
+   *  truncatePathLabel's fixed default (standalone renders, tests). */
+  labelBudget?: number;
 }
 
 // One tree row plus (when expanded) its children. A collapsed node does NOT
@@ -33,6 +36,7 @@ export function TreeNode({
   onSelect,
   focusedPath,
   onFocusNode,
+  labelBudget,
 }: TreeNodeProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = hasChildren && expandedPaths.has(node.path);
@@ -127,7 +131,7 @@ export function TreeNode({
             full absolute path (`node.path` — always absolute, unlike a sub-chain's
             relative `name`), and the CSS end-ellipsis backstops the rare overflow. */}
         <span className={styles.name} title={node.path}>
-          {truncatePathLabel(node.name)}
+          {truncatePathLabel(node.name, labelBudget)}
         </span>
         {/* Repo marker (#111). Decorative: the wrapper's title carries the
             meaning on hover, and the row's accessible name stays the folder
@@ -156,6 +160,7 @@ export function TreeNode({
               onSelect={onSelect}
               focusedPath={focusedPath}
               onFocusNode={onFocusNode}
+              labelBudget={labelBudget}
             />
           ))}
         </ul>

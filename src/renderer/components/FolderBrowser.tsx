@@ -5,6 +5,7 @@ import { useSidebarWidth } from "../hooks/useSidebarWidth";
 import { findFolder, flattenVisible, type FolderNode } from "../../sessionTree";
 import type { SessionMetadata } from "../../sessionParser";
 import { SIDEBAR_MIN_WIDTH, maxSidebarWidth } from "../../sidebarWidth";
+import { pathLabelBudget } from "../pathLabel";
 import { TitleBar } from "./TitleBar";
 import { FolderTree } from "./FolderTree";
 import { FolderPane } from "./FolderPane";
@@ -146,7 +147,13 @@ export function FolderBrowser() {
   // 0-session intermediate) — only ownCount>0 folders are selectable, matching
   // TreeNode — so the pane self-clears to the empty state instead of showing a
   // stale "0 sessions" header the tree can't highlight or clear.
-  const resolved = selectedPath ? findFolder(tree, selectedPath) : null;
+  // Memoized like `visible` above: a splitter drag re-renders this component
+  // per pointermove, and an inline findFolder would re-walk the whole tree on
+  // every frame for an unchanged selection.
+  const resolved = useMemo(
+    () => (selectedPath ? findFolder(tree, selectedPath) : null),
+    [tree, selectedPath],
+  );
   const selected = resolved && resolved.ownCount > 0 ? resolved : null;
 
   return (
@@ -173,6 +180,7 @@ export function FolderBrowser() {
           onToggleDeclutter={toggleDeclutter}
           focusedPath={focusedPath}
           onFocusNode={setFocusedPath}
+          labelBudget={pathLabelBudget(sidebarWidth)}
         />
         {/* APG window-splitter (#164): a real value-bearing separator, in the
             Tab order, arrows/Home/End on the keyboard, drag on the pointer.

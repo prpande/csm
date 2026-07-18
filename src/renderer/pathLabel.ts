@@ -1,3 +1,5 @@
+import { SIDEBAR_DEFAULT_WIDTH } from "../sidebarWidth";
+
 // Presentation helper for #77 compacted folder labels. A collapsed single-child
 // chain carries the full joined path as its label (e.g.
 // "C:\\Users\\praty\\AppData\\Local\\Temp\\worktrees\\42-hotfix"). In the
@@ -8,11 +10,20 @@
 // row's title tooltip, and TreeNode's CSS end-ellipsis backstops the rare label
 // still too wide after truncation.
 //
-// Width is approximated by a character budget (the sidebar is fixed-width); this
-// stays a pure, DOM-free, unit-testable string transform rather than measuring
-// rendered pixels.
+// Width is approximated by a character budget; this stays a pure, DOM-free,
+// unit-testable string transform rather than measuring rendered pixels.
 const DEFAULT_MAX = 36;
 const ELLIPSIS = "…";
+
+// With the resizable sidebar (#164) the budget scales with the actual width —
+// otherwise dragging the sidebar wide could never reveal a label longer than
+// the fixed budget. Anchored at the tuned (260px → 36 chars) point, ~1 char
+// per 7px, and quantized to steps of 4 so per-frame drag renders mostly reuse
+// the same budget (keeping FolderTree's memo effective mid-drag).
+export function pathLabelBudget(sidebarWidth: number): number {
+  const scaled = DEFAULT_MAX + (sidebarWidth - SIDEBAR_DEFAULT_WIDTH) / 7;
+  return Math.max(16, Math.round(scaled / 4) * 4);
+}
 
 export function truncatePathLabel(label: string, max = DEFAULT_MAX): string {
   if (label.length <= max) return label;

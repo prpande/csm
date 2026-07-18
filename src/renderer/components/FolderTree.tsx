@@ -25,6 +25,10 @@ interface FolderTreeProps {
    *  expansion/selection, so it survives a buildTree rebuild between batches. */
   focusedPath: string | null;
   onFocusNode: (path: string) => void;
+  /** Char budget for compacted chain labels, derived from the resizable
+   *  sidebar width (#164) so widening the sidebar reveals longer labels.
+   *  Quantized upstream, so it changes rarely mid-drag and the memo holds. */
+  labelBudget?: number;
 }
 
 // Left sidebar: the expandable folder tree over the #64 view-model. Renders the
@@ -45,6 +49,7 @@ export const FolderTree = memo(function FolderTree({
   onToggleDeclutter,
   focusedPath,
   onFocusNode,
+  labelBudget,
 }: FolderTreeProps) {
   const isEmpty = tree.roots.length === 0 && tree.unknown === null;
 
@@ -139,6 +144,7 @@ export const FolderTree = memo(function FolderTree({
             onSelect={onSelect}
             focusedPath={focusedPath}
             onFocusNode={onFocusNode}
+            labelBudget={labelBudget}
           />
         ))}
         {/* Pinned last (spec §9) — flattenVisible mirrors this, so Down from the
@@ -154,6 +160,7 @@ export const FolderTree = memo(function FolderTree({
             onSelect={onSelect}
             focusedPath={focusedPath}
             onFocusNode={onFocusNode}
+            labelBudget={labelBudget}
           />
         )}
       </ul>

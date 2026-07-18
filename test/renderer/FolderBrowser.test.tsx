@@ -716,5 +716,25 @@ describe("FolderBrowser", () => {
         spy.mockRestore();
       }
     });
+
+    it("ignores a non-primary-button pointerdown (right-click is not a drag)", () => {
+      renderScanned([]);
+      const sep = splitter();
+      fireEvent.pointerDown(sep, { clientX: 260, pointerId: 1, button: 2 });
+      fireEvent.pointerMove(sep, { clientX: 320, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("260");
+    });
+
+    it("widening the sidebar reveals more of a long compacted label", () => {
+      // A single deep session compacts into one chain node whose label is the
+      // full path (#77) — 46 chars, past the default 36-char budget.
+      const longCwd = "D:\\alpha\\bravo\\charlie\\delta\\echo\\foxtrot\\golf";
+      renderScanned([sess("a", longCwd)]);
+      expect(screen.queryByText(longCwd)).toBe(null); // middle-elided at 260px
+      // End jumps to the max width; the width-derived budget now fits the
+      // whole label, so the row shows the full path.
+      fireEvent.keyDown(splitter(), { key: "End" });
+      expect(screen.getByText(longCwd)).toBeTruthy();
+    });
   });
 });
