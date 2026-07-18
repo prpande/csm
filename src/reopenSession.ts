@@ -84,7 +84,9 @@ export class SpawnFailedError extends Error {
 // Node-quoted token through cmd's re-parse). `(` `)` are deliberately absent —
 // `C:\Program Files (x86)\…` is legal and Node's quoting confines them. Scoped to
 // cmd.exe: PowerShell specials ($, `) are irrelevant (cmd can't exec .ps1).
-const CMD_METACHARS = /[&|<>^%!"]/;
+// Exported for the new-session flow (#165), whose per-token argument gate must
+// use the SAME charset so the two cannot drift.
+export const CMD_METACHARS = /[&|<>^%!"]/;
 
 /** Reject a claudePath that would perturb cmd.exe's re-parse (§3.3). */
 export function assertNoCmdMetachars(claudePath: string): void {
@@ -189,8 +191,9 @@ function trySpawn(
   });
 }
 
-// trySpawn, wrapping any spawn failure as the typed SpawnFailedError.
-async function spawnOrFail(
+// trySpawn, wrapping any spawn failure as the typed SpawnFailedError. Exported
+// for the new-session flow (#165) — the macOS spawn path is identical there.
+export async function spawnOrFail(
   spawn: SpawnFn,
   file: string,
   args: readonly string[],
@@ -203,6 +206,31 @@ async function spawnOrFail(
   }
 }
 
+// The shared Windows launch shape (#165 lifted this out of reopenWindows): the
+// cmd.exe invocation `cmd.exe <cmdTail…>` is what actually runs; wt.exe is an
+// optional outer wrapper tried first for nicer tabs. ANY wt failure — ENOENT
+// when absent, a runtime error from a lingering/disabled alias stub, or the
+// hang-guard timeout — falls through to a plain cmd window. A wt spawn error
+// fires before a window appears.
+export async function spawnWindowsTerminal(
+  spawn: SpawnFn,
+  cwd: string,
+  cmdTail: readonly string[],
+): Promise<void> {
+  try {
+    await trySpawn(
+      spawn,
+      "wt.exe",
+      ["new-tab", "-d", cwd, "cmd.exe", ...cmdTail],
+      cwd,
+    );
+    return;
+  } catch {
+    // fall through to the plain cmd.exe window
+  }
+  await spawnOrFail(spawn, "cmd.exe", cmdTail, cwd);
+}
+
 async function reopenWindows(
   spawn: SpawnFn,
   cwd: string,
@@ -211,25 +239,10 @@ async function reopenWindows(
   claudePath: string,
 ): Promise<void> {
   assertNoCmdMetachars(claudePath);
-  // Try Windows Terminal first (nicer tabs). ANY wt failure — ENOENT when absent,
-  // or a runtime error from a lingering/disabled alias stub — falls through to a
-  // plain cmd window. A wt spawn error fires before a window appears.
-  try {
-    await trySpawn(
-      spawn,
-      "wt.exe",
-      buildWtWrappedArgs(cwd, sessionId, mode, claudePath),
-      cwd,
-    );
-    return;
-  } catch {
-    // fall through to the plain cmd.exe window
-  }
-  await spawnOrFail(
+  await spawnWindowsTerminal(
     spawn,
-    "cmd.exe",
-    buildPlainCmdArgs(sessionId, mode, claudePath),
     cwd,
+    buildPlainCmdArgs(sessionId, mode, claudePath),
   );
 }
 

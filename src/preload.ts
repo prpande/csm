@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import { CH } from "./ipcChannels";
 import type {
+  NewSessionRequestDto,
+  NewSessionResult,
+  PickFolderResult,
   ReopenRequestDto,
   ReopenResult,
   SessionsBatchMessage,
@@ -96,6 +99,18 @@ contextBridge.exposeInMainWorld("csm", {
 
   reopenSession: (req: ReopenRequestDto): Promise<ReopenResult> =>
     ipcRenderer.invoke(CH.sessionReopen, req),
+
+  // New-session launcher (#165): launch, the native directory picker, and the
+  // plain "open terminal here" escape hatch. All invoke → discriminated result;
+  // main owns os/claudePath and all argument validation.
+  newSession: (req: NewSessionRequestDto): Promise<NewSessionResult> =>
+    ipcRenderer.invoke(CH.sessionNew, req),
+
+  pickFolder: (): Promise<PickFolderResult> =>
+    ipcRenderer.invoke(CH.dialogPickFolder),
+
+  openTerminalHere: (cwd: string): Promise<ReopenResult> =>
+    ipcRenderer.invoke(CH.terminalOpenHere, cwd),
 
   getFacts: (ids: string[]): Promise<SessionFactsResult> =>
     ipcRenderer.invoke(CH.sessionGetFacts, ids),

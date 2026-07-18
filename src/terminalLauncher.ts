@@ -66,11 +66,67 @@ export function assertLaunchInputs(
   assertPathish(claudePath, "claudePath");
 }
 
-function assertPathish(value: string, name: string): void {
+// Exported for the new-session flow (#165): openTerminalHere validates a bare
+// cwd with no sessionId/mode/claudePath in play.
+export function assertPathish(value: string, name: string): void {
   if (value.length === 0) throw new Error(`${name} must not be empty`);
   if (CONTROL_CHARS.test(value)) {
     throw new Error(`${name} must not contain control characters`);
   }
+}
+
+// New-session inputs (#165, spec docs/specs/2026-07-18-new-session-launcher.md):
+// no session exists yet, so the UUID invariant of assertLaunchInputs does not
+// apply — everything else (mode allowlist, pathish checks) is the same shared
+// pieces, so the two asserts cannot drift.
+export function assertNewSessionInputs(
+  cwd: string,
+  mode: string,
+  claudePath: string,
+): void {
+  if (!KNOWN_PERMISSION_MODES.has(mode as PermissionMode)) {
+    throw new Error(`Invalid permissionMode: ${mode}`);
+  }
+  assertPathish(cwd, "cwd");
+  assertPathish(claudePath, "claudePath");
+}
+
+// Tokenizer for the new-session modal's free-form CLI arguments (#165). Splits
+// on whitespace; a double-quoted span forms ONE token with the quotes removed
+// (no escape sequences inside quotes — this is a convenience for macOS, where
+// each token is later single-quote-wrapped; on Windows any token that still
+// contains whitespace is rejected by the per-token cmd gate). Throws on a
+// control character or an unbalanced quote; the impure layer maps the throw to
+// the INVALID_ARGS code.
+export function tokenizeArgs(raw: string): string[] {
+  // Tab is technically C0 but is honest whitespace in a pasted argument string —
+  // treat it as a splitter, not contraband. Everything else in the class stays
+  // rejected (a newline could smuggle a second command into the macOS line).
+  if (CONTROL_CHARS.test(raw.replace(/\t/g, " "))) {
+    throw new Error("arguments must not contain control characters");
+  }
+  const tokens: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  // Distinguishes an explicit empty token (`""`) from no token at all.
+  let sawQuote = false;
+  for (const ch of raw) {
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      sawQuote = true;
+      continue;
+    }
+    if (!inQuotes && /\s/.test(ch)) {
+      if (current.length > 0 || sawQuote) tokens.push(current);
+      current = "";
+      sawQuote = false;
+      continue;
+    }
+    current += ch;
+  }
+  if (inQuotes) throw new Error("unbalanced quote in arguments");
+  if (current.length > 0 || sawQuote) tokens.push(current);
+  return tokens;
 }
 
 /**
@@ -137,6 +193,38 @@ function buildOsascriptSpec(
   )} --resume ${sessionId} --permission-mode ${mode}`;
   const script = `tell application "Terminal" to do script "${appleScriptEscape(
     shellLine,
+  )}"`;
+  return { file: "osascript", args: ["-e", script] };
+}
+
+// New-session macOS spec (#165): same strict two-layer escaping as the reopen
+// builder above. `mode` is embedded raw — it is allowlist-validated to a pure
+// alphanumeric token; every user-supplied piece (cwd, claudePath, each extra
+// arg) is single-quote-wrapped for the inner shell before the whole line is
+// AppleScript-escaped.
+export function buildNewSessionOsascriptSpec(
+  cwd: string,
+  mode: string,
+  claudePath: string,
+  extraArgs: readonly string[],
+): LaunchSpec {
+  assertNewSessionInputs(cwd, mode, claudePath);
+  const extras = extraArgs.map((t) => ` ${shellSingleQuote(t)}`).join("");
+  const shellLine = `cd ${shellSingleQuote(cwd)} && ${shellSingleQuote(
+    claudePath,
+  )} --permission-mode ${mode}${extras}`;
+  const script = `tell application "Terminal" to do script "${appleScriptEscape(
+    shellLine,
+  )}"`;
+  return { file: "osascript", args: ["-e", script] };
+}
+
+// The "Open terminal here" escape hatch (#165): a plain Terminal window cd'd
+// into `cwd`, running nothing — no claudePath in play at all.
+export function buildOpenHereOsascriptSpec(cwd: string): LaunchSpec {
+  assertPathish(cwd, "cwd");
+  const script = `tell application "Terminal" to do script "${appleScriptEscape(
+    `cd ${shellSingleQuote(cwd)}`,
   )}"`;
   return { file: "osascript", args: ["-e", script] };
 }

@@ -1,7 +1,13 @@
 import { test, expect, describe } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildLaunchSpec } from "../../src/terminalLauncher";
+import {
+  assertNewSessionInputs,
+  buildLaunchSpec,
+  buildNewSessionOsascriptSpec,
+  buildOpenHereOsascriptSpec,
+  tokenizeArgs,
+} from "../../src/terminalLauncher";
 
 // terminalLauncher's pure core: buildLaunchSpec turns (os, cwd, sessionId, mode,
 // claudePath) into the OS-specific argv that reopens a session in a new terminal.
@@ -221,5 +227,108 @@ describe("purity", () => {
     // Catch both the node:-prefixed and bare specifiers (`node:fs` and `fs`).
     expect(src).not.toMatch(/from\s+["'](node:)?(child_process|fs|os)["']/);
     expect(src).not.toMatch(/from\s+["']electron["']/);
+  });
+});
+
+// ---- #165: new-session pure layer -------------------------------------------
+
+describe("tokenizeArgs", () => {
+  test("splits on whitespace and drops blanks", () => {
+    expect(tokenizeArgs("--model opus  --continue")).toEqual([
+      "--model",
+      "opus",
+      "--continue",
+    ]);
+    expect(tokenizeArgs("")).toEqual([]);
+    expect(tokenizeArgs("   \t ")).toEqual([]);
+  });
+
+  test("a double-quoted span is one token with the quotes removed", () => {
+    expect(tokenizeArgs('--append-system-prompt "be brief" -v')).toEqual([
+      "--append-system-prompt",
+      "be brief",
+      "-v",
+    ]);
+    // Quotes can open mid-token, shell-style.
+    expect(tokenizeArgs('--flag="a b"')).toEqual(["--flag=a b"]);
+    // An explicit empty token survives.
+    expect(tokenizeArgs('a "" b')).toEqual(["a", "", "b"]);
+  });
+
+  test("throws on an unbalanced quote", () => {
+    expect(() => tokenizeArgs('--prompt "unterminated')).toThrow(
+      /unbalanced quote/,
+    );
+  });
+
+  test("throws on control characters, but tab splits like a space", () => {
+    expect(() => tokenizeArgs("--model\nopus")).toThrow(/control characters/);
+    expect(() => tokenizeArgs("a\u0000b")).toThrow(/control characters/);
+    expect(tokenizeArgs("a\tb")).toEqual(["a", "b"]);
+  });
+});
+
+describe("assertNewSessionInputs", () => {
+  test("accepts every known mode with sane paths; no sessionId required", () => {
+    for (const mode of MODES) {
+      expect(() => assertNewSessionInputs(CWD, mode, CLAUDE)).not.toThrow();
+    }
+  });
+
+  test("rejects an out-of-set mode, empty paths, and control chars", () => {
+    expect(() => assertNewSessionInputs(CWD, "yolo", CLAUDE)).toThrow(
+      /permissionMode/,
+    );
+    expect(() => assertNewSessionInputs("", "default", CLAUDE)).toThrow(/cwd/);
+    expect(() => assertNewSessionInputs(CWD, "default", "")).toThrow(
+      /claudePath/,
+    );
+    expect(() => assertNewSessionInputs("/a\nb", "default", CLAUDE)).toThrow(
+      /control/,
+    );
+  });
+});
+
+describe("buildNewSessionOsascriptSpec", () => {
+  test("single-quotes cwd/claudePath/every extra token; mode is raw", () => {
+    const spec = buildNewSessionOsascriptSpec(
+      "/Users/o'brien/proj",
+      "plan",
+      CLAUDE,
+      ["--append-system-prompt", 'be "brief" & kind'],
+    );
+    expect(spec.file).toBe("osascript");
+    expect(spec.args[0]).toBe("-e");
+    const shellLine = decodeAppleScriptLiteral(spec.args[1]);
+    // The embedded single quote round-trips via the '\'' idiom.
+    expect(shellLine).toContain("cd '/Users/o'\\''brien/proj'");
+    expect(shellLine).toContain("'claude' --permission-mode plan");
+    // The extra token — quotes and & included — is one single-quoted unit.
+    expect(shellLine).toContain(`'be "brief" & kind'`);
+  });
+
+  test("no extra tokens appends nothing after the mode", () => {
+    const shellLine = decodeAppleScriptLiteral(
+      buildNewSessionOsascriptSpec(CWD, "default", CLAUDE, []).args[1],
+    );
+    expect(shellLine).toBe(`cd '${CWD}' && 'claude' --permission-mode default`);
+  });
+
+  test("validates inputs (bad mode throws)", () => {
+    expect(() => buildNewSessionOsascriptSpec(CWD, "yolo", CLAUDE, [])).toThrow(
+      /permissionMode/,
+    );
+  });
+});
+
+describe("buildOpenHereOsascriptSpec", () => {
+  test("cd-only shell line with the cwd single-quoted", () => {
+    const spec = buildOpenHereOsascriptSpec("/tmp/a'b");
+    expect(decodeAppleScriptLiteral(spec.args[1])).toBe("cd '/tmp/a'\\''b'");
+  });
+
+  test("rejects an empty or control-char cwd", () => {
+    expect(() => buildOpenHereOsascriptSpec("")).toThrow(/cwd/);
+    expect(() => buildOpenHereOsascriptSpec("/a\u0007b")).toThrow(/control/);
   });
 });
