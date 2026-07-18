@@ -664,5 +664,57 @@ describe("FolderBrowser", () => {
       expect(splitter().getAttribute("aria-valuenow")).toBe("300");
       expect(splitter().getAttribute("aria-valuemax")).toBe("300");
     });
+
+    it("a second pointer cannot hijack or end an active drag", () => {
+      renderScanned([]);
+      const sep = splitter();
+      fireEvent.pointerDown(sep, { clientX: 260, pointerId: 1 });
+      fireEvent.pointerMove(sep, { clientX: 300, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("300");
+
+      // A stray second pointer (a touch on the widened hit area) lands
+      // mid-drag: its down must not re-seed the origin, its moves must not
+      // steer, and its up must not end pointer 1's drag.
+      fireEvent.pointerDown(sep, { clientX: 500, pointerId: 2 });
+      fireEvent.pointerMove(sep, { clientX: 520, pointerId: 2 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("300");
+      fireEvent.pointerUp(sep, { pointerId: 2 });
+
+      // Pointer 1 still drags against ITS original origin, and its up ends it.
+      fireEvent.pointerMove(sep, { clientX: 340, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("340");
+      fireEvent.pointerUp(sep, { pointerId: 1 });
+      fireEvent.pointerMove(sep, { clientX: 400, pointerId: 1 });
+      expect(sep.getAttribute("aria-valuenow")).toBe("340");
+    });
+
+    it("renders with the default width when reading storage throws", () => {
+      const spy = vi
+        .spyOn(Storage.prototype, "getItem")
+        .mockImplementation(() => {
+          throw new Error("storage disabled");
+        });
+      try {
+        renderScanned([]);
+        expect(splitter().getAttribute("aria-valuenow")).toBe("260");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("keeps resizing when persisting to storage throws", () => {
+      const spy = vi
+        .spyOn(Storage.prototype, "setItem")
+        .mockImplementation(() => {
+          throw new Error("quota exceeded");
+        });
+      try {
+        renderScanned([]);
+        fireEvent.keyDown(splitter(), { key: "ArrowRight" });
+        expect(splitter().getAttribute("aria-valuenow")).toBe("276");
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 });

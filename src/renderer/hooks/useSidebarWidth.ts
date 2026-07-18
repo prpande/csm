@@ -27,7 +27,7 @@ export interface SidebarWidthControl {
   onSplitterPointerDown: (e: PointerEvent<HTMLDivElement>) => void;
   onSplitterPointerMove: (e: PointerEvent) => void;
   /** Wire to BOTH pointerup and lostpointercapture (see the comment inside). */
-  endSplitterDrag: () => void;
+  endSplitterDrag: (e: PointerEvent) => void;
   onSplitterKeyDown: (e: KeyboardEvent) => void;
   /** Double-click reset to the (clamped) default width. */
   resetSplitter: () => void;
@@ -35,16 +35,29 @@ export interface SidebarWidthControl {
 
 export function useSidebarWidth(): SidebarWidthControl {
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
-  const [sidebarWidth, setSidebarWidth] = useState(() =>
-    restoreSidebarWidth(
-      window.localStorage.getItem(SIDEBAR_WIDTH_KEY),
-      window.innerWidth,
-    ),
-  );
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    // Guarded: storage access can throw (disabled/blocked storage), and with
+    // no ErrorBoundary above, an unguarded throw here would blank the app's
+    // very first render. Fall back to the default width instead.
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    } catch {
+      // unreadable storage — restore handles null with the default
+    }
+    return restoreSidebarWidth(stored, window.innerWidth);
+  });
   const [dragging, setDragging] = useState(false);
   // The drag origin — deltas are computed against pointer-DOWN, not the
   // previous move, so a jittery pointer cannot accumulate rounding drift.
-  const dragStart = useRef<{ x: number; width: number } | null>(null);
+  // pointerId keys the whole state machine: a second concurrent pointer (a
+  // stray touch on the widened hit area) must not hijack the origin or end
+  // someone else's drag.
+  const dragStart = useRef<{
+    pointerId: number;
+    x: number;
+    width: number;
+  } | null>(null);
 
   useEffect(() => {
     const onResize = () => {
@@ -60,11 +73,20 @@ export function useSidebarWidth(): SidebarWidthControl {
   // can forget to persist. The per-frame setItem during a drag is a few-byte
   // string write; measured noise next to the layout reflow the drag causes.
   useEffect(() => {
-    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    } catch {
+      // quota/blocked storage — the width just won't persist this session
+    }
   }, [sidebarWidth]);
 
   const onSplitterPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    dragStart.current = { x: e.clientX, width: sidebarWidth };
+    if (dragStart.current) return; // a drag is active — ignore other pointers
+    dragStart.current = {
+      pointerId: e.pointerId,
+      x: e.clientX,
+      width: sidebarWidth,
+    };
     setDragging(true);
     // Capture routes every move to the splitter even when the cursor outruns
     // the thin strip mid-drag. Guarded: jsdom has no pointer capture.
@@ -72,14 +94,17 @@ export function useSidebarWidth(): SidebarWidthControl {
   };
   const onSplitterPointerMove = (e: PointerEvent) => {
     const start = dragStart.current;
-    if (!start) return;
+    if (!start || e.pointerId !== start.pointerId) return;
     setSidebarWidth(
       clampSidebarWidth(start.width + (e.clientX - start.x), windowWidth),
     );
   };
   // Shared by pointerup AND lostpointercapture: if the capture is torn away
   // (alt-tab, context menu), the drag must not keep tracking a phantom pointer.
-  const endSplitterDrag = () => {
+  // Only the pointer that STARTED the drag may end it.
+  const endSplitterDrag = (e: PointerEvent) => {
+    const start = dragStart.current;
+    if (!start || e.pointerId !== start.pointerId) return;
     dragStart.current = null;
     setDragging(false);
   };
