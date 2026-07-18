@@ -2,6 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSessionScan } from "../hooks/useSessionScan";
 import { useReopen } from "../hooks/useReopen";
 import { findFolder, flattenVisible, type FolderNode } from "../../sessionTree";
+import {
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_WIDTH_KEY,
+  clampSidebarWidth,
+  maxSidebarWidth,
+  restoreSidebarWidth,
+  splitterKeyWidth,
+} from "../../sidebarWidth";
 import { TitleBar } from "./TitleBar";
 import { FolderTree } from "./FolderTree";
 import { FolderPane } from "./FolderPane";
@@ -41,6 +50,63 @@ export function FolderBrowser() {
   // already been seeded so a re-streamed root (a refresh, or a root that spans
   // tiers) does not undo the user's manual collapses by re-expanding.
   const seededRoots = useRef<Set<string>>(new Set());
+  // Resizable sidebar (#164). All the math is the pure sidebarWidth module;
+  // this owns the wiring only. Width is renderer view state (per-machine
+  // chrome), so it persists in localStorage — deliberately NOT settingsStore,
+  // which would cost an IPC round-trip per drag frame for a non-setting.
+  // windowWidth is state (not read ad hoc) so the separator's aria-valuemax
+  // re-announces when the window resizes.
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    restoreSidebarWidth(
+      window.localStorage.getItem(SIDEBAR_WIDTH_KEY),
+      window.innerWidth,
+    ),
+  );
+  const [draggingSplitter, setDraggingSplitter] = useState(false);
+  // The drag origin — deltas are computed against pointer-DOWN, not the
+  // previous move, so a jittery pointer cannot accumulate rounding drift.
+  const splitterDragStart = useRef<{ x: number; width: number } | null>(null);
+
+  useEffect(() => {
+    const onResize = () => {
+      setWindowWidth(window.innerWidth);
+      setSidebarWidth((w) => clampSidebarWidth(w, window.innerWidth));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  const onSplitterPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    splitterDragStart.current = { x: e.clientX, width: sidebarWidth };
+    setDraggingSplitter(true);
+    // Capture routes every move to the splitter even when the cursor outruns
+    // the thin strip mid-drag. Guarded: jsdom has no pointer capture.
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onSplitterPointerMove = (e: React.PointerEvent) => {
+    const start = splitterDragStart.current;
+    if (!start) return;
+    setSidebarWidth(
+      clampSidebarWidth(start.width + (e.clientX - start.x), windowWidth),
+    );
+  };
+  // Shared by pointerup AND lostpointercapture: if the capture is torn away
+  // (alt-tab, context menu), the drag must not keep tracking a phantom pointer.
+  const endSplitterDrag = () => {
+    splitterDragStart.current = null;
+    setDraggingSplitter(false);
+  };
+  const onSplitterKeyDown = (e: React.KeyboardEvent) => {
+    const next = splitterKeyWidth(e.key, sidebarWidth, windowWidth);
+    if (next === null) return; // not ours — let Tab and friends through
+    e.preventDefault();
+    setSidebarWidth(next);
+  };
 
   useEffect(() => {
     const fresh = tree.roots
@@ -132,7 +198,12 @@ export function FolderBrowser() {
         refreshing={scanning}
         onOpenSettings={openSettings}
       />
-      <div className={styles.body}>
+      <div
+        className={styles.body}
+        style={
+          { "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties
+        }
+      >
         <FolderTree
           tree={tree}
           status={status}
@@ -144,6 +215,31 @@ export function FolderBrowser() {
           onToggleDeclutter={toggleDeclutter}
           focusedPath={focusedPath}
           onFocusNode={setFocusedPath}
+        />
+        {/* APG window-splitter (#164): a real value-bearing separator, in the
+            Tab order, arrows/Home/End on the keyboard, drag on the pointer.
+            It IS the visual divider (the sidebar's old border-right), with a
+            widened invisible hit area in CSS. */}
+        <div
+          className={styles.splitter}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the folder sidebar"
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={maxSidebarWidth(windowWidth)}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          data-dragging={draggingSplitter || undefined}
+          onPointerDown={onSplitterPointerDown}
+          onPointerMove={onSplitterPointerMove}
+          onPointerUp={endSplitterDrag}
+          onLostPointerCapture={endSplitterDrag}
+          onDoubleClick={() =>
+            setSidebarWidth(
+              clampSidebarWidth(SIDEBAR_DEFAULT_WIDTH, windowWidth),
+            )
+          }
+          onKeyDown={onSplitterKeyDown}
         />
         <FolderPane
           selected={selected}
