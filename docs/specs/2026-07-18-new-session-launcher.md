@@ -78,12 +78,14 @@ the same exported pieces so the two cannot drift.
 surface, and injected deps for unit testing. PR 1 generalizes it minimally:
 
 - The Windows arg builders take the claude argv tail as data:
-  `buildPlainCmdArgs` / `buildWtWrappedArgs` gain a new-session sibling that
-  emits `["/k", claudePath, "--permission-mode", mode, ...extra]` (cwd still
-  travels ONLY via the spawn `cwd` option — invariant I2).
-- The wt-then-cmd fallback and spawn/hang plumbing are exported (or lifted to
-  a small shared internal function) and consumed by both flows — never
-  re-implemented.
+  `buildNewSessionCmdArgs` emits `["/k", claudePath, "--permission-mode",
+  mode, ...extra]` (cwd still travels ONLY via the spawn `cwd` option —
+  invariant I2), alongside the reopen flow's `buildPlainCmdArgs`.
+- The wt-then-cmd fallback and spawn/hang plumbing are lifted into an exported
+  `spawnWindowsTerminal(spawn, cwd, cmdTail)` (wrapping the tail via a pure
+  `buildWtArgs`, which replaces the reopen-specific `buildWtWrappedArgs`) and
+  consumed by both flows — never re-implemented. The `;` charset gate (I3)
+  lives at this single chokepoint, covering the reopen path too.
 - `launchNewSession(req, deps)` (new `src/newSession.ts`): validates, checks
   `cwdExists`, gates tokens on win32, spawns. Rejects with the existing typed
   errors plus a new `InvalidArgsError` (`code: "INVALID_ARGS"`, message names

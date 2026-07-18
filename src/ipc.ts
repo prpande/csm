@@ -219,15 +219,17 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       if (!isTrustedSender(event.sender))
         return { ok: false, code: "SPAWN_FAILED" };
       try {
-        const { cwd, mode, rawArgs } = req as NewSessionRequestDto;
+        // Coerce every field of a buggy/compromised renderer's DTO to a string
+        // up front, so a non-string cwd/mode/rawArgs degrades to a clean typed
+        // validation error (empty cwd, out-of-set mode, no extra args) rather
+        // than a raw TypeError deep in assertPathish / the tokenizer.
+        const dto = (req ?? {}) as Partial<NewSessionRequestDto>;
         const claudePath = await settingsStore.getClaudePath();
         await newSession({
           os: platform as LaunchOS,
-          cwd,
-          mode,
-          // A missing/foreign rawArgs (buggy renderer) degrades to "no extra
-          // args" rather than a type error inside the tokenizer.
-          rawArgs: typeof rawArgs === "string" ? rawArgs : "",
+          cwd: typeof dto.cwd === "string" ? dto.cwd : "",
+          mode: typeof dto.mode === "string" ? dto.mode : "",
+          rawArgs: typeof dto.rawArgs === "string" ? dto.rawArgs : "",
           claudePath,
         });
         return { ok: true };

@@ -517,6 +517,25 @@ describe("session:new handler", () => {
     );
   });
 
+  test("non-string cwd/mode also degrade to empty strings", async () => {
+    const { call, newSession } = setup();
+    await call(CH.sessionNew, { cwd: 7, mode: null, rawArgs: "x" });
+    expect(newSession).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "", mode: "", rawArgs: "x" }),
+    );
+  });
+
+  test("a null request degrades to empty fields without rejecting", async () => {
+    // The real launcher would reject empty cwd; here the injected launcher is a
+    // stub, so the point is only that the handler coerces null → {} safely
+    // instead of throwing on the destructure.
+    const { call, newSession } = setup();
+    await expect(call(CH.sessionNew, null)).resolves.toBeDefined();
+    expect(newSession).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "", mode: "", rawArgs: "" }),
+    );
+  });
+
   test("INVALID_ARGS surfaces code AND display-safe detail, nothing else", async () => {
     const err = Object.assign(new Error("invalid arguments: bad&token"), {
       code: "INVALID_ARGS",
