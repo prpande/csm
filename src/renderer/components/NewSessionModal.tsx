@@ -45,18 +45,14 @@ export function NewSessionModal({
   const [error, setError] = useState<string | null>(null);
   // Synchronous in-flight guard: a disabled button alone doesn't stop HTML
   // implicit submit (Enter), and dismissal must be inert while a launch round-
-  // trips — the spawned terminal can't be recalled.
+  // trips — the spawned terminal can't be recalled. This ref (mirroring
+  // useReopen) is the sole guard needed: every user close path is inert while
+  // it's set, and the only unmount during a round-trip is this component's own
+  // success-path onClose (a parent setState, which can't unmount synchronously
+  // before the finally runs), so a setState-after-unmount can't be reached.
   const inFlight = useRef(false);
-  const mounted = useRef(true);
   const dialogRef = useRef<HTMLDivElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
 
   useEffect(() => {
     dirRef.current?.focus();
@@ -82,7 +78,6 @@ export function NewSessionModal({
     setError(null);
     try {
       const result = await perform();
-      if (!mounted.current) return;
       if (result.ok) {
         if (result.closeOnOk) {
           onLaunched();
@@ -93,7 +88,7 @@ export function NewSessionModal({
       }
     } finally {
       inFlight.current = false;
-      if (mounted.current) setBusy(false);
+      setBusy(false);
     }
   };
 
@@ -120,9 +115,8 @@ export function NewSessionModal({
     const openTerminalHere = bridge.openTerminalHere.bind(bridge);
     void runAction(async () => {
       const result = await openTerminalHere(dir.trim());
-      return result.ok
-        ? { ok: true, closeOnOk: true }
-        : { ok: false, message: GENERIC_NEW_SESSION_MESSAGE };
+      // runAction already defaults a missing message to GENERIC_NEW_SESSION_MESSAGE.
+      return result.ok ? { ok: true, closeOnOk: true } : { ok: false };
     });
   };
 
@@ -151,13 +145,13 @@ export function NewSessionModal({
     if (!focusable || focusable.length === 0) return;
     const items = Array.from(focusable);
     const current = items.indexOf(document.activeElement as HTMLElement);
-    const dir2 = e.shiftKey ? -1 : 1;
+    const step = e.shiftKey ? -1 : 1;
     const next =
       current === -1
         ? e.shiftKey
           ? items.length - 1
           : 0
-        : (current + dir2 + items.length) % items.length;
+        : (current + step + items.length) % items.length;
     e.preventDefault();
     items[next].focus();
   };

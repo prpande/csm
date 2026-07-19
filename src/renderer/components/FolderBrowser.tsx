@@ -113,6 +113,13 @@ export function FolderBrowser() {
     [pendingBypass, settingsOpen],
   );
   const closeNewSession = useCallback(() => setNewSessionDir(null), []);
+  // Stable identity for the title-bar entry point (no prefilled directory), so
+  // its TitleBar prop matches the other handlers and adds no per-render closure
+  // to FolderBrowser's render path (which reruns every splitter-drag frame).
+  const openNewSessionFromTitleBar = useCallback(
+    () => openNewSession(""),
+    [openNewSession],
+  );
   // A launched session's file lands a beat later; rescan once after a delay so
   // it appears on its own. The timer is cleared on unmount and re-armed if a
   // second launch happens before the first fires.
@@ -196,7 +203,7 @@ export function FolderBrowser() {
         onRefresh={refresh}
         refreshing={scanning}
         onOpenSettings={openSettings}
-        onNewSession={() => openNewSession("")}
+        onNewSession={openNewSessionFromTitleBar}
       />
       <div
         className={styles.body}
