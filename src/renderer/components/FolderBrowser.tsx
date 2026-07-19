@@ -11,10 +11,16 @@ import { FolderTree } from "./FolderTree";
 import { FolderPane } from "./FolderPane";
 import { BypassConfirmModal } from "./BypassConfirmModal";
 import { SettingsModal } from "./SettingsModal";
+import { NewSessionModal } from "./NewSessionModal";
 import { Toast } from "./Toast";
 import styles from "./FolderBrowser.module.css";
 
 const SAVED_MESSAGE = "Claude path saved.";
+
+// A newly launched session's JSONL doesn't exist the instant the terminal
+// spawns — claude writes it as it starts up. Rescan after a short delay so the
+// new session appears in its folder without the user hitting refresh (#165).
+const NEW_SESSION_RESCAN_DELAY_MS = 2500;
 
 // Slice-2 shell (decision A): the single owner of the tree's expansion and
 // selection state, wrapping the #64 data layer. Children are presentational.
@@ -35,6 +41,9 @@ export function FolderBrowser() {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // New-session modal (#165): null = closed; a string = open, prefilled with
+  // that directory ("" from the title bar, the folder path from the pane).
+  const [newSessionDir, setNewSessionDir] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   // Keyboard focus (#70) is held as a PATH for the same reason selection is:
   // buildTree rebuilds every node between streaming batches, so a node reference
@@ -87,12 +96,37 @@ export function FolderBrowser() {
   // Cross-modal gates (settings spec §3): the bypass-confirm modal now traps Tab
   // (#70), but SettingsModal does not yet, so backdrop coverage still doesn't
   // imply focus containment on that side — rows stay keyboard-reachable behind the
-  // settings backdrop. Two state gates keep the modals mutually exclusive so the
-  // two backdrops can't stack.
+  // settings backdrop. State gates keep the three modals mutually exclusive so
+  // their backdrops can't stack.
   const openSettings = useCallback(() => {
-    if (!pendingBypass) setSettingsOpen(true);
-  }, [pendingBypass]);
+    if (!pendingBypass && newSessionDir === null) setSettingsOpen(true);
+  }, [pendingBypass, newSessionDir]);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
+
+  // New-session modal (#165), same mutual-exclusion discipline. Both entry
+  // points pass a directory: the folder pane its selected path, the title bar
+  // an empty string (the user browses/types).
+  const openNewSession = useCallback(
+    (dir: string) => {
+      if (!pendingBypass && !settingsOpen) setNewSessionDir(dir);
+    },
+    [pendingBypass, settingsOpen],
+  );
+  const closeNewSession = useCallback(() => setNewSessionDir(null), []);
+  // A launched session's file lands a beat later; rescan once after a delay so
+  // it appears on its own. The timer is cleared on unmount and re-armed if a
+  // second launch happens before the first fires.
+  const rescanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (rescanTimer.current) clearTimeout(rescanTimer.current);
+    },
+    [],
+  );
+  const handleLaunched = useCallback(() => {
+    if (rescanTimer.current) clearTimeout(rescanTimer.current);
+    rescanTimer.current = setTimeout(refresh, NEW_SESSION_RESCAN_DELAY_MS);
+  }, [refresh]);
 
   // Newest-message-wins toast slot (settings spec §3): a fresh save
   // confirmation dismisses a live reopen error, and a reopen error arriving
@@ -115,9 +149,9 @@ export function FolderBrowser() {
   // renders — an inline closure would re-render the pane on every frame.
   const openSession = useCallback(
     (session: SessionMetadata) => {
-      if (!settingsOpen) void requestReopen(session);
+      if (!settingsOpen && newSessionDir === null) void requestReopen(session);
     },
-    [settingsOpen, requestReopen],
+    [settingsOpen, newSessionDir, requestReopen],
   );
 
   // "Focus lands on the tree on load" (spec §9), implemented as: the tree's
@@ -162,6 +196,7 @@ export function FolderBrowser() {
         onRefresh={refresh}
         refreshing={scanning}
         onOpenSettings={openSettings}
+        onNewSession={() => openNewSession("")}
       />
       <div
         className={styles.body}
@@ -208,6 +243,7 @@ export function FolderBrowser() {
           onRefreshFolder={refresh}
           refreshDisabled={scanning}
           onOpen={openSession}
+          onNewSession={openNewSession}
         />
       </div>
       {pendingBypass && (
@@ -219,6 +255,13 @@ export function FolderBrowser() {
       )}
       {settingsOpen && (
         <SettingsModal onClose={closeSettings} onSaved={handleSaved} />
+      )}
+      {newSessionDir !== null && (
+        <NewSessionModal
+          initialDir={newSessionDir}
+          onClose={closeNewSession}
+          onLaunched={handleLaunched}
+        />
       )}
       {toast ? (
         <Toast message={toast.message} onDismiss={dismissToast} />

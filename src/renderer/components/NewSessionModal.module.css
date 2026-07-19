@@ -1,0 +1,199 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  padding: 24px;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 460px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  padding: 20px 22px;
+  color: var(--text);
+}
+
+.title {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  margin: 0 0 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Every label after the first gets top spacing, so fields read as a stack
+   without hand-tuning each margin. */
+.label:not(:first-of-type) {
+  margin-top: 14px;
+}
+
+.optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.dirRow {
+  display: flex;
+  gap: 8px;
+}
+
+.dirRow .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-sunken, var(--count-bg));
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.input:focus-visible,
+.select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.input:disabled,
+.select:disabled {
+  opacity: 0.6;
+}
+
+.bypassWarning {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--chip-bypass-text);
+  background: var(--chip-bypass-bg);
+  border-radius: 6px;
+}
+
+.bypassWarning strong {
+  color: var(--chip-bypass-text);
+}
+
+.error {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--chip-bypass-text);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.primaryRow {
+  display: flex;
+  gap: 8px;
+}
+
+.primaryRow button {
+  flex: 1 1 0;
+}
+
+.actions button,
+.browse {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    filter 0.14s ease;
+}
+
+.actions button:focus-visible,
+.browse:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actions button,
+  .browse {
+    transition: none;
+  }
+}
+
+.browse {
+  flex: 0 0 auto;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.browse:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+/* Primary launch action: solid accent. */
+.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* The escape hatch: quiet outlined action, full width above the primary row. */
+.terminal {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.terminal:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.terminal:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.cancel {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.cancel:hover:not(:disabled) {
+  background: var(--hover-bg);
+}

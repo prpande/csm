@@ -6,6 +6,7 @@ import {
   createEvent,
   within,
   act,
+  waitFor,
 } from "@testing-library/react";
 import { FolderBrowser } from "../../src/renderer/components/FolderBrowser";
 import type { SessionsListener } from "../../src/ipcTypes";
@@ -745,5 +746,127 @@ describe("FolderBrowser", () => {
       fireEvent.keyDown(splitter(), { key: "End" });
       expect(screen.getByText(longCwd)).toBeTruthy();
     });
+  });
+});
+
+// ---- #165: new-session launcher entry points ------------------------------
+// The modal itself is unit-tested in NewSessionModal.test.tsx. These assert the
+// WIRING inside FolderBrowser: both entry points open the launcher (title bar
+// with no directory, folder pane prefilled with the folder path), a launch
+// closes it and schedules the delayed rescan, the buttons disappear without the
+// launch bridge, and the launcher is mutually exclusive with settings. The
+// default fakeBridge omits the launch methods, so setupLaunch augments
+// window.csm with them before the render.
+describe("new-session launcher (#165)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  function setupLaunch(sessions: SessionMetadata[]) {
+    const bridge = fakeBridge();
+    const newSession = vi.fn(async () => ({ ok: true as const }));
+    const pickFolder = vi.fn(async () => ({
+      canceled: false as const,
+      path: "C:\\picked",
+    }));
+    const openTerminalHere = vi.fn(async () => ({ ok: true as const }));
+    Object.assign(window.csm!, { newSession, pickFolder, openTerminalHere });
+    render(<FolderBrowser />);
+    act(() => bridge.emit().onBatch(sessions));
+    act(() => bridge.emit().onDone());
+    return { ...bridge, newSession, pickFolder, openTerminalHere };
+  }
+
+  const dirInput = () => screen.getByLabelText("Directory") as HTMLInputElement;
+  const paneButton = () =>
+    screen.getByRole("button", {
+      name: "Start a new session in this folder",
+    });
+
+  it("the title-bar button opens the launcher with no prefilled directory", () => {
+    setupLaunch([sess("a", "D:\\src\\csm")]);
+    expect(screen.queryByRole("dialog")).toBe(null);
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(dirInput().value).toBe("");
+  });
+
+  it("the folder-pane button opens the launcher prefilled with the folder path", () => {
+    setupLaunch([sess("a", "D:\\src\\csm")]);
+    // A single session compacts to one leaf root labelled with the full path.
+    fireEvent.click(screen.getByText("D:\\src\\csm"));
+    fireEvent.click(paneButton());
+    expect(dirInput().value).toBe("D:\\src\\csm");
+  });
+
+  it("launching closes the launcher and calls the bridge", async () => {
+    const h = setupLaunch([sess("a", "D:\\src\\csm")]);
+    fireEvent.click(screen.getByText("D:\\src\\csm"));
+    fireEvent.click(paneButton());
+    fireEvent.click(screen.getByTestId("new-session-launch"));
+    await waitFor(() => expect(h.newSession).toHaveBeenCalled());
+    expect(h.newSession).toHaveBeenCalledWith({
+      cwd: "D:\\src\\csm",
+      mode: "default",
+      rawArgs: "",
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBe(null));
+  });
+
+  it("schedules a delayed rescan after a successful launch", async () => {
+    vi.useFakeTimers();
+    try {
+      const h = setupLaunch([sess("a", "D:\\src\\csm")]);
+      expect(h.listSessions).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByText("D:\\src\\csm"));
+      fireEvent.click(paneButton());
+      fireEvent.click(screen.getByTestId("new-session-launch"));
+      // Settle the launch: onLaunched arms the rescan timer, onClose dismisses
+      // the modal. The rescan has NOT fired yet — no fresh scan subscription.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(h.newSession).toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).toBe(null);
+      expect(h.listSessions).toHaveBeenCalledTimes(1);
+      // After the delay the scan restarts (a second listSessions subscription).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      expect(h.listSessions).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hides both entry points when the launch bridge is absent", () => {
+    // Plain fakeBridge: window.csm has no newSession, so neither button is live.
+    renderScanned([sess("a", "D:\\src\\csm")]);
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "New session (unavailable)",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByText("D:\\src\\csm"));
+    expect(
+      screen.queryByRole("button", {
+        name: "Start a new session in this folder",
+      }),
+    ).toBe(null);
+  });
+
+  it("keeps the launcher and settings mutually exclusive", () => {
+    setupLaunch([sess("a", "D:\\src\\csm")]);
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    // The gear is still clickable in jsdom (no pointer-events layering), but the
+    // open launcher gates it, so settings must not stack a second dialog.
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(
+      screen.getByRole("heading", { name: "Start a new session" }),
+    ).toBeTruthy();
   });
 });

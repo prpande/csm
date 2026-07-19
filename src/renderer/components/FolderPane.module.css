@@ -68,6 +68,41 @@
   color: var(--text-muted);
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+/* New-session action (#165): a labelled button — this is the folder's primary
+   verb, so it reads as text, not another glyph next to refresh. */
+.newSession {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.newSession:hover {
+  background: var(--hover-bg);
+}
+
+.newSession:focus-visible,
+.refresh:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .refresh {
   display: inline-flex;
   align-items: center;

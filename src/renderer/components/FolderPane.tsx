@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { SessionMetadata } from "../../sessionParser";
 import type { FolderNode } from "../../sessionTree";
+import { currentBridge } from "../bridge";
 import { SessionList } from "./SessionList";
 import styles from "./FolderPane.module.css";
 
@@ -13,6 +14,9 @@ interface FolderPaneProps {
   refreshDisabled: boolean;
   /** Row open gesture (double-click → reopen, #67). */
   onOpen?: (session: SessionMetadata) => void;
+  /** Start a new session in this folder (#165) — passes the folder path up to
+   *  open the launcher modal prefilled. Absent without the launch bridge. */
+  onNewSession?: (dir: string) => void;
 }
 
 // Right pane shell. With no selection it shows a centered prompt and NO folder
@@ -25,7 +29,12 @@ export const FolderPane = memo(function FolderPane({
   onRefreshFolder,
   refreshDisabled,
   onOpen,
+  onNewSession,
 }: FolderPaneProps) {
+  // The launch bridge is optional (absent in a plain browser / older preload),
+  // so the button only appears when a new session can actually be started.
+  const newSessionReady =
+    onNewSession !== undefined && !!currentBridge()?.newSession;
   if (!selected) {
     return (
       <section className={styles.pane}>
@@ -45,16 +54,29 @@ export const FolderPane = memo(function FolderPane({
             {count} {count === 1 ? "session" : "sessions"} · most recent first
           </div>
         </div>
-        <button
-          type="button"
-          className={styles.refresh}
-          onClick={onRefreshFolder}
-          disabled={refreshDisabled}
-          aria-label="Refresh this folder"
-          title="Refresh this folder"
-        >
-          ⟳
-        </button>
+        <div className={styles.headerActions}>
+          {newSessionReady && (
+            <button
+              type="button"
+              className={styles.newSession}
+              onClick={() => onNewSession?.(selected.path)}
+              aria-label="Start a new session in this folder"
+              title="Start a new session in this folder"
+            >
+              + New session
+            </button>
+          )}
+          <button
+            type="button"
+            className={styles.refresh}
+            onClick={onRefreshFolder}
+            disabled={refreshDisabled}
+            aria-label="Refresh this folder"
+            title="Refresh this folder"
+          >
+            ⟳
+          </button>
+        </div>
       </header>
       {/* key by folder path so a new selection mounts a fresh list — the
           previous folder's scroll position never carries over (spec §9:
