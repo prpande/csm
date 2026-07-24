@@ -142,20 +142,57 @@ function truncateTitle(text: string): string {
     : text;
 }
 
-// First record of `type` whose `key` field is a non-empty string. The ai-title
-// and summary title tiers share this exact shape.
-function firstFieldValue(
+// Value of `key` on records of `type`: the FIRST non-empty match by default, or
+// the LAST when `{ last: true }`. The two modes exist because the title tiers
+// disagree on which record wins. ai-title/summary never change value within a
+// session (verified across a real corpus), so first-wins is correct and lets the
+// scan short-circuit. A rename (`custom-title`) does repeat and CAN change value
+// mid-session — one real session carries 47 custom-title records spanning two
+// names — so the name the session ENDED on must win, the same last-wins rule
+// `extractPermissionMode` applies for the same reason.
+function fieldValue(
   records: Record_[],
   type: string,
   key: string,
+  { last = false }: { last?: boolean } = {},
 ): string | undefined {
+  let value: string | undefined;
   for (const r of records) {
-    if (r.type === type) {
-      const value = asNonEmptyString(r[key]);
-      if (value) return value;
-    }
+    if (r.type !== type) continue;
+    const v = asNonEmptyString(r[key]);
+    if (!v) continue;
+    if (!last) return v;
+    value = v;
   }
-  return undefined;
+  return value;
+}
+
+// Separator between the user-assigned name and the derived descriptor. ` — `
+// (spaced em dash) rather than the metadata line's `·`, so the composite title
+// reads as one field and doesn't blur against the metadata beneath it.
+const TITLE_SEPARATOR = " — ";
+
+// Fuse the custom name (from /rename) with the derived descriptor into the row
+// title. The name LEADS and always survives truncation; the descriptor absorbs
+// the cut. The whole result obeys TITLE_MAX_LENGTH (code points), matching the
+// tier-3 prompt budget so rows stay a uniform width.
+//
+// With no name this returns the descriptor unchanged (or the fallback) — the
+// pre-#176 behavior byte-for-byte, so existing sessions are unaffected.
+function composeTitle(
+  name: string | undefined,
+  descriptor: string | undefined,
+): string {
+  if (name === undefined) return descriptor ?? TITLE_FALLBACK;
+  // A name that alone fills (or overflows) the budget leaves no room for a
+  // descriptor: emit the truncated name with no dangling separator.
+  if (
+    descriptor === undefined ||
+    [...name].length + TITLE_SEPARATOR.length >= TITLE_MAX_LENGTH
+  ) {
+    return truncateTitle(name);
+  }
+  return truncateTitle(name + TITLE_SEPARATOR + descriptor);
 }
 
 // The first eligible (human-typed, non-wrapper) user prompt, truncated for the
@@ -168,15 +205,21 @@ function firstPromptTitle(records: Record_[]): string | undefined {
   return undefined;
 }
 
-// Title fallback chain (spec §4.1), read top to bottom as strict priority:
-// ai-title -> summary -> first eligible user prompt (truncated) -> "(untitled)".
+// Row title (spec §4.1). A user-assigned name (`custom-title`, set by /rename)
+// LEADS when present; the derived descriptor — ai-title -> summary -> first
+// eligible user prompt (truncated), read top to bottom as strict priority —
+// follows it. Composed by composeTitle, which owns the budget and the edges
+// (name-only, descriptor-only, over-budget). Falls back to "(untitled)" only
+// when neither a name nor any descriptor exists.
 function extractTitle(records: Record_[]): string {
-  return (
-    firstFieldValue(records, "ai-title", "aiTitle") ??
-    firstFieldValue(records, "summary", "summary") ??
-    firstPromptTitle(records) ??
-    TITLE_FALLBACK
-  );
+  const name = fieldValue(records, "custom-title", "customTitle", {
+    last: true,
+  });
+  const descriptor =
+    fieldValue(records, "ai-title", "aiTitle") ??
+    fieldValue(records, "summary", "summary") ??
+    firstPromptTitle(records);
+  return composeTitle(name, descriptor);
 }
 
 // LAST permission-mode record wins — a session can change mode mid-run, and the
