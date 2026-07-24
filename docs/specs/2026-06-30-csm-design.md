@@ -74,7 +74,7 @@ Sessions live at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`.
 |---|---|---|
 | `sessionId` | filename / `sessionId` field | — |
 | `cwd` (root folder) | any record's `cwd` | `"(unknown)"` |
-| `title` (description) | `ai-title` record → `aiTitle` | `summary` → first non-meta `user` prompt (truncated) → `"(untitled)"` |
+| `title` (description) | **last** `custom-title` → `customTitle` (the /rename name), leading, composed with the descriptor below | descriptor = `ai-title` → `summary` → first non-meta `user` prompt (truncated); `name — descriptor` when both, either alone at the edges, `"(untitled)"` when neither |
 | `permissionMode` | **last** `permission-mode` record → `permissionMode` | `"default"` |
 | `lastActivity` (time) | last record `timestamp` | file mtime |
 | `gitBranch` | **last** record `gitBranch` field | `null` when absent |
@@ -96,6 +96,15 @@ Sessions live at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`.
   value is not in the known CLI set — never silently coerce a recognized value.
 - The prompt fallback for `title` must **skip meta / `<system-reminder>` /
   command-wrapper** user messages — otherwise titles leak injected text.
+- **A session rename (`/rename`) writes a `custom-title` record; it LEADS the
+  title** (#176). Read **last**-wins — a rename repeats and can change value
+  mid-session (unlike `ai-title`/`summary`, which never do, so those stay
+  first-wins). The user-assigned name and the derived descriptor are composed
+  (`name — descriptor`) rather than the name replacing the descriptor: names are
+  reused as topic tags, so on a real corpus ~44% of named sessions share a name
+  with another in the same folder, and keeping the descriptor is what tells them
+  apart. The name leads and always survives the shared `TITLE_MAX_LENGTH` budget;
+  the descriptor absorbs any truncation.
 - **`gitBranch`** is the branch the session ran on, captured in-file per record;
   **last non-null wins** (a session can switch branches mid-run), `null` when no
   record carries it. Historical and available even when the folder was later
