@@ -87,6 +87,18 @@ test("a schemaVersion mismatch discards the file (rebuild, not migrate)", async 
   expect(idx.get("id-1")).toBeUndefined();
 });
 
+test("a pre-#176 (schemaVersion 1) index is discarded so renamed sessions rebuild", async () => {
+  // The title derivation changed in #176 (custom-title/rename now composes into
+  // the title). Closed sessions are served from the mtime+size cache and their
+  // files never change, so the old cached titles must be invalidated by the bump
+  // rather than served forever. schemaVersion 1 was the shipped production version.
+  expect(INDEX_SCHEMA_VERSION).toBeGreaterThanOrEqual(2);
+  writeRaw(JSON.stringify({ schemaVersion: 1, entries: { "id-1": entry() } }));
+  const idx = createSessionIndex({ dir, enabled: true });
+  await idx.load();
+  expect(idx.get("id-1")).toBeUndefined();
+});
+
 test("a corrupt / non-object file loads as empty (fail-soft, never throws)", async () => {
   for (const contents of ["{ not json ", "[]", '"a string"', "42", "null"]) {
     writeRaw(contents);

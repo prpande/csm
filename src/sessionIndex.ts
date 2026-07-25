@@ -15,7 +15,12 @@ import type { PermissionMode } from "./sessionParser";
 import { isRecord } from "./typeGuards";
 
 export const INDEX_FILENAME = "session-index.json";
-export const INDEX_SCHEMA_VERSION = 1;
+// v2 (#176): the row `title` now composes a session's custom name (/rename) with
+// the derived descriptor. Closed sessions are served from the mtime+size cache
+// and their files never change, so a v1 index would serve pre-rename titles
+// forever. Bumping forces the load path to discard-and-rebuild (§6), which
+// repopulates every entry through the new derivation on the next scan.
+export const INDEX_SCHEMA_VERSION = 2;
 
 const DEFAULT_DEBOUNCE_MS = 500;
 

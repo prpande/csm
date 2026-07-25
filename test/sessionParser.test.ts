@@ -174,6 +174,103 @@ test("title: (untitled) when nothing eligible", () => {
   expect(parseSession(SID, content).title).toBe("(untitled)");
 });
 
+// --- custom-title (session rename via /rename) composes with the descriptor (#176) ---
+
+test("title: custom name leads, ai-title descriptor follows", () => {
+  const content = jsonl(
+    { type: "custom-title", customTitle: "my-label" },
+    { type: "ai-title", aiTitle: "Align UI with design" },
+  );
+  expect(parseSession(SID, content).title).toBe(
+    "my-label — Align UI with design",
+  );
+});
+
+test("title: custom name composes with the first-prompt descriptor too", () => {
+  const content = jsonl(
+    { type: "custom-title", customTitle: "my-label" },
+    {
+      type: "user",
+      message: { role: "user", content: "the real first prompt" },
+    },
+  );
+  expect(parseSession(SID, content).title).toBe(
+    "my-label — the real first prompt",
+  );
+});
+
+test("title: custom name alone when there is no descriptor (no trailing separator)", () => {
+  const content = jsonl(
+    { type: "custom-title", customTitle: "my-label" },
+    // only ineligible prompts — nothing to derive a descriptor from
+    {
+      type: "user",
+      isMeta: true,
+      message: { role: "user", content: "meta only" },
+    },
+  );
+  const title = parseSession(SID, content).title;
+  expect(title).toBe("my-label");
+  expect(title).not.toContain("—");
+  expect(title).not.toContain("(untitled)");
+});
+
+test("title: last custom-title wins across repeated renames", () => {
+  const content = jsonl(
+    { type: "custom-title", customTitle: "old-name" },
+    { type: "ai-title", aiTitle: "a descriptor" },
+    { type: "custom-title", customTitle: "new-name" },
+  );
+  expect(parseSession(SID, content).title).toBe("new-name — a descriptor");
+});
+
+test("title: a blank/whitespace custom-title is ignored (descriptor stands alone)", () => {
+  const content = jsonl(
+    { type: "custom-title", customTitle: "   " },
+    { type: "ai-title", aiTitle: "a descriptor" },
+  );
+  expect(parseSession(SID, content).title).toBe("a descriptor");
+});
+
+test("title: composite obeys the 120 budget — name kept, descriptor truncated", () => {
+  const name = "N".repeat(10);
+  const prompt = "x".repeat(TITLE_MAX_LENGTH + 200);
+  const content = jsonl(
+    { type: "custom-title", customTitle: name },
+    { type: "user", message: { role: "user", content: prompt } },
+  );
+  const title = parseSession(SID, content).title;
+  // At most the 120-code-point budget plus the single ellipsis (mirrors tier 3).
+  expect([...title].length).toBeLessThanOrEqual(TITLE_MAX_LENGTH + 1);
+  expect(title.endsWith("…")).toBe(true);
+  expect(title.startsWith(name + " — ")).toBe(true); // name survives in full
+});
+
+test("title: a name longer than the whole budget truncates to the name, no dangling separator", () => {
+  const name = "N".repeat(TITLE_MAX_LENGTH + 30);
+  const content = jsonl(
+    { type: "custom-title", customTitle: name },
+    { type: "ai-title", aiTitle: "a descriptor" },
+  );
+  const title = parseSession(SID, content).title;
+  expect([...title].length).toBe(TITLE_MAX_LENGTH + 1); // 120 + ellipsis
+  expect(title.endsWith("…")).toBe(true);
+  expect(title).not.toContain("—"); // descriptor dropped, no separator left hanging
+});
+
+test("title: composite truncation keeps a multibyte char intact at the boundary", () => {
+  // "N — " is 4 code points; pad so the 120th code point is the emoji, which a
+  // code-UNIT slice would split. Code-POINT truncation of the composite keeps it.
+  const prompt = "x".repeat(TITLE_MAX_LENGTH - 4 - 1) + "😀" + "tail";
+  const content = jsonl(
+    { type: "custom-title", customTitle: "N" },
+    { type: "user", message: { role: "user", content: prompt } },
+  );
+  const title = parseSession(SID, content).title;
+  expect(title).toBe("N — " + "x".repeat(TITLE_MAX_LENGTH - 5) + "😀" + "…");
+  expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(title)).toBe(false); // no lone surrogate
+});
+
 test("permissionMode: last permission-mode record wins", () => {
   const content = jsonl(
     { type: "permission-mode", permissionMode: "plan" },
