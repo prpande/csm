@@ -18,7 +18,7 @@
     "test:watch": "vitest",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder --publish never"
   },
   "dependencies": {
     "react": "^19.0.0",
