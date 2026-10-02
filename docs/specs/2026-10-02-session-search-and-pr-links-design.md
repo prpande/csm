@@ -146,22 +146,27 @@ These were decided with the owner during design and are not open:
 Renderer ──preload IPC──► main (relay, sender-guarded) ──postMessage──► searchWorker
                                                                          ├─ ingest (stat, read appended bytes, extract)
                                                                          ├─ gh enrichment (spawn gh, shell:false)
-                                                                         ├─ queries (read connection)
+                                                                         ├─ queries
                                                                          └─ search.db (WAL)  in userData
 ```
 
 - **`searchWorker`** is a `worker_threads` worker started after the main window
-  is created. It is the only code that opens `search.db`: one write connection
-  (ingest, enrichment) and one read connection (queries). Main never opens the
+  is created. It is the only code that opens `search.db`, through one
+  connection shared by ingest, enrichment and queries. Every statement runs
+  synchronously on the worker thread and each ingest chunk commits in one
+  synchronous transaction, so a query never runs inside an open write
+  transaction; a second connection would add nothing. Main never opens the
   database. It relays requests, forwards progress events, and owns the worker
   lifecycle (start, restart with backoff, stop on quit or opt-out).
 - **Change events.** After each ingest pass that committed any row change, and
-  after each enrichment batch that wrote rows, the worker posts
-  `search:changed {generation}` (a monotonically increasing counter). Main
-  relays it to the renderer.
-- **Bundling.** The worker entry is bundled with esbuild the same way the
-  preload is (`build:worker`), so it can `require` the shared pure modules from
-  inside the asar. `node:sqlite` is a built-in and needs no packaging change.
+  after each enrichment run that wrote rows, the worker posts `changed`. Main
+  relays each one, and the worker's `ready`, to the renderer as
+  `search:changed {generation}`, a counter main increments. Counting `ready`
+  makes a warm start that ingests nothing still refresh the renderer.
+- **Bundling.** The worker entry is bundled with esbuild into one file the same
+  way the preload is (`build:worker`). A worker thread cannot load its script
+  from inside `app.asar`, so that file is listed in `asarUnpack` and main
+  starts it from `app.asar.unpacked`. `node:sqlite` is a built-in.
 - **Shared pure units** (no I/O, unit-tested, used by the worker):
   - `sessionParser` (existing): exports `eligiblePromptText` and a pure
     `composeTitleFrom({customTitle, aiTitle, summary, firstPrompt})`, which
@@ -301,7 +306,7 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);  -- e.g. fts_ok, last_full
 
 - On worker start (app launch), after serving any cached data.
 - Whenever the renderer runs the existing scan (initial load and Refresh): main
-  forwards `ingest:pass` to the worker after it starts the browse scan.
+  sends the worker an ingest request as it starts the browse scan.
 - Live-tail refresh of open sessions is #120's; this design does not poll
   transcripts.
 - Passes are single-flight. A trigger that arrives while a pass runs sets a
@@ -408,8 +413,10 @@ From `turnExtractor` and `prExtractor`:
   `relocated` record) updates `path` and goes through `fileCursor`; a moved
   file whose head hash matches is not re-ingested.
 - A sid absent from a pass counts as absent only when its old path's stat
-  error is `ENOENT` **and** its parent folder is still readable. Any other
-  error (`EBUSY`, `EPERM`, `EACCES`, `EMFILE`, `EIO`) counts as present.
+  error is `ENOENT` **and** its parent folder is either still readable or
+  itself gone (`ENOENT`) under the readable projects root; a deleted project
+  folder is a definite absence. Any other error (`EBUSY`, `EPERM`, `EACCES`,
+  `EMFILE`, `EIO`, on the file or its parent) counts as present.
 - The first absence sets `missing_since`. A later pass that also finds it
   absent, at least 60 s after `missing_since`, sets `deleted_at`. Rows are
   kept. (A time floor rather than a pass count, because two passes can run
@@ -436,14 +443,18 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
 
 - Runs in the worker after each ingest pass and on a 10-minute timer while the
   worker runs (the timer run does enrichment only and reads no transcripts),
-  for PRs that are due:
-  - `state IS NULL` (never fetched);
+  for PRs that are due. `fetched_at` is the time of the last attempt, success
+  or failure:
+  - never attempted (`fetched_at IS NULL`);
+  - `state IS NULL` (no successful fetch yet) and the last attempt older than
+    10 minutes;
   - `OPEN` and `fetched_at` older than 10 minutes;
   - `CLOSED` and older than 24 hours (closed PRs can be reopened);
   - `MERGED` is final and never refetched.
-- **Resolving `gh`.** Once per worker start the worker resolves an absolute
-  `ghPath`. It searches `process.env.PATH` (with `PATHEXT` on Windows). On
-  darwin, if that finds nothing, it tries `/opt/homebrew/bin/gh` and then
+- **Resolving `gh`.** Each time main starts the worker it resolves an absolute
+  `ghPath` and passes it in. It searches `process.env.PATH` for `gh` (on
+  Windows only `gh.exe`: `shell: false` cannot run a `.cmd` shim). On darwin,
+  if that finds nothing, it tries `/opt/homebrew/bin/gh` and then
   `/usr/local/bin/gh`, because an app launched from the Dock or Finder gets
   launchd's minimal PATH. On darwin the child's `env.PATH` has the resolved
   directory prepended. If nothing resolves, every batch takes the `ENOENT`
@@ -484,8 +495,8 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
 - **Primary PR:** among the session's linked PRs, the `created_here = 1` one
   with the latest `first_seen`; otherwise the one with the latest `last_seen`.
   Remaining ties break on PR number descending.
-- Tooltip and accessible description list every linked PR as
-  `#N title (state)`.
+- Tooltip and accessible name list every linked PR, primary first, as
+  `owner/repo#N · state · title` (missing parts omitted).
 - The chip is a `tabIndex=-1` button (same pattern as the row's Open button);
   click opens the primary PR via the existing `csm.openExternal`. Keyboard:
   Shift+Enter on the row.
@@ -789,8 +800,8 @@ work.
   older ones are deleted.
 - **Projects root unreadable:** the pass records nothing (no tombstones).
 - **Second app instance:** prevented by the existing
-  `requestSingleInstanceLock`; the worker also takes WAL-mode single-writer
-  discipline (one write connection).
+  `requestSingleInstanceLock`; the worker also keeps WAL-mode single-writer
+  discipline (one connection).
 - **IPC:** every new handler checks `isTrustedSender`, validates its arguments
   (UUIDs, folder paths as strings, query length), and returns errors as codes.
 
@@ -838,8 +849,10 @@ work.
   timestamps, a >1 MB line, repeated `pr-link`, bookkeeping lines skipped, an
   assistant record whose `"type":"assistant"` sits after a large `message`, and
   an unknown leading bookkeeping type.
-- **SQLite integration** under `ELECTRON_RUN_AS_NODE=1` with the repo's
-  Electron binary: schema creation, FTS round-trip, migration preserves
+- **SQLite integration** under vitest on Node 24 (the `.nvmrc` runtime, whose
+  `node:sqlite` also compiles FTS5; the CI unit job skips the Electron binary
+  download), with the Electron-runtime difference covered by the CI probe
+  below: schema creation, FTS round-trip, migration preserves
   tombstoned rows, `rebuild` from `turn`, corruption recovery, opt-out deletes
   files only after the worker has closed its connections, and opt-out and
   purge delete backup and corrupt copies.
