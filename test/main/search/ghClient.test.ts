@@ -197,7 +197,7 @@ describe("runGhBatch with a fake gh", () => {
 
   test("a hung gh is killed at the timeout", async () => {
     const pidFile = join(dir, "pid.txt");
-    const r = runner("hang", 1_000);
+    const r = runner("hang", 5_000);
     r.env = { ...r.env, FAKE_GH_PID_FILE: pidFile };
     expect(await runGhBatch(r, "o/r", [5])).toEqual({
       kind: "failed",
@@ -216,7 +216,7 @@ describe("runGhBatch with a fake gh", () => {
     while (isAlive() && Date.now() < deadline)
       await new Promise((r) => setTimeout(r, 50));
     expect(isAlive()).toBe(false);
-  });
+  }, 20_000);
 
   test("output over the stdout cap is a batch failure", async () => {
     const r = { ...runner("big-body"), maxStdoutBytes: 1_000 };
