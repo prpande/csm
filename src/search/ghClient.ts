@@ -74,6 +74,8 @@ export function buildGraphqlArgs(
   const args = [
     "api",
     "graphql",
+    "--hostname",
+    "github.com",
     "-f",
     `query=${buildQuery(numbers.length)}`,
     // -f keeps owner/name as strings; -F would turn a numeric name into an Int.
