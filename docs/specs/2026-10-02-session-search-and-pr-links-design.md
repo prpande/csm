@@ -39,11 +39,15 @@ SQLite 3.53.1, Windows):
   before it was raised.
 - **Native PR record.** Claude Code appends
   `{type:"pr-link", sessionId, prNumber, prUrl, prRepository, timestamp}`.
-  All ~15.6k records have exactly these keys; `prRepository` is `owner/repo`;
+  All ~15.9k records have exactly these keys; `prRepository` is `owner/repo`;
   `sessionId` always equals the file's id.
   - Present in 25 of the 62 sessions that mention a GitHub PR anywhere.
     Emission is conditional and not version-gated; the trigger is unknown.
   - Re-appended about 88 times per PR (up to ~6k records in one file).
+  - Re-appends come in per-PR runs while that PR is being worked on: in every
+    multi-PR session each `pr-link` timestamp carries one PR and each PR's last
+    record time is distinct, so the latest `pr-link` time ranks PRs within a
+    session.
   - Lists every PR the session created via `gh pr create` (20 of 20 sessions),
     and in 6 of 20 also PRs the session only viewed or pushed to.
   - Never observed for Azure DevOps PRs. Out of scope: PRs are GitHub only.
@@ -151,6 +155,10 @@ Renderer ──preload IPC──► main (relay, sender-guarded) ──postMessa
   (ingest, enrichment) and one read connection (queries). Main never opens the
   database. It relays requests, forwards progress events, and owns the worker
   lifecycle (start, restart with backoff, stop on quit or opt-out).
+- **Change events.** After each ingest pass that committed any row change, and
+  after each enrichment batch that wrote rows, the worker posts
+  `search:changed {generation}` (a monotonically increasing counter). Main
+  relays it to the renderer.
 - **Bundling.** The worker entry is bundled with esbuild the same way the
   preload is (`build:worker`), so it can `require` the shared pure modules from
   inside the asar. `node:sqlite` is a built-in and needs no packaging change.
@@ -162,7 +170,7 @@ Renderer ──preload IPC──► main (relay, sender-guarded) ──postMessa
   - `turnExtractor`: record → conversation turns and title values.
   - `prExtractor`: records → `pr-link` refs and `gh pr create` result URLs.
   - `fileCursor`: the offset/anchor change-detection decision.
-  - `tombstone`: the two-pass deletion state machine.
+  - `tombstone`: the deletion state machine (§7.5).
   - `searchText`: folding and camel/snake splitting shared by ingest and query.
   - `parseQuery`, `quickMatch`, `mergeResults`, `highlightSegments`
     (slice 3).
@@ -251,8 +259,8 @@ CREATE TABLE session_pr (
   repo         TEXT NOT NULL COLLATE NOCASE,
   number       INTEGER NOT NULL,
   created_here INTEGER NOT NULL DEFAULT 0,
-  first_seen   INTEGER,
-  last_seen    INTEGER,        -- max pr-link/gh-create timestamp in this session
+  first_seen   INTEGER,        -- min pr-link/gh-create timestamp in this session
+  last_seen    INTEGER,        -- max pr-link timestamp in this session; NULL when the link came only from gh pr create
   PRIMARY KEY (root, sid, repo, number)
 );
 CREATE INDEX session_pr_pr ON session_pr (repo, number);
@@ -270,7 +278,8 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);  -- e.g. fts_ok, last_full
   `INSERT INTO fts(fts) VALUES('optimize')`; later `'merge'` opportunistically.
   `optimize`, `merge` and `VACUUM` run only when no query has arrived for about
   2 s, because they are synchronous on the worker thread that also serves
-  queries.
+  queries. The pre-migration `VACUUM INTO` backup ships with the first
+  migration past `user_version` 1.
 - **Migrations.** `PRAGMA user_version` with forward-only migrations. A
   migration may never drop `session`, `turn` or `session_pr` rows of tombstoned
   sessions, because their source no longer exists. A tokenizer or FTS-layout
@@ -293,7 +302,8 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);  -- e.g. fts_ok, last_full
 - On worker start (app launch), after serving any cached data.
 - Whenever the renderer runs the existing scan (initial load and Refresh): main
   forwards `ingest:pass` to the worker after it starts the browse scan.
-- Live-tail refresh of open sessions is #120's; this design does not poll.
+- Live-tail refresh of open sessions is #120's; this design does not poll
+  transcripts.
 - Passes are single-flight. A trigger that arrives while a pass runs sets a
   rerun flag, and exactly one more pass runs after the current one finishes.
 
@@ -374,8 +384,11 @@ From `turnExtractor` and `prExtractor`:
   - A `tool_use` named `Bash` or `PowerShell` whose `input.command` string
     contains `gh pr create` (47 of the 77 such calls in the corpus run through
     PowerShell), followed by its matching `tool_result` (by `tool_use_id`) →
-    the first `https://github.com/<o>/<r>/pull/<n>` in that result, with
-    `created_here = 1`.
+    the PR URL in that result, with `created_here = 1`. The URL is taken only
+    from a result line that consists solely of the URL (how `gh pr create`
+    prints it); grep-style output (`path:line:text`) never matches. A pairing
+    sets `first_seen` (the tool_result's timestamp) and leaves `last_seen`
+    unchanged.
   - `prExtractor` takes and returns the pending tool_use id list, so a
     `tool_result` in a later chunk or pass still pairs. The list is written in
     the same transaction as `offset`. An entry is consumed when its result is
@@ -421,7 +434,9 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
 
 ### 8.2 `gh` enrichment
 
-- Runs in the worker after each ingest pass, for PRs that are due:
+- Runs in the worker after each ingest pass and on a 10-minute timer while the
+  worker runs (the timer run does enrichment only and reads no transcripts),
+  for PRs that are due:
   - `state IS NULL` (never fetched);
   - `OPEN` and `fetched_at` older than 10 minutes;
   - `CLOSED` and older than 24 hours (closed PRs can be reopened);
@@ -435,13 +450,14 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
   failure path in §8.3.
 - One `gh api graphql` call per repo with up to 50 PRs per call, spawned with
   `child_process.spawn(ghPath, args, { shell: false })`. The query uses aliased
-  `pullRequest(number: $nK)` fields; owner, name and numbers are passed as
-  typed variables (`-F owner=… -F name=… -F n0=…`), never interpolated into
-  the query string. Fields: `number title state isDraft body url`.
+  `pullRequest(number: $nK)` fields; owner and name are passed as raw strings
+  (`-f owner=… -f name=…`) and the numbers as typed integers (`-F n0=…`),
+  never interpolated into the query string (`-F` would turn a numeric name
+  such as `2048` into an Int). Fields: `number title state isDraft body url`.
 - `body` is truncated to 64 KB before storage.
 - At most 2 calls in flight; each times out after 20 s and is killed.
 - Results write `title`, `state`, `is_draft`, `body`, `fetched_at`, and clear
-  `fetch_error`.
+  `fetch_error`. A batch that writes rows emits `search:changed` (§5).
 
 ### 8.3 Failure floor
 
@@ -465,16 +481,19 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
 - Placed after the branch chip on the row's meta line, following the branch
   chip pattern. It shows `#212`, a text state label (open, draft, merged,
   closed; nothing while unfetched), and `+N` when more PRs are linked.
-- **Primary PR:** among the session's linked PRs, the newest with
-  `created_here = 1`; otherwise the one with the latest `last_seen`.
+- **Primary PR:** among the session's linked PRs, the `created_here = 1` one
+  with the latest `first_seen`; otherwise the one with the latest `last_seen`.
+  Remaining ties break on PR number descending.
 - Tooltip and accessible description list every linked PR as
   `#N title (state)`.
 - The chip is a `tabIndex=-1` button (same pattern as the row's Open button);
   click opens the primary PR via the existing `csm.openExternal`. Keyboard:
   Shift+Enter on the row.
 - **Data:** `search:prsFor(sessionIds[])`, requested for the visible window the
-  same way the facts line is, cached per folder view. Ids are UUID-validated in
-  main before relay.
+  same way the facts line is, cached per folder view until the next
+  `search:changed`; on that event the hook drops its cached entries and
+  re-requests the visible window. Ids are UUID-validated in main before relay,
+  and a request carries at most 500 ids.
 - The chip renders only text nodes; state colors pass the existing AA rules
   and are never the only signal.
 
@@ -485,14 +504,22 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
   (`viewMode`).
 - **Tree in PR mode.** Built from `search:prFolders`, which returns every cwd
   with at least one linked PR, including cwds whose transcripts were all
-  deleted. The same `buildTree` → `rollUpWorktrees` → `compactTree` pipeline
-  runs over it, so worktree sessions roll up into their repo folder. Each
-  folder shows its PR count (distinct PRs beneath it). The declutter filter
-  applies as it does in Sessions mode.
+  deleted. It returns `{cwd, prKeys[]}` per cwd, where a PR key is
+  `repo#number` with the repo lowercased. The renderer runs one synthetic
+  entry per cwd (session id = the cwd) through the same `buildTree` →
+  `rollUpWorktrees` → `compactTree` pipeline, so worktree folders roll up into
+  their repo folder. A folder's displayed count is the size of the union of
+  the `prKeys` of every entry beneath it after roll-up, not
+  `FolderNode.totalCount`, which would count a PR once per folder it was
+  linked from. The declutter filter applies as it does in Sessions mode.
 - **List.** Selecting a folder calls `search:folderPrs(folderPath)` and lists
   each distinct PR linked to a session in that folder or beneath it once,
-  sorted by the owner's latest activity: the max of its linked sessions'
-  `last_activity` within the folder. Rows are 76 px:
+  sorted by the owner's latest activity: the max, over its linked sessions
+  within the folder, of `session_pr.last_seen`, or of the session's
+  `last_activity` where `last_seen` is NULL; ties break on PR number
+  descending. On `search:changed` the PR view re-requests `search:prFolders`
+  and the open `search:folderPrs` list, keeping the tree selection and the
+  list cursor by PR key. Rows are 76 px:
   - Line 1: `#212`, title (or "Title unavailable"), state pill.
   - Line 2: repo, relative last-worked time, `N sessions`.
 - **Actions.**
@@ -526,19 +553,25 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
   same `searchText.fold` used at ingest.
 - **Exact forms**, recognized first and pinned (§10.3):
   - `#212` or a bare `212` → PR number;
-  - `owner/repo` → repo; `owner/repo#212` → one PR;
+  - `owner/repo#212` → one PR;
   - a pasted PR URL (`https://github.com/o/r/pull/212`, trailing `/files`,
     `/commits`, `?…`, `#…` trimmed) → one PR;
   - a session UUID → one session.
 
   A bare number also searches as plain text, so "404" still finds
-  conversations.
+  conversations. A bare `owner/repo` is not an exact form; it matches PRs
+  through the quick tier's `repo` field and sorts by recency.
 - **Terms:** split the folded input on whitespace; all terms must match (AND).
   Each term is then split into tokens with the unicode61 rule (maximal runs of
   Unicode letters and digits; every other character, `_` included, is a
   separator). Each token becomes its own double-quoted FTS operand, joined with
   `AND`. Only the final token of the last term carries `*`, and only while that
-  term is still being typed (no trailing space). A term that produced two or
+  term is still being typed (no trailing space). A final prefix token shorter
+  than 2 characters is left out of the FTS MATCH for that keystroke, because
+  the `prefix='2 3'` index cannot serve it (a 1-character prefix measured
+  388 ms); when its term is a phrase, phrase verification still applies it as
+  a prefix. If no token remains, the conversation tier is skipped for that
+  keystroke. The quick tier still uses the full term. A term that produced two or
   more tokens (`rate-limit`, `sessionStore.ts`, `node:sqlite`) is an implicit
   phrase and is verified exactly as a quoted phrase is. A term that produced no
   tokens (pure punctuation) is dropped from the conversation tier but still
@@ -554,10 +587,11 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
 
 All tiers run on every query and merge into one list.
 
-1. **Exact.** PR number, repo, PR URL or session id against `pr`,
+1. **Exact.** PR number, `owner/repo#N`, PR URL or session id against `pr`,
    `session_pr` and `session`.
-2. **Quick** (from the first character). A substring match in JS over a
-   compact in-memory snapshot the worker keeps of short fields:
+2. **Quick** (from the first character). A substring match in JS over an
+   in-memory snapshot the worker keeps of these fields (PR bodies are capped
+   at 64 KB each):
    - sessions: `titles_text`, `title`, `cwd`, `branch`;
    - PRs: `title`, `body`, `repo`, `#number`.
 
@@ -575,6 +609,17 @@ All tiers run on every query and merge into one list.
    by construction); for assistant text the unit is one record's text, usually
    one paragraph run between tool calls. Phrase terms are re-verified in JS.
 
+   **Metadata terms.** A term that a session's own quick-tier fields already
+   match (`title`, `titles_text`, `cwd`, `branch`) need not appear in the turn:
+   the session qualifies if one of its turns contains every remaining term.
+   The worker groups quick-tier sessions by the set of terms their metadata
+   leaves unmatched and, beside the full-term query, runs one FTS query per
+   distinct non-empty remaining set, restricted to that group's sessions
+   through a bound `json_each` list; at most 4 such sets run per keystroke,
+   largest groups first. So `csm rate limit` finds a session under a `csm`
+   folder whose turn mentions "rate limit". Such a row's matched-in pill is
+   conversation, with `+N` for the metadata fields.
+
 The worker checks for a newer query `seq` between tiers and abandons stale
 work.
 
@@ -582,12 +627,14 @@ work.
 
 - **One row per object:** one row per session, one row per PR. A session and
   its PR may both appear.
-- **Matched-in field** (strongest wins): sessions — title, branch, folder,
-  conversation; PRs — number, title, description. Shown as one pill, plus
-  `+N` when several fields matched.
-- **Order:** exact-tier rows first under an "Exact match" divider; then every
-  other row by last activity descending, regardless of type. A session's time
-  is `last_activity`; a PR's is the max `last_activity` of its linked sessions.
+- **Matched-in field** (strongest wins): sessions — title (a `titles_text`
+  match is labeled title), branch, folder, conversation; PRs — number, title,
+  repo, description. Shown as one pill, plus `+N` when several fields matched.
+- **Order:** exact-tier rows first under an "Exact match" divider, ordered by
+  last activity descending; then every other row by last activity descending,
+  regardless of type. A session's time is `last_activity`; a PR's is the max,
+  over its linked sessions, of `session_pr.last_seen`, or of the session's
+  `last_activity` where `last_seen` is NULL.
   Ties break on the row key so rows don't swap between keystrokes.
 - **Cap:** 200 rows returned, plus the true total.
 
@@ -596,8 +643,18 @@ work.
 - For conversation and description matches: about 120 characters around the
   first match in the best matching turn (the one with the most distinct
   terms), cut at word boundaries, `…` at cuts.
+- For every other match (title, a `titles_text` value, branch, folder, PR
+  title, repo), line 2 shows that field's own text cut around the match with
+  the same ranges; for a `titles_text` match it is the matching historical
+  title value, so a row whose displayed title lacks the query still shows why
+  it matched. Exact-tier rows show the matched identifier.
 - Computed in the worker in JS (FTS5 `snippet()` is not used). Returned as
   `{text, ranges: [start, end][]}`; no HTML ever crosses IPC.
+- Ranges are found on the original `text`: it is tokenized with the unicode61
+  rule, each token and its camel/snake parts (with their offsets) are folded
+  with `searchText.fold` and compared with the query tokens, so ranges are
+  always in original-text coordinates and no offset map from `search_text` is
+  kept.
 - `highlightSegments(text, ranges)` (pure) turns this into segments the
   renderer renders as `<mark>` elements with text-node children.
 
@@ -612,6 +669,9 @@ work.
   2-character prefix queries exceed 150 ms as the corpus grows, the minimum
   length for the conversation tier rises to 3; this is a constant, not a
   setting.
+- On `search:changed` while a query is active, the renderer re-sends the
+  current query with a new `seq`. This is not a keystroke, so the cursor stays
+  held by row key (§10.6).
 - **FTS5 unavailable** (startup self-test fails, `meta.fts_ok = 0`): the
   conversation tier is disabled. Turns are still ingested into `turn` so
   `rebuild` can restore FTS later. The exact and quick tiers keep working, and
@@ -633,6 +693,13 @@ work.
     Alt+Enter opens the `+N sessions` popover.
   - A `transcript deleted` session row: Enter shows a "This transcript was
     deleted; it can't be reopened" toast.
+  - A row with no counterpart (a session with no linked PR; a PR with no
+    linked session whose transcript still exists) shows its counterpart button
+    disabled with the §9 tooltip, and Shift+Enter shows a toast in the same
+    style ("No linked PR" / "No session with a transcript to reopen").
+    Alt+Enter on a PR row with one linked session does nothing. Reopen from
+    any search row goes through the existing reopen flow, bypass confirmation
+    included.
   - Esc clears the query; Esc on an empty query leaves search and returns
     focus to the element focused before search. With the `+N sessions`
     popover open, Esc closes the popover first and returns focus to the input.
@@ -684,8 +751,12 @@ work.
 - `userData` can be swept into OneDrive, iCloud or a roaming profile. CSM never
   transmits `search.db`; the only network access in this feature is `gh`,
   which sends repo names and PR numbers, never transcript text.
-- **`indexEnabled = false`:** the worker is stopped and `search.db`, `-wal`,
-  `-shm`, and every `search.bak-*` and `search.corrupt-*` file are deleted.
+- **`indexEnabled = false`:** main sends the worker `shutdown`; the worker
+  closes its connections and acks (main terminates it after 2 s without an
+  ack). Only then does main delete `search.db`, `-wal`, `-shm`, and every
+  `search.bak-*` and `search.corrupt-*` file. Unlinks failing with
+  EBUSY/EPERM are retried for about 5 s; anything left is reported as a
+  failed purge.
   Session-metadata search still works: `useSearch` does not call
   `search:query` and instead runs `quickMatch` in the renderer over the scanned
   `SessionMetadata[]` (composed `title`, `cwd`, `branch`; there is no
@@ -693,18 +764,24 @@ work.
   conversation search are unavailable, and the UI says so (§9, §10.6).
   Turning it back on rebuilds from the transcripts that still exist.
 - **"Remove deleted sessions from search"** (Settings): deletes every row of
-  tombstoned sessions and their now-orphaned PRs, then `VACUUM`. It also
-  deletes every `search.bak-*` and `search.corrupt-*` file.
+  tombstoned sessions and their now-orphaned PRs, then runs FTS `optimize`
+  (deleted tokens otherwise stay in older FTS segments), `VACUUM` and
+  `PRAGMA wal_checkpoint(TRUNCATE)`. It also deletes every `search.bak-*` and
+  `search.corrupt-*` file.
 - **File permissions.** On macOS and Linux the worker creates `search.db` (and
   every backup) with mode 0600 before SQLite opens it; SQLite gives
   `-wal`/`-shm` the same mode.
-- **CSM's own "delete session" (Phase B)** purges that session's rows.
+- **CSM's own "delete session" (Phase B)** purges that session's rows and
+  queues the same `optimize`, `VACUUM` and checkpoint through idle-gated
+  maintenance; until it runs, the deleted text remains in free pages, FTS
+  segments and the WAL.
 
 ## 12. Failure handling
 
 - **Worker crash or exit:** main restarts it with backoff (1 s, 5 s, 30 s, then
   stop and surface an error state). It resumes from stored offsets.
-- **`SQLITE_CORRUPT` / `SQLITE_NOTADB` on open:** rename the file to
+- **`SQLITE_CORRUPT` / `SQLITE_NOTADB` on open:** close the connection, then
+  rename the file to
   `search.corrupt-<timestamp>.db`, create a fresh database, copy out what can
   still be read of tombstoned sessions' rows from the corrupt copy (best
   effort: tables that read cleanly are copied, the rest skipped), then
@@ -738,7 +815,8 @@ work.
 
 - **Pure units** (`test/main`): `turnExtractor`; `prExtractor` (dedupe,
   validation, `gh pr create` pairing for Bash and PowerShell tools, tool_use
-  and tool_result in different passes, `created_here`); `fileCursor`
+  and tool_result in different passes, `created_here`, a pairing leaves
+  `last_seen` NULL); `fileCursor`
   (unchanged, appended, rewritten head, rewritten middle via anchor,
   truncated, new, stale `extract_version`, a file ingested below 4096 bytes
   that grows past 4096 is Appended, not Rewritten); `tombstone` (ENOENT twice
@@ -750,7 +828,10 @@ work.
   `rate-limit`, `sessionStore.ts`, `node:sqlite`, `snake_case`, a lone `"`,
   `a*b`, `col:x`, `-x`, `50%`, and a lowercased `owner/repo#N` matching a
   stored `Owner/Repo.Name`); `quickMatch`; `mergeResults` (exact pin, recency,
-  tie-break, one row per object, matched-in priority); `highlightSegments`.
+  tie-break, one row per object, matched-in priority, a PR's time from its own
+  `last_seen` rather than its session's activity); `highlightSegments`.
+- **Query engine:** a folder term plus a conversation term finds the session;
+  a term matched by neither metadata nor the turn still excludes it.
 - **Ingest integration** against temp-dir JSONL fixtures, each one built to
   exercise its claimed behaviour: append-then-ingest-only-tail, half-written
   final line, in-place rewrite, truncation, replayed `uuid`, backwards
@@ -759,7 +840,8 @@ work.
   an unknown leading bookkeeping type.
 - **SQLite integration** under `ELECTRON_RUN_AS_NODE=1` with the repo's
   Electron binary: schema creation, FTS round-trip, migration preserves
-  tombstoned rows, `rebuild` from `turn`, corruption recovery, opt-out and
+  tombstoned rows, `rebuild` from `turn`, corruption recovery, opt-out deletes
+  files only after the worker has closed its connections, and opt-out and
   purge delete backup and corrupt copies.
 - **CI:** a step on all three OSes asserts `node:sqlite` loads and an FTS5
   table can be created under the pinned Electron.
@@ -768,11 +850,13 @@ work.
   (the good aliases are applied), timeout, partial (null) results, malformed
   JSON, and a PATH that omits `gh` while a darwin fallback location holds the
   fake binary; asserts the argument array never contains interpolated query
-  text and that no `-F` value starts with `@` (gh reads `@file` values from
-  disk).
-- **Renderer:** PR chip (primary selection, `+N`, tooltip, text-only), PR view
-  (toggle, list order, actions, popover, disabled open), search combobox keys,
-  cursor rules, pills, live region, empty states.
+  text, that owner and name are passed with `-f` (raw strings), and that no
+  `-F` value starts with `@` (gh reads `@file` values from disk).
+- **Renderer:** PR chip (primary selection, `+N`, tooltip, text-only, a chip
+  whose title appears after a `search:changed` event with no folder switch),
+  PR view (toggle, list order, actions, popover, disabled open, a PR linked
+  from both a main-checkout and a worktree session counted once), search
+  combobox keys, cursor rules, pills, live region, empty states.
 - **Local `_electron` smoke test** extended to type a query and see a result.
 
 ## 15. Delivery
