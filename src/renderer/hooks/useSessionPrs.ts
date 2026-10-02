@@ -43,7 +43,8 @@ export function useSessionPrs(
           need.forEach((id) => seen.add(id));
           setPrs((prev) => {
             const next = new Map(prev);
-            for (const id of need) next.set(id, res[id] ?? []);
+            for (const id of need)
+              next.set(id, Object.hasOwn(res, id) ? res[id] : []);
             return next;
           });
         })

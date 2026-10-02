@@ -39,6 +39,14 @@ test("requested ids without links resolve to an empty list", async () => {
   expect(result.current.prs.get("a")).toEqual([link()]);
 });
 
+test("an id that names an inherited member resolves to an empty list", async () => {
+  const { bridge } = fakeSearch(async () => ({}));
+  const { result } = renderHook(() => useSessionPrs(bridge));
+  act(() => result.current.requestPrs(["constructor"]));
+  await waitFor(() => expect(result.current.prs.has("constructor")).toBe(true));
+  expect(result.current.prs.get("constructor")).toEqual([]);
+});
+
 test("a loaded id is not requested again", async () => {
   const { bridge, search } = fakeSearch(async () => ({}));
   const { result } = renderHook(() => useSessionPrs(bridge));
