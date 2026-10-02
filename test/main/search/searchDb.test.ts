@@ -260,6 +260,14 @@ describe("writes", () => {
     expect(match("alpha")).toHaveLength(1);
   });
 
+  test("merge and hasTurns work against a real FTS table", () => {
+    expect(db.hasTurns()).toBe(false);
+    db.writeChunk(chunk({ turns: [turn("u1", "alpha")] }));
+    expect(db.hasTurns()).toBe(true);
+    expect(() => db.mergeFts(500)).not.toThrow();
+    expect(match("alpha")).toHaveLength(1);
+  });
+
   test("close is idempotent", () => {
     db.close();
     expect(() => db.close()).not.toThrow();

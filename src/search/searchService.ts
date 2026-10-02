@@ -6,6 +6,7 @@ import type { SearchDb } from "./searchDb";
 export const ENRICH_INTERVAL_MS = 10 * 60_000;
 export const IDLE_BEFORE_MAINTENANCE_MS = 2_000;
 export const OPTIMIZE_AFTER_TURNS = 1_000;
+export const MERGE_PAGES = 500;
 export const PROGRESS_EVERY = 50;
 
 export interface ServiceTimers {
@@ -46,6 +47,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
   let closed = false;
   let lastQueryAt = Number.NEGATIVE_INFINITY;
   let turnsSinceOptimize = 0;
+  let coldBuild = !db.hasTurns();
   let cancelMaintenance: (() => void) | null = null;
   let cancelEnrichTimer: (() => void) | null = null;
   const inflight = new Set<Promise<void>>();
@@ -134,7 +136,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
     );
   }
 
-  // optimize blocks this thread, so it waits until PR-link queries go quiet.
+  // Index maintenance blocks this thread, so it waits until PR-link queries go quiet.
   function runMaintenance(): void {
     cancelMaintenance = null;
     if (closed) return;
@@ -146,11 +148,14 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
       );
       return;
     }
+    const optimizing = coldBuild;
     try {
-      db.optimizeFts();
+      if (optimizing) db.optimizeFts();
+      else db.mergeFts(MERGE_PAGES);
+      coldBuild = false;
       turnsSinceOptimize = 0;
     } catch (err) {
-      log("fts optimize failed", err);
+      log(optimizing ? "fts optimize failed" : "fts merge failed", err);
     }
   }
 

@@ -182,6 +182,8 @@ export interface SearchDb {
   markPrError(key: PrKey, code: string, now: number): void;
   pruneOrphanPrs(): number;
   optimizeFts(): void;
+  mergeFts(pages: number): void;
+  hasTurns(): boolean;
   salvageTombstoned(corruptPath: string): void;
   close(): void;
 }
@@ -532,6 +534,13 @@ export function openSearchDb(dir: string, opts: OpenOptions): SearchDb {
     },
     optimizeFts() {
       if (ftsOk) db.exec("INSERT INTO fts(fts) VALUES('optimize')");
+    },
+    mergeFts(pages) {
+      if (ftsOk)
+        db.prepare("INSERT INTO fts(fts, rank) VALUES('merge', ?)").run(pages);
+    },
+    hasTurns() {
+      return db.prepare("SELECT 1 FROM turn LIMIT 1").get() !== undefined;
     },
     salvageTombstoned(corruptPath) {
       try {

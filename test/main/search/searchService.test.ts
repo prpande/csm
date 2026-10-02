@@ -11,6 +11,7 @@ import {
 import {
   createSearchService,
   IDLE_BEFORE_MAINTENANCE_MS,
+  MERGE_PAGES,
   OPTIMIZE_AFTER_TURNS,
   type SearchServiceDeps,
   type ServiceTimers,
@@ -272,6 +273,40 @@ describe("fts maintenance", () => {
     expect(live()).toEqual([IDLE_BEFORE_MAINTENANCE_MS]);
     fire();
     expect(optimize).toHaveBeenCalledTimes(1);
+  });
+
+  test("after the cold optimize, later thresholds merge instead", async () => {
+    writeTranscript(OPTIMIZE_AFTER_TURNS);
+    const optimize = vi.spyOn(db, "optimizeFts");
+    const merge = vi.spyOn(db, "mergeFts");
+    const { svc, fire } = service();
+    svc.start();
+    await svc.whenIdle();
+    fire();
+    expect(optimize).toHaveBeenCalledTimes(1);
+    expect(merge).not.toHaveBeenCalled();
+    writeTranscript(OPTIMIZE_AFTER_TURNS * 3);
+    svc.handle({ type: "ingest" });
+    await svc.whenIdle();
+    fire();
+    expect(optimize).toHaveBeenCalledTimes(1);
+    expect(merge).toHaveBeenCalledExactlyOnceWith(MERGE_PAGES);
+  });
+
+  test("a store that already has turns only merges", async () => {
+    writeTranscript(1);
+    const first = service();
+    first.svc.start();
+    await first.svc.whenIdle();
+    const optimize = vi.spyOn(db, "optimizeFts");
+    const merge = vi.spyOn(db, "mergeFts");
+    writeTranscript(OPTIMIZE_AFTER_TURNS + 1);
+    const { svc, fire } = service();
+    svc.start();
+    await svc.whenIdle();
+    fire();
+    expect(merge).toHaveBeenCalledExactlyOnceWith(MERGE_PAGES);
+    expect(optimize).not.toHaveBeenCalled();
   });
 
   test("maintenance waits while queries keep arriving", async () => {
