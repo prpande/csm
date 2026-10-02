@@ -72,9 +72,11 @@ export function createSearchHost(deps: SearchHostDeps): SearchHost {
           deps.log("search.db was corrupt and has been rebuilt");
         if (!msg.ftsOk)
           deps.log("FTS5 is unavailable; full-text search is off");
-        stableTimer = setTimeout(() => {
-          crashes = 0;
-        }, STABLE_AFTER_MS);
+        clearTimeout(stableTimer);
+        if (!stopping)
+          stableTimer = setTimeout(() => {
+            crashes = 0;
+          }, STABLE_AFTER_MS);
         // A warm start may change nothing, so ready alone must refresh the renderer.
         deps.emit({ type: "changed", generation: ++generation });
         break;
@@ -90,10 +92,16 @@ export function createSearchHost(deps: SearchHostDeps): SearchHost {
       case "shutdownAck":
         onAck?.();
         break;
-      case "fatal":
+      case "fatal": {
+        const w = worker;
         state = "failed";
+        worker = null;
+        clearTimeout(stableTimer);
+        settleAll();
         deps.log(`search worker failed: ${msg.code}`);
+        void w?.terminate().catch(() => 0);
         break;
+      }
     }
   }
 
@@ -101,6 +109,7 @@ export function createSearchHost(deps: SearchHostDeps): SearchHost {
     worker = null;
     clearTimeout(stableTimer);
     settleAll();
+    onAck?.();
     if (stopping || state === "failed") return;
     if (crashes >= RESTART_DELAYS_MS.length) {
       state = "failed";

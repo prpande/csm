@@ -22,10 +22,17 @@ test("deletes the store, its WAL files, backups and corrupt copies, and nothing 
     "search.corrupt-5.db",
     "settings.json",
     "searchy.db",
+    "search.dbx",
+    "research.db",
   ])
     writeFileSync(join(dir, n), "");
   expect(await purgeSearchFiles(dir)).toEqual({ ok: true, remaining: [] });
-  expect(readdirSync(dir).sort()).toEqual(["searchy.db", "settings.json"]);
+  expect(readdirSync(dir).sort()).toEqual([
+    "research.db",
+    "search.dbx",
+    "searchy.db",
+    "settings.json",
+  ]);
 });
 
 test("a missing directory is already clean", async () => {

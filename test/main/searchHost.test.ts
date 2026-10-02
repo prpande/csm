@@ -221,4 +221,83 @@ describe("createSearchHost", () => {
     await stopping;
     expect(last().terminated).toBe(true);
   });
+
+  test("a fatal worker is terminated and no longer used", async () => {
+    const { host, workers, last } = setup();
+    host.start();
+    const pending = host.prsFor([SID]);
+    const w = last();
+    w.send({ type: "fatal", code: "OPEN_FAILED" });
+    await expect(pending).resolves.toEqual({});
+    expect(w.terminated).toBe(true);
+    const posted = w.posted.length;
+    await expect(host.prsFor([SID])).resolves.toEqual({});
+    host.requestIngest();
+    expect(w.posted).toHaveLength(posted);
+    w.exit(1);
+    vi.advanceTimersByTime(STABLE_AFTER_MS);
+    expect(workers).toHaveLength(1);
+    expect(host.state).toBe("failed");
+  });
+
+  test("a worker exit while stop waits for the ack ends the wait at once", async () => {
+    const { host, last } = setup();
+    host.start();
+    const stopping = host.stop();
+    last().exit(0);
+    await stopping;
+    expect(host.state).toBe("stopped");
+    expect(last().terminated).toBe(true);
+  });
+
+  test("messages and exits from a replaced worker are ignored", () => {
+    const { host, workers, last, events } = setup();
+    host.start();
+    const old = last();
+    old.exit(1);
+    vi.advanceTimersByTime(RESTART_DELAYS_MS[0]);
+    expect(workers).toHaveLength(2);
+    old.send({ type: "changed" });
+    old.exit(1);
+    vi.advanceTimersByTime(STABLE_AFTER_MS);
+    expect(events).toEqual([]);
+    expect(workers).toHaveLength(2);
+  });
+
+  test("stop during a pending restart creates no new worker", async () => {
+    const { host, workers, last } = setup();
+    host.start();
+    last().exit(1);
+    await host.stop();
+    vi.advanceTimersByTime(STABLE_AFTER_MS);
+    expect(workers).toHaveLength(1);
+    expect(host.state).toBe("stopped");
+  });
+
+  test("stop settles a pending prsFor with {}", async () => {
+    const { host, last } = setup();
+    host.start();
+    const p = host.prsFor([SID]);
+    const stopping = host.stop();
+    last().send({ type: "shutdownAck" });
+    await stopping;
+    await expect(p).resolves.toEqual({});
+  });
+
+  test("a reply clears the request timeout", () => {
+    const { host, last } = setup();
+    host.start();
+    void host.prsFor([SID]);
+    expect(vi.getTimerCount()).toBe(1);
+    last().send({ type: "result", id: 1, ok: false });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test("a second ready replaces the stable timer", () => {
+    const { host, last } = setup();
+    host.start();
+    last().send(READY);
+    last().send(READY);
+    expect(vi.getTimerCount()).toBe(1);
+  });
 });
