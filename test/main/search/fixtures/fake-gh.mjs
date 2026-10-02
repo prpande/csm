@@ -53,6 +53,8 @@ switch (process.env.FAKE_GH_MODE ?? "ok") {
     process.exitCode = 1;
     break;
   case "hang":
+    if (process.env.FAKE_GH_PID_FILE)
+      writeFileSync(process.env.FAKE_GH_PID_FILE, String(process.pid));
     setTimeout(() => {}, 60_000);
     break;
   case "big-body":

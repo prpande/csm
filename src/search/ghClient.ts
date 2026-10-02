@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { isPrState } from "../ipcTypes";
 import { isRecord } from "../typeGuards";
@@ -6,6 +6,7 @@ import type { PrDetails } from "./searchDb";
 
 export const GH_TIMEOUT_MS = 20_000;
 export const BODY_MAX_BYTES = 65_536;
+export const MAX_GH_STDOUT_BYTES = 16 * 1024 * 1024;
 
 const DARWIN_FALLBACKS = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
 const ALIAS_RE = /^p\d+$/;
@@ -21,6 +22,7 @@ export interface GhRunner {
   prefixArgs?: string[];
   env: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  maxStdoutBytes?: number;
 }
 
 export function resolveGhPath(
@@ -150,17 +152,23 @@ export function runGhBatch(
   return new Promise((resolve) => {
     let settled = false;
     const chunks: Buffer[] = [];
-    const child = spawn(
-      ghPath,
-      [...(runner.prefixArgs ?? []), ...buildGraphqlArgs(repo, numbers)],
-      {
-        shell: false,
-        env: runner.env,
-        // Without this Windows can flash a console window for gh.exe.
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "ignore"],
-      },
-    );
+    let child: ChildProcess;
+    try {
+      child = spawn(
+        ghPath,
+        [...(runner.prefixArgs ?? []), ...buildGraphqlArgs(repo, numbers)],
+        {
+          shell: false,
+          env: runner.env,
+          // Without this Windows can flash a console window for gh.exe.
+          windowsHide: true,
+          stdio: ["ignore", "pipe", "ignore"],
+        },
+      );
+    } catch {
+      resolve({ kind: "failed", reason: "bad-output" });
+      return;
+    }
     const finish = (outcome: BatchOutcome): void => {
       if (settled) return;
       settled = true;
@@ -171,7 +179,18 @@ export function runGhBatch(
       child.kill();
       finish({ kind: "failed", reason: "timeout" });
     }, runner.timeoutMs ?? GH_TIMEOUT_MS);
-    child.stdout.on("data", (c: Buffer) => chunks.push(c));
+    const maxBytes = runner.maxStdoutBytes ?? MAX_GH_STDOUT_BYTES;
+    let total = 0;
+    child.stdout?.on("data", (c: Buffer) => {
+      if (settled) return;
+      total += c.length;
+      if (total > maxBytes) {
+        child.kill();
+        finish({ kind: "failed", reason: "bad-output" });
+        return;
+      }
+      chunks.push(c);
+    });
     child.on("error", (err: NodeJS.ErrnoException) =>
       finish({
         kind: "failed",

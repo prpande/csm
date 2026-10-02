@@ -196,9 +196,40 @@ describe("runGhBatch with a fake gh", () => {
   );
 
   test("a hung gh is killed at the timeout", async () => {
-    expect(await runGhBatch(runner("hang", 300), "o/r", [5])).toEqual({
+    const pidFile = join(dir, "pid.txt");
+    const r = runner("hang", 1_000);
+    r.env = { ...r.env, FAKE_GH_PID_FILE: pidFile };
+    expect(await runGhBatch(r, "o/r", [5])).toEqual({
       kind: "failed",
       reason: "timeout",
+    });
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    const isAlive = (): boolean => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const deadline = Date.now() + 2_000;
+    while (isAlive() && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 50));
+    expect(isAlive()).toBe(false);
+  });
+
+  test("output over the stdout cap is a batch failure", async () => {
+    const r = { ...runner("big-body"), maxStdoutBytes: 1_000 };
+    expect(await runGhBatch(r, "o/r", [5])).toEqual({
+      kind: "failed",
+      reason: "bad-output",
+    });
+  });
+
+  test("a spawn that throws resolves as a failure instead of rejecting", async () => {
+    expect(await runGhBatch(runner("ok"), "o/r\u0000", [5])).toEqual({
+      kind: "failed",
+      reason: "bad-output",
     });
   });
 
