@@ -125,6 +125,23 @@ describe("createEnricher", () => {
     expect(runBatch).toHaveBeenCalledTimes(2);
   });
 
+  test("a failed batch skips the repo's remaining batches in the same pass", async () => {
+    const db = fakeDb(
+      Array.from({ length: 4 * BATCH_SIZE }, (_, i) => ({
+        repo: "o/r",
+        number: i + 1,
+      })),
+    );
+    const runBatch = vi.fn<RunBatch>(async () => ({
+      kind: "failed",
+      reason: "timeout",
+    }));
+    const r = await createEnricher({ db, runBatch, now: () => 0 }).runDue();
+    expect(runBatch).toHaveBeenCalledTimes(2);
+    expect(r).toEqual({ wrote: 0, failures: 2 });
+    expect(db.markPrError).toHaveBeenCalledTimes(2 * BATCH_SIZE);
+  });
+
   test("a throwing runBatch counts as bad output", async () => {
     const db = fakeDb([{ repo: "o/r", number: 1 }]);
     const runBatch: RunBatch = async () => {

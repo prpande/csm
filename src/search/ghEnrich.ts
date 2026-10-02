@@ -72,6 +72,7 @@ export function createEnricher(deps: EnricherDeps): {
   async function runOnce(): Promise<EnrichResult> {
     const result: EnrichResult = { wrote: 0, failures: 0 };
     await runPool(batchesDue(deps.now()), MAX_IN_FLIGHT, async (b) => {
+      if ((backoffUntil.get(b.repo.toLowerCase()) ?? 0) > deps.now()) return;
       const outcome = await deps
         .runBatch(b.repo, b.numbers)
         .catch((): BatchOutcome => ({ kind: "failed", reason: "bad-output" }));
