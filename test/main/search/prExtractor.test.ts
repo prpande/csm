@@ -133,6 +133,29 @@ describe("extractPrs", () => {
     expect(out.links.map((l) => l.number)).toEqual([3]);
   });
 
+  test("a failed gh pr create is consumed without storing the existing PR it names", () => {
+    const out = extractPrs(
+      {
+        type: "user",
+        timestamp: T1,
+        message: {
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "t1",
+              is_error: true,
+              content:
+                'a pull request for branch "x" into branch "main" already exists:\nhttps://github.com/o/r/pull/9\n',
+            },
+          ],
+        },
+      },
+      ["t1"],
+    );
+    expect(out.links).toEqual([]);
+    expect(out.pending).toEqual([]);
+  });
+
   test("grep-style lines never match", () => {
     const out = extractPrs(
       result("t1", "docs/x.md:12:https://github.com/o/r/pull/3"),

@@ -115,6 +115,7 @@ export function extractPrs(
       const id = b.tool_use_id;
       if (typeof id !== "string" || !next.includes(id)) continue;
       next = next.filter((p) => p !== id);
+      if (b.is_error === true) continue;
       // gh pr create prints the URL alone on a line; anything else is not its output.
       for (const line of toolResultText(b.content).split(/\r?\n/)) {
         const ref = exactPrUrl(line.trim());
