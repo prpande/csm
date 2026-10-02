@@ -151,15 +151,19 @@ function mergeResults(a: PassResult, b: PassResult): PassResult {
   };
 }
 
+interface FileTally {
+  turns: number;
+  invalid: number;
+  advanced: boolean;
+}
+
 export function createIngester(deps: IngesterDeps): {
   runPass(): Promise<PassResult>;
 } {
   const { db, root } = deps;
   const readLines = deps.readLines ?? readCompleteLines;
 
-  async function ingestFile(
-    w: Work,
-  ): Promise<{ turns: number; invalid: number; advanced: boolean }> {
+  async function ingestFile(w: Work, tally: FileTally): Promise<void> {
     const { file } = w;
     const fields = w.base ? fieldsFromRow(w.base) : emptySessionFields();
     let pending = w.base ? [...w.base.pendingPrCreate] : [];
@@ -167,12 +171,11 @@ export function createIngester(deps: IngesterDeps): {
     let links = new Map<string, PrLinkObs>();
     let offset = w.start;
     let sinceCommit = 0;
-    let turnsInserted = 0;
     let invalid = 0;
 
     const commit = async (): Promise<void> => {
       const cursor = await cursorAt(file.path, offset);
-      turnsInserted += db.writeChunk({
+      tally.turns += db.writeChunk({
         root,
         sid: file.sid,
         path: file.path,
@@ -185,6 +188,8 @@ export function createIngester(deps: IngesterDeps): {
         pending,
         extractVersion: EXTRACT_VERSION,
       }).turnsInserted;
+      tally.advanced = true;
+      tally.invalid = invalid;
       turns = [];
       links = new Map();
       sinceCommit = 0;
@@ -215,7 +220,6 @@ export function createIngester(deps: IngesterDeps): {
     // An append that read no complete line (an unterminated tail) has nothing to commit.
     const advanced = !w.base || offset > w.start;
     if (advanced) await commit();
-    return { turns: turnsInserted, invalid, advanced };
   }
 
   async function settleAbsent(
@@ -309,17 +313,18 @@ export function createIngester(deps: IngesterDeps): {
     work.sort((a, b) => b.file.mtimeMs - a.file.mtimeMs);
     deps.onProgress?.({ done: 0, total: work.length });
     for (const [i, w] of work.entries()) {
+      const tally: FileTally = { turns: 0, invalid: 0, advanced: false };
       try {
         if (w.reset) db.resetSession(root, w.file.sid);
-        const r = await ingestFile(w);
-        if (r.advanced) {
-          result.filesIngested++;
-          result.turnsInserted += r.turns;
-          result.invalidPrRefs += r.invalid;
-          result.changed = true;
-        }
+        await ingestFile(w, tally);
       } catch (err) {
         deps.log?.("search: could not ingest a transcript", err);
+      }
+      if (tally.advanced) {
+        result.filesIngested++;
+        result.turnsInserted += tally.turns;
+        result.invalidPrRefs += tally.invalid;
+        result.changed = true;
       }
       deps.onProgress?.({ done: i + 1, total: work.length });
     }

@@ -378,12 +378,14 @@ describe("mid-file commits", () => {
       }
     };
     const log = vi.fn();
-    await ingester({ readLines: crashing, log }).runPass();
+    const crashed = await ingester({ readLines: crashing, log }).runPass();
     expect(log).toHaveBeenCalledWith(
       "search: could not ingest a transcript",
       expect.any(Error),
     );
     const partial = db.getSession(root, SID);
+    expect(crashed).toMatchObject({ changed: true, filesIngested: 1 });
+    expect(crashed.turnsInserted).toBe(turnCount());
     expect(partial?.offset).toBeGreaterThan(0);
     expect(partial?.offset).toBeLessThan(size);
     expect(turnCount()).toBeGreaterThan(0);
