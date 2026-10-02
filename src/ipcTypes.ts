@@ -1,8 +1,7 @@
 // Wire-shape types shared across the IPC boundary: consumed by the main-process
 // bridge (src/ipc.ts) and the renderer contract (src/renderer/types/csm.d.ts).
-// Dependency-free at runtime (type-only) — it references only SessionMetadata
-// from the pure sessionParser, so it is safe to import from the DOM-only renderer
-// tsconfig as well as the node main tsconfig.
+// Safe to import from both the DOM-only renderer tsconfig and the node main
+// tsconfig: it imports only types, and its runtime exports are plain constants.
 
 import type { SessionMetadata, SessionFacts } from "./sessionParser";
 

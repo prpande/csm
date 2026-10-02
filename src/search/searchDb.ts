@@ -565,7 +565,7 @@ export function openSearchDb(dir: string, opts: OpenOptions): SearchDb {
       try {
         db.exec("DETACH DATABASE old");
       } catch {
-        // Nothing attached means nothing to detach.
+        // Best effort.
       }
       if (ftsOk) db.exec("INSERT INTO fts(fts) VALUES('rebuild')");
     },

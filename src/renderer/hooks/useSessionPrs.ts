@@ -3,9 +3,8 @@ import type { SessionPrLink } from "../../ipcTypes";
 import type { CsmBridge } from "../types/csm";
 import { currentBridge } from "../bridge";
 
-// Windowed PR-link loader (#206), shaped like useSessionFacts. A search:changed
-// event invalidates every loaded id and refetches the last requested window; the
-// old links stay on screen until the new reply lands, so the chip never blinks.
+// A search:changed event invalidates every loaded id and refetches the last
+// requested window; old links stay on screen until the new reply lands.
 export function useSessionPrs(
   bridge: CsmBridge | undefined = currentBridge(),
 ): {

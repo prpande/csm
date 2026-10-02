@@ -35,6 +35,7 @@ export async function listTranscripts(
       const entries = await readdir(dir, { withFileTypes: true });
       names = entries
         .filter(
+          // A file named exactly .jsonl would yield an empty session id.
           (e) =>
             e.isFile() &&
             e.name.endsWith(JSONL_EXT) &&
