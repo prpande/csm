@@ -3,12 +3,27 @@
 import { closeSync, existsSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { isPrState, type PrState, type SessionPrsResult } from "../ipcTypes";
 import type { PrLinkObs } from "./prExtractor";
 import type { TombstoneState } from "./tombstone";
 import type { SessionFields, TurnRow } from "./turnExtractor";
 
 export const SEARCH_DB_FILENAME = "search.db";
 export const SCHEMA_VERSION = 1;
+export const OPEN_REFRESH_MS = 10 * 60_000;
+export const CLOSED_REFRESH_MS = 24 * 60 * 60_000;
+
+export interface PrKey {
+  repo: string;
+  number: number;
+}
+
+export interface PrDetails {
+  title: string;
+  state: PrState;
+  isDraft: boolean;
+  body: string;
+}
 
 type Row = Record<string, unknown>;
 
@@ -154,6 +169,11 @@ export interface SearchDb {
   ): void;
   getMeta(key: string): string | undefined;
   setMeta(key: string, value: string): void;
+  prsForSessions(root: string, sids: string[]): SessionPrsResult;
+  duePrs(now: number): PrKey[];
+  applyPrDetails(key: PrKey, d: PrDetails, now: number): void;
+  markPrError(key: PrKey, code: string, now: number): void;
+  pruneOrphanPrs(): number;
   optimizeFts(): void;
   close(): void;
 }
@@ -348,6 +368,31 @@ export function openSearchDb(dir: string, opts: OpenOptions): SearchDb {
   const setMeta = db.prepare(
     "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
   );
+  const prsFor = db.prepare(
+    `SELECT sp.sid, p.repo, p.number, p.url, p.title, p.state, p.is_draft,
+            sp.created_here, sp.first_seen, sp.last_seen
+     FROM session_pr sp JOIN pr p ON p.repo = sp.repo AND p.number = sp.number
+     WHERE sp.root = ? AND sp.sid IN (SELECT value FROM json_each(?))
+     ORDER BY sp.sid, p.number DESC`,
+  );
+  const duePrs = db.prepare(
+    `SELECT repo, number FROM pr
+     WHERE fetched_at IS NULL
+        OR ((state IS NULL OR state = 'OPEN') AND fetched_at <= ?)
+        OR (state = 'CLOSED' AND fetched_at <= ?)
+     ORDER BY repo, number`,
+  );
+  const applyPr = db.prepare(
+    `UPDATE pr SET title = ?, state = ?, is_draft = ?, body = ?, fetched_at = ?, fetch_error = NULL
+     WHERE repo = ? AND number = ?`,
+  );
+  const markPr = db.prepare(
+    "UPDATE pr SET fetch_error = ?, fetched_at = ? WHERE repo = ? AND number = ?",
+  );
+  const pruneOrphans = db.prepare(
+    `DELETE FROM pr WHERE NOT EXISTS (
+       SELECT 1 FROM session_pr sp WHERE sp.repo = pr.repo AND sp.number = pr.number)`,
+  );
 
   return {
     ftsOk,
@@ -434,6 +479,47 @@ export function openSearchDb(dir: string, opts: OpenOptions): SearchDb {
     },
     setMeta(key, value) {
       setMeta.run(key, value);
+    },
+    prsForSessions(root, sids) {
+      const out: SessionPrsResult = {};
+      if (sids.length === 0) return out;
+      for (const r of prsFor.all(root, JSON.stringify(sids)) as Row[]) {
+        const sid = String(r.sid);
+        (out[sid] ??= []).push({
+          repo: String(r.repo),
+          number: Number(r.number),
+          url: String(r.url),
+          title: str(r.title),
+          state: isPrState(r.state) ? r.state : null,
+          isDraft: r.is_draft === 1,
+          createdHere: r.created_here === 1,
+          firstSeen: num(r.first_seen),
+          lastSeen: num(r.last_seen),
+        });
+      }
+      return out;
+    },
+    duePrs(now) {
+      return (
+        duePrs.all(now - OPEN_REFRESH_MS, now - CLOSED_REFRESH_MS) as Row[]
+      ).map((r) => ({ repo: String(r.repo), number: Number(r.number) }));
+    },
+    applyPrDetails(key, d, now) {
+      applyPr.run(
+        d.title,
+        d.state,
+        d.isDraft ? 1 : 0,
+        d.body,
+        now,
+        key.repo,
+        key.number,
+      );
+    },
+    markPrError(key, code, now) {
+      markPr.run(code, now, key.repo, key.number);
+    },
+    pruneOrphanPrs() {
+      return Number(pruneOrphans.run().changes);
     },
     optimizeFts() {
       if (ftsOk) db.exec("INSERT INTO fts(fts) VALUES('optimize')");
