@@ -137,6 +137,7 @@ export function SessionRow({
               aria-label={`Pull requests: ${linkSummaries.join("; ")}`}
               onClick={(e) => {
                 e.stopPropagation();
+                if (e.detail > 1) return;
                 onOpenPr?.(primary);
               }}
               onDoubleClick={(e) => e.stopPropagation()}

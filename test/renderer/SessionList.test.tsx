@@ -275,6 +275,39 @@ test("Shift+Enter opens the focused session's primary PR (#206)", async () => {
   expect(openExternal).toHaveBeenCalledWith("https://github.com/o/r/pull/12");
 });
 
+test("a held Shift+Enter opens the PR once", async () => {
+  const sessions = makeSessions(3);
+  const openExternal = vi.fn(async () => true);
+  window.csm = {
+    ...window.csm!,
+    openExternal,
+    search: {
+      prsFor: vi.fn(async () => ({
+        [sessions[0].sessionId]: [
+          {
+            repo: "o/r",
+            number: 12,
+            url: "https://github.com/o/r/pull/12",
+            title: null,
+            state: null,
+            isDraft: false,
+            createdHere: false,
+            firstSeen: null,
+            lastSeen: 1,
+          },
+        ],
+      })),
+      onChanged: vi.fn(() => () => {}),
+    },
+  };
+  render(<SessionList sessions={sessions} />);
+  await screen.findByTestId("pr-chip");
+  const list = screen.getByRole("listbox");
+  fireEvent.keyDown(list, { key: "Enter", shiftKey: true });
+  fireEvent.keyDown(list, { key: "Enter", shiftKey: true, repeat: true });
+  expect(openExternal).toHaveBeenCalledTimes(1);
+});
+
 test("Shift+Enter on a row with no PR does nothing", async () => {
   const sessions = makeSessions(3);
   const openExternal = vi.fn(async () => true);

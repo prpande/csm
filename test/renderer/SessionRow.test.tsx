@@ -388,6 +388,22 @@ test("no links, no chip", () => {
   expect(screen.queryByTestId("pr-chip")).toBeNull();
 });
 
+test("the second click of a double-click on the chip does not open the PR again", () => {
+  const onOpenPr = vi.fn();
+  render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr()]}
+      onOpenPr={onOpenPr}
+    />,
+  );
+  const chip = screen.getByTestId("pr-chip");
+  fireEvent.click(chip, { detail: 1 });
+  fireEvent.click(chip, { detail: 2 });
+  expect(onOpenPr).toHaveBeenCalledTimes(1);
+});
+
 test("clicking the chip opens the primary PR without selecting or reopening the row", () => {
   const onSelect = vi.fn();
   const onOpen = vi.fn();

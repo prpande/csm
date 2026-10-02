@@ -122,6 +122,7 @@ export function SessionList({
       return;
     }
     if (action.type === "openPr") {
+      if (e.repeat) return;
       const link = primaryPr(prs.get(sessions[action.index].sessionId) ?? []);
       if (link) openPr(link);
       return;
