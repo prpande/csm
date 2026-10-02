@@ -478,7 +478,9 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
   stdout is JSON with a `data` object, whatever the exit code, apply every
   non-null alias and set `fetch_error = 'not-returned'` on each alias that is
   null or named in `errors[].path` (a deleted PR, or a SAML-SSO org that
-  withholds data); do not clear an existing title and do not back off the repo.
+  withholds data); an alias named in `errors[].path` counts as not returned
+  even if `data` carries a value for it. Do not clear an existing title and do
+  not back off the repo.
 - **Batch failure** applies only to `ENOENT`, a timeout, or stdout that is
   missing or is not JSON with `data`: record `fetch_error` on each PR in the
   batch, back off that repo for 15 minutes, and keep the existing title/state
