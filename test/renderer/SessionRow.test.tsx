@@ -4,6 +4,7 @@ import { SessionRow } from "../../src/renderer/components/SessionRow";
 import type { SessionMetadata } from "../../src/sessionParser";
 import type { PermissionMode } from "../../src/sessionParser";
 import type { FactEntry } from "../../src/renderer/hooks/useSessionFacts";
+import type { SessionPrLink } from "../../src/ipcTypes";
 
 const makeSession = (over: Partial<SessionMetadata> = {}): SessionMetadata => ({
   sessionId: "abcdefgh-1111-2222-3333-444455556666",
@@ -312,4 +313,100 @@ test("shows an em-dash on fact error", () => {
     />,
   );
   expect(screen.getByText("—")).toBeTruthy();
+});
+
+const pr = (over: Partial<SessionPrLink> = {}): SessionPrLink => ({
+  repo: "o/r",
+  number: 12,
+  url: "https://github.com/o/r/pull/12",
+  title: "Fix the parser",
+  state: "OPEN",
+  isDraft: false,
+  createdHere: true,
+  firstSeen: 1,
+  lastSeen: 2,
+  ...over,
+});
+
+test("the PR chip shows the primary PR, its state and how many more (#206)", () => {
+  render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr(), pr({ number: 9, state: "MERGED", createdHere: false })]}
+    />,
+  );
+  const chip = screen.getByTestId("pr-chip");
+  expect(chip.textContent).toBe("#12open+1");
+  expect(chip.getAttribute("title")).toBe(
+    "o/r#12 · open · Fix the parser\no/r#9 · merged · Fix the parser",
+  );
+  expect(chip.getAttribute("aria-label")).toBe(
+    "Pull requests: o/r#12 · open · Fix the parser; o/r#9 · merged · Fix the parser",
+  );
+});
+
+test("a draft PR reads draft, and an unenriched PR shows only its number", () => {
+  const { rerender } = render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr({ isDraft: true })]}
+    />,
+  );
+  expect(screen.getByTestId("pr-chip").textContent).toBe("#12draft");
+  rerender(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr({ state: null })]}
+    />,
+  );
+  expect(screen.getByTestId("pr-chip").textContent).toBe("#12");
+});
+
+test("a PR title is never parsed as markup", () => {
+  const { container } = render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr({ title: "<img src=x onerror=alert(1)>" })]}
+    />,
+  );
+  expect(container.querySelector("img")).toBeNull();
+  expect(screen.getByTestId("pr-chip").getAttribute("title")).toContain(
+    "<img src=x onerror=alert(1)>",
+  );
+});
+
+test("no links, no chip", () => {
+  const { rerender } = render(
+    <SessionRow session={makeSession()} rowHeight={56} />,
+  );
+  expect(screen.queryByTestId("pr-chip")).toBeNull();
+  rerender(<SessionRow session={makeSession()} rowHeight={56} prLinks={[]} />);
+  expect(screen.queryByTestId("pr-chip")).toBeNull();
+});
+
+test("clicking the chip opens the primary PR without selecting or reopening the row", () => {
+  const onSelect = vi.fn();
+  const onOpen = vi.fn();
+  const onOpenPr = vi.fn();
+  render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr()]}
+      onSelect={onSelect}
+      onOpen={onOpen}
+      onOpenPr={onOpenPr}
+    />,
+  );
+  const chip = screen.getByTestId("pr-chip");
+  fireEvent.click(chip);
+  fireEvent.doubleClick(chip);
+  expect(onOpenPr).toHaveBeenCalledWith(pr());
+  expect(onSelect).not.toHaveBeenCalled();
+  expect(onOpen).not.toHaveBeenCalled();
+  expect(chip.tabIndex).toBe(-1);
 });

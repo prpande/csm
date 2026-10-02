@@ -1,4 +1,12 @@
 import type { SessionMetadata } from "../../sessionParser";
+import type { SessionPrLink } from "../../ipcTypes";
+import {
+  orderedPrs,
+  primaryPr,
+  prLinkSummary,
+  prStateLabel,
+  prTooltip,
+} from "../../prChip";
 import {
   chipVariant,
   formatRelativeTime,
@@ -37,6 +45,10 @@ interface SessionRowProps {
   worktreeBranch?: string;
   /** Lazily-loaded facts (#115). Undefined = still loading (renders a skeleton). */
   factState?: FactEntry;
+  /** PR links for this session (#206). Undefined or empty renders no chip. */
+  prLinks?: SessionPrLink[];
+  /** Opens a PR in the browser (#206). */
+  onOpenPr?: (link: SessionPrLink) => void;
 }
 
 // One presentational session row (spec §9): a text block (title over a
@@ -54,6 +66,8 @@ export function SessionRow({
   onOpen,
   worktreeBranch,
   factState,
+  prLinks,
+  onOpenPr,
 }: SessionRowProps) {
   const variant = chipVariant(session.permissionMode);
   // Non-empty only in the loaded state; the skeleton/error arms don't read it.
@@ -69,6 +83,9 @@ export function SessionRow({
     ? session.gitBranch
     : undefined;
   const branchLabel = worktreeBranch ?? ownBranch;
+  const primary = prLinks ? primaryPr(prLinks) : undefined;
+  const primaryState = primary ? prStateLabel(primary) : undefined;
+  const morePrs = (prLinks?.length ?? 0) - 1;
   return (
     <div
       className={styles.row}
@@ -113,6 +130,32 @@ export function SessionRow({
               <GitBranchIcon className={styles.branchIcon} />
               <span className={styles.branchName}>{branchLabel}</span>
             </span>
+          )}
+          {primary && (
+            <button
+              type="button"
+              className={styles.pr}
+              data-testid="pr-chip"
+              // Not a tab stop, like the Open button: Shift+Enter on the row opens it.
+              tabIndex={-1}
+              title={prTooltip(prLinks ?? [])}
+              aria-label={`Pull requests: ${orderedPrs(prLinks ?? [])
+                .map(prLinkSummary)
+                .join("; ")}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenPr?.(primary);
+              }}
+              onDoubleClick={(e) => e.stopPropagation()}
+            >
+              #{primary.number}
+              {primaryState && (
+                <span className={styles.prState} data-state={primaryState}>
+                  {primaryState}
+                </span>
+              )}
+              {morePrs > 0 && <span className={styles.prMore}>+{morePrs}</span>}
+            </button>
           )}
           <span className={styles.sep} aria-hidden="true">
             ·

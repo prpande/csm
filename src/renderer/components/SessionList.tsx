@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { SessionMetadata } from "../../sessionParser";
+import type { SessionPrLink } from "../../ipcTypes";
+import { primaryPr } from "../../prChip";
+import { currentBridge } from "../bridge";
 import {
   computeWindow,
   scrollTopToReveal,
@@ -9,6 +12,7 @@ import {
   OVERSCAN,
 } from "../../sessionListWindow";
 import { useSessionFacts } from "../hooks/useSessionFacts";
+import { useSessionPrs } from "../hooks/useSessionPrs";
 import { SessionRow } from "./SessionRow";
 import styles from "./SessionList.module.css";
 
@@ -54,6 +58,10 @@ export function SessionList({
   const onSelect = (session: SessionMetadata) => {
     setSelectedId(session.sessionId);
     setFocusedId(session.sessionId);
+  };
+
+  const openPr = (link: SessionPrLink) => {
+    void currentBridge()?.openExternal(link.url);
   };
 
   // Measure the viewport height and keep it current on resize. ResizeObserver is
@@ -104,11 +112,18 @@ export function SessionList({
   // activedescendant to resolve to it. flushSync commits the new window so the
   // row is mounted before we sync the real scrollbar position.
   const onKeyDown = (e: React.KeyboardEvent) => {
-    const action = listKeyAction(e.key, focusedIndex, sessions.length);
+    const action = listKeyAction(e.key, focusedIndex, sessions.length, {
+      shift: e.shiftKey,
+    });
     if (!action) return; // not ours (Tab, etc.) — let it through
     e.preventDefault();
     if (action.type === "open") {
       onOpen?.(sessions[action.index]);
+      return;
+    }
+    if (action.type === "openPr") {
+      const link = primaryPr(prs.get(sessions[action.index].sessionId) ?? []);
+      if (link) openPr(link);
       return;
     }
     const target = sessions[action.index];
@@ -136,15 +151,18 @@ export function SessionList({
     focusedId !== null && activeMounted ? optionId(focusedId) : undefined;
 
   const { facts, requestFacts } = useSessionFacts();
+  const { prs, requestPrs } = useSessionPrs();
   // Request facts for the rows actually mounted (the window). Keyed on the id list
   // so a scroll into new rows fetches just the newly-visible, uncached ones.
   const visibleIds = visible.map((s) => s.sessionId);
   const visibleKey = visibleIds.join(",");
   useEffect(() => {
-    if (visibleIds.length > 0) requestFacts(visibleIds);
+    if (visibleIds.length === 0) return;
+    requestFacts(visibleIds);
+    requestPrs(visibleIds);
     // visibleKey is the stable dependency; the ids array's identity changes each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleKey, requestFacts]);
+  }, [visibleKey, requestFacts, requestPrs]);
 
   return (
     <div
@@ -195,6 +213,8 @@ export function SessionList({
               onOpen={onOpen}
               worktreeBranch={worktreeBranches?.get(session.sessionId)}
               factState={facts.get(session.sessionId)}
+              prLinks={prs.get(session.sessionId)}
+              onOpenPr={openPr}
             />
           ))}
         </div>

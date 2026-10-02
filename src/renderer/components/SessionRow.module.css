@@ -204,3 +204,43 @@
   border-radius: 4px;
   background: var(--skeleton-bg);
 }
+
+/* PR chip (#206): the session's primary PR, outlined like the branch chip so it
+   reads as information. Like the branch chip it may shrink, eliding the state
+   label first, so a narrow pane keeps the row's time/id in view. */
+.pr {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pr:hover {
+  border-color: var(--accent);
+}
+
+.prState,
+.prMore {
+  color: var(--text-muted);
+}
+
+.prState {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prMore {
+  flex: 0 0 auto;
+}

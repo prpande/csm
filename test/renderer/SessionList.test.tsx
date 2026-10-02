@@ -239,3 +239,37 @@ test("requests facts for the visible window and passes them to rows", async () =
   expect(getFacts.mock.calls[0][0]).toContain(sampleSession.sessionId);
   await waitFor(() => expect(screen.getByText(/7 msgs/)).toBeTruthy());
 });
+
+test("Shift+Enter opens the focused session's primary PR (#206)", async () => {
+  const sessions = makeSessions(3);
+  const openExternal = vi.fn(async () => true);
+  window.csm = {
+    ...window.csm!,
+    openExternal,
+    search: {
+      prsFor: vi.fn(async () => ({
+        [sessions[0].sessionId]: [
+          {
+            repo: "o/r",
+            number: 12,
+            url: "https://github.com/o/r/pull/12",
+            title: null,
+            state: null,
+            isDraft: false,
+            createdHere: false,
+            firstSeen: null,
+            lastSeen: 1,
+          },
+        ],
+      })),
+      onChanged: vi.fn(() => () => {}),
+    },
+  };
+  render(<SessionList sessions={sessions} />);
+  await screen.findByTestId("pr-chip");
+  fireEvent.keyDown(screen.getByRole("listbox"), {
+    key: "Enter",
+    shiftKey: true,
+  });
+  expect(openExternal).toHaveBeenCalledWith("https://github.com/o/r/pull/12");
+});
