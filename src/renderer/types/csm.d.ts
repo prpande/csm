@@ -10,6 +10,7 @@ import type {
   ReopenResult,
   SessionsListener,
   SessionFactsResult,
+  SessionPrsResult,
   ThemePreference,
 } from "../../ipcTypes";
 
@@ -37,6 +38,15 @@ export interface CsmTheme {
   set(value: ThemePreference): Promise<void>;
 }
 
+/** The search store bridge (#206). Optional: absent in a plain browser or a unit
+ * test without the preload. */
+export interface CsmSearch {
+  /** PR links per session id; ids with no links are absent from the result. */
+  prsFor(ids: string[]): Promise<SessionPrsResult>;
+  /** Subscribe to stored-data changes; returns an unsubscribe. */
+  onChanged(cb: (generation: number) => void): () => void;
+}
+
 export interface CsmBridge {
   readonly isDesktop: boolean;
   readonly platform: Platform;
@@ -45,6 +55,8 @@ export interface CsmBridge {
   readonly windowControls?: CsmWindowControls;
   /** Optional: only present under the desktop preload. */
   readonly theme?: CsmTheme;
+  /** Optional: only present under the desktop preload. */
+  readonly search?: CsmSearch;
   /** Start a streaming session scan; returns an unsubscribe. done/error also
    * auto-detach. Batches/signals for a superseded scan are dropped. */
   listSessions(listener: SessionsListener): () => void;

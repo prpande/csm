@@ -189,3 +189,7 @@ export function createSearchHost(deps: SearchHostDeps): SearchHost {
     },
   };
 }
+
+export function asarUnpackedPath(p: string, sep: string): string {
+  return p.replace(`app.asar${sep}`, `app.asar.unpacked${sep}`);
+}

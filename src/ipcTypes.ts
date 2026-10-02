@@ -119,3 +119,14 @@ export interface SessionPrLink {
 
 /** `search:prsFor` result: sessionId → its links. Absent ids have none. */
 export type SessionPrsResult = Record<string, SessionPrLink[]>;
+
+/** `search:changed` payload (#206). The generation rises by one per change. */
+export interface SearchChangedMessage {
+  generation: number;
+}
+
+/** `search:progress` payload (#206): transcripts ingested so far in this pass. */
+export interface SearchProgressMessage {
+  done: number;
+  total: number;
+}

@@ -22,6 +22,7 @@ import type {
   ReopenErrorCode,
   ReopenResult,
   ReopenRequestDto,
+  SessionPrsResult,
 } from "./ipcTypes";
 import {
   NEW_SESSION_ERROR_CODES,
@@ -31,6 +32,11 @@ import {
 import type { ThemePreference } from "./ipcTypes";
 import { DEFAULT_CLAUDE_PATH, DEFAULT_THEME } from "./settingsStore";
 import { CH } from "./ipcChannels";
+import { isValidSessionId } from "./terminalLauncher";
+
+/** Upper bound on one `search:prsFor` request; the renderer asks for a visible
+ * window of ~30 rows, so anything larger is a misbehaving caller. */
+export const MAX_PRS_FOR_IDS = 500;
 
 /** The minimal renderer target the streaming scan pushes to (WebContents.send). */
 interface RendererTarget {
@@ -77,6 +83,12 @@ export interface IpcHandlerDeps {
    * The main-process log is a trusted local sink — this is the ONE place the real
    * error may go; it must never reach `post`. */
   logError: (context: string, err: unknown) => void;
+  /** The search store (#206), owned by main's worker host. Injected so the
+   * handlers stay testable without a worker thread. */
+  search: {
+    requestIngest(): void;
+    prsFor(sids: string[]): Promise<SessionPrsResult>;
+  };
   projectsRoot: string;
   platform: NodeJS.Platform;
   now: () => number;
@@ -127,6 +139,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     setNativeTheme,
     tempRoots,
     logError,
+    search,
     projectsRoot,
     platform,
     now,
@@ -156,6 +169,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         /* renderer gone — nothing to stream to */
       }
     };
+    // A rescan is the user asking for fresh data, so the search store catches up too.
+    search.requestIngest();
     try {
       await store.scan({
         now: now(),
@@ -284,6 +299,31 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const valid = ids.filter((x): x is string => typeof x === "string");
     return store.getFacts(valid);
   });
+
+  // prsFor (#206): PR links for the visible rows. Untrusted frame, malformed or
+  // oversized input → {} (rows render without a chip). Ids are UUID-validated
+  // here because they cross into the worker's SQL as bound parameters.
+  ipcMain.handle(
+    CH.searchPrsFor,
+    async (event, ids): Promise<SessionPrsResult> => {
+      if (
+        !isTrustedSender(event.sender) ||
+        !Array.isArray(ids) ||
+        ids.length > MAX_PRS_FOR_IDS
+      )
+        return {};
+      const valid = ids.filter(
+        (x): x is string => typeof x === "string" && isValidSessionId(x),
+      );
+      if (valid.length === 0) return {};
+      try {
+        return await search.prsFor(valid);
+      } catch (err) {
+        logError("search:prsFor", err);
+        return {};
+      }
+    },
+  );
 
   // settings: an untrusted frame gets the benign default (get) / a no-op (set) —
   // only the main window's preload can legitimately reach these.

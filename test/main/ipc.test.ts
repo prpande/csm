@@ -1,5 +1,10 @@
 import { describe, test, expect, vi } from "vitest";
-import { registerIpcHandlers, type IpcHandlerDeps } from "../../src/ipc";
+import {
+  MAX_PRS_FOR_IDS,
+  registerIpcHandlers,
+  type IpcHandlerDeps,
+} from "../../src/ipc";
+import type { SessionPrsResult } from "../../src/ipcTypes";
 import { CH } from "../../src/ipcChannels";
 import {
   UnsupportedOsError,
@@ -70,6 +75,12 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
   const setNativeTheme = vi.fn();
   const tempRoots = vi.fn(() => ["C:\\Users\\p\\AppData\\Local\\Temp"]);
   const logError = vi.fn();
+  const search = {
+    requestIngest: vi.fn(),
+    prsFor: vi.fn<(sids: string[]) => Promise<SessionPrsResult>>(
+      async () => ({}),
+    ),
+  };
   const deps: IpcHandlerDeps = {
     ipcMain,
     isTrustedSender: (s: unknown) => s === trusted,
@@ -82,6 +93,7 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
     setNativeTheme,
     tempRoots,
     logError,
+    search,
     projectsRoot: "/root/projects",
     platform: "win32",
     now: () => 1234,
@@ -103,6 +115,7 @@ function setup(overrides: Partial<IpcHandlerDeps> = {}) {
     setNativeTheme,
     tempRoots,
     logError,
+    search,
     call,
   };
 }
@@ -648,4 +661,62 @@ describe("dialog:pickFolder handler", () => {
     ).toEqual({ canceled: true });
     expect(pickFolder).not.toHaveBeenCalled();
   });
+});
+
+// ---- search (#206) -----------------------------------------------------------
+
+const SID_A = REQ.sessionId;
+
+test("sessions:scan asks the search store to ingest", async () => {
+  const { call, search } = setup();
+  await call(CH.sessionsScan, "scan-s");
+  expect(search.requestIngest).toHaveBeenCalledTimes(1);
+});
+
+test("an untrusted sessions:scan does not trigger an ingest", async () => {
+  const { handlers, search } = setup();
+  await handlers.get(CH.sessionsScan)!(
+    { sender: { send: () => {} } },
+    "scan-u",
+  );
+  expect(search.requestIngest).not.toHaveBeenCalled();
+});
+
+test("search:prsFor relays only valid session ids", async () => {
+  const { call, search } = setup();
+  search.prsFor.mockResolvedValueOnce({ [SID_A]: [] });
+  await expect(
+    call(CH.searchPrsFor, [SID_A, "not-a-uuid", 7]),
+  ).resolves.toEqual({
+    [SID_A]: [],
+  });
+  expect(search.prsFor).toHaveBeenCalledWith([SID_A]);
+});
+
+test.each([
+  ["a non-array", "x"],
+  ["no valid ids", ["nope"]],
+  ["too many ids", Array.from({ length: MAX_PRS_FOR_IDS + 1 }, () => SID_A)],
+])(
+  "search:prsFor with %s returns {} without asking the store",
+  async (_label, arg) => {
+    const { call, search } = setup();
+    await expect(call(CH.searchPrsFor, arg)).resolves.toEqual({});
+    expect(search.prsFor).not.toHaveBeenCalled();
+  },
+);
+
+test("search:prsFor from an untrusted sender returns {}", async () => {
+  const { handlers, search } = setup();
+  await expect(
+    handlers.get(CH.searchPrsFor)!({ sender: { send: () => {} } }, [SID_A]),
+  ).resolves.toEqual({});
+  expect(search.prsFor).not.toHaveBeenCalled();
+});
+
+test("a failing search store logs and returns {}", async () => {
+  const { call, search, logError } = setup();
+  search.prsFor.mockRejectedValueOnce(new Error("boom"));
+  await expect(call(CH.searchPrsFor, [SID_A])).resolves.toEqual({});
+  expect(logError).toHaveBeenCalledWith("search:prsFor", expect.any(Error));
 });
