@@ -67,7 +67,7 @@ Create:
 | `scripts/sqlite-probe.mjs` | asserts `node:sqlite` + FTS5 work (run under Electron in CI) |
 | `scripts/run-sqlite-probe.mjs` | runs the probe with the repo's Electron binary as Node |
 
-Modify: `src/sessionParser.ts`, `src/sessionStore.ts`, `src/ipcChannels.ts`, `src/ipcTypes.ts`, `src/ipc.ts`, `src/preload.ts`, `src/main.ts`, `src/sessionListWindow.ts`, `src/renderer/types/csm.d.ts`, `src/renderer/components/SessionRow.tsx`, `src/renderer/components/SessionRow.module.css`, `src/renderer/components/SessionList.tsx`, `package.json`, `electron-builder.yml`, `.github/workflows/ci.yml`; tests `test/main/ipc.test.ts`, `test/main/sessionListWindow.test.ts`, `test/renderer/SessionRow.test.tsx`, `test/renderer/SessionList.test.tsx`.
+Modify: `src/sessionParser.ts`, `src/sessionStore.ts`, `src/ipcChannels.ts`, `src/ipcTypes.ts`, `src/ipc.ts`, `src/preload.ts`, `src/main.ts`, `src/sessionListWindow.ts`, `src/renderer/types/csm.d.ts`, `src/renderer/components/SessionRow.tsx`, `src/renderer/components/SessionRow.module.css`, `src/renderer/components/SessionList.tsx`, `package.json`, `electron-builder.yml`, `.github/workflows/ci.yml`; tests `test/sessionParser.test.ts`, `test/main/ipc.test.ts`, `test/main/sessionListWindow.test.ts`, `test/renderer/SessionRow.test.tsx`, `test/renderer/SessionList.test.tsx`.
 
 Tests live in `test/main/search/` (node environment, `tsconfig.node.json`) and `test/renderer/` (jsdom).
 
@@ -321,8 +321,7 @@ Expected: FAIL — cannot resolve `src/search/searchText`.
 `src/search/searchText.ts`:
 
 ```ts
-// Shared by ingest (what FTS indexes) and, in slice 3, by query parsing and
-// snippet ranges, so both sides fold and split text identically.
+// Anything matched against the FTS index must fold and split text exactly as ingest does.
 
 const TOKEN_RE = /[\p{L}\p{N}\p{M}\p{Co}]+/gu;
 const CAMEL_RE = /\p{Lu}+(?=\p{Lu}\p{Ll})|\p{Lu}?[\p{Ll}\p{N}]+|\p{Lu}+\p{N}*/gu;
@@ -5954,8 +5953,8 @@ describe("packaged search worker", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `& .\node_modules\.bin\vitest.cmd run test/main/ipc.test.ts`
-Expected: FAIL — `CH.searchPrsFor` is undefined and `requestIngest` is never called.
+Run: `& .\node_modules\.bin\vitest.cmd run test/main/ipc.test.ts test/main/packagingSearchWorker.test.ts`
+Expected: FAIL — `CH.searchPrsFor` is undefined, `requestIngest` is never called, and `asarUnpackedPath` is not exported from `src/searchHost`.
 
 - [ ] **Step 3: Implement**
 
@@ -5995,7 +5994,7 @@ export interface SearchProgressMessage {
 
 `src/ipc.ts`:
 
-1. Add imports: `import type { SessionPrsResult } from "./ipcTypes";` (merge into the existing `import type { … } from "./ipcTypes"` block) and `import { isValidSessionId } from "./terminalLauncher";`.
+1. Add imports: `import type { SessionPrsResult } from "./ipcTypes";` (merge into the existing multi-line `import type { … } from "./ipcTypes"` block near the top of the file, not the single-line one below it) and `import { isValidSessionId } from "./terminalLauncher";`.
 2. Below the imports add:
 
 ```ts
