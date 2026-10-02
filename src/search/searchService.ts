@@ -78,21 +78,26 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
     inflight.add(p);
   }
 
-  // The ingester and enricher coalesce overlapping calls into one running
-  // promise, so only the first caller owns the posts and counters.
+  // A trigger that arrives mid-run is drained by the owner as one more round.
   let enrichInFlight = false;
+  let enrichPending = false;
   let ingestInFlight = false;
+  let ingestPending = false;
 
   async function enrich(): Promise<void> {
     if (enrichInFlight) {
-      void enricher.runDue();
+      enrichPending = true;
       return;
     }
     enrichInFlight = true;
     try {
-      const r = await enricher.runDue();
-      if (r.failures > 0) log(`gh enrichment: ${r.failures} batch(es) failed`);
-      if (!closed && r.wrote > 0) post({ type: "changed" });
+      do {
+        enrichPending = false;
+        const r = await enricher.runDue();
+        if (r.failures > 0)
+          log(`gh enrichment: ${r.failures} batch(es) failed`);
+        if (!closed && r.wrote > 0) post({ type: "changed" });
+      } while (enrichPending && !closed);
     } finally {
       enrichInFlight = false;
     }
@@ -100,19 +105,22 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
 
   async function ingestThenEnrich(): Promise<void> {
     if (ingestInFlight) {
-      void ingester.runPass();
+      ingestPending = true;
       return;
     }
     ingestInFlight = true;
     try {
-      const r = await ingester.runPass();
-      if (closed) return;
-      if (r.changed) {
-        post({ type: "changed" });
-        turnsSinceOptimize += r.turnsInserted;
-        scheduleMaintenance();
-      }
-      await enrich();
+      do {
+        ingestPending = false;
+        const r = await ingester.runPass();
+        if (closed) return;
+        if (r.changed) {
+          post({ type: "changed" });
+          turnsSinceOptimize += r.turnsInserted;
+          scheduleMaintenance();
+        }
+        await enrich();
+      } while (ingestPending && !closed);
     } finally {
       ingestInFlight = false;
     }
