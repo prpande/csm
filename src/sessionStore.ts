@@ -7,8 +7,8 @@
 // session file (a hard CLAUDE.md constraint, asserted in tests). Design spec
 // (docs/specs/2026-06-30-csm-design.md §5 module table, §6 tiered scan).
 
-import { readdir, stat, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { stat, readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import {
   parseSession,
   extractSessionFacts,
@@ -22,6 +22,7 @@ import {
   type IndexFacts,
   type SessionIndex,
 } from "./sessionIndex";
+import { JSONL_EXT, listTranscripts } from "./search/transcriptFiles";
 
 export interface SessionFolder {
   cwd: string;
@@ -53,11 +54,6 @@ export interface StoreDeps {
   index?: SessionIndex;
 }
 
-// Session files. The match is case-sensitive: Claude always writes lowercase
-// `.jsonl`, and this reads Claude's own files (spec §6) — a `.JSONL` from an
-// external tool is out of scope and intentionally ignored.
-const JSONL_EXT = ".jsonl";
-
 // Age tiers by mtime (spec §6): <=1d, <=3d, <=7d, <=14d, <=30d, then a final
 // "older than 30d" bucket. Newest tier is parsed and emitted first.
 const DAY_MS = 86_400_000;
@@ -83,45 +79,8 @@ interface FileEntry {
 // Collect every *.jsonl one directory level below the root (the encoded-cwd
 // folders). A missing/unreadable root or subdir is skipped, never fatal.
 async function collectFiles(rootDir: string): Promise<FileEntry[]> {
-  let subdirs: string[];
-  try {
-    const entries = await readdir(rootDir, { withFileTypes: true });
-    subdirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
-  } catch {
-    return [];
-  }
-
-  const files: FileEntry[] = [];
-  for (const sub of subdirs) {
-    const dir = join(rootDir, sub);
-    let names: string[];
-    try {
-      const entries = await readdir(dir, { withFileTypes: true });
-      // Require a non-empty stem: a file named exactly ".jsonl" would yield an
-      // empty sessionId (basename(".jsonl", ".jsonl") === ""), leaking a bogus
-      // un-reopenable session — skip it rather than emit it (fail-soft, §12).
-      names = entries
-        .filter(
-          (e) =>
-            e.isFile() &&
-            e.name.endsWith(JSONL_EXT) &&
-            e.name.length > JSONL_EXT.length,
-        )
-        .map((e) => e.name);
-    } catch {
-      continue;
-    }
-    for (const name of names) {
-      const path = join(dir, name);
-      try {
-        const st = await stat(path);
-        files.push({ path, mtimeMs: st.mtimeMs, size: st.size });
-      } catch {
-        // Unreadable between readdir and stat (e.g. removed) — skip.
-      }
-    }
-  }
-  return files;
+  const { files } = await listTranscripts(rootDir);
+  return files.map(({ path, mtimeMs, size }) => ({ path, mtimeMs, size }));
 }
 
 // `<sessionId>.jsonl` -> `<sessionId>`. The filename is the authoritative id
