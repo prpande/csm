@@ -5,7 +5,6 @@ import {
   primaryPr,
   prLinkSummary,
   prStateLabel,
-  prTooltip,
 } from "../../src/prChip";
 
 const pr = (over: Partial<SessionPrLink> = {}): SessionPrLink => ({
@@ -64,13 +63,4 @@ test("orderedPrs puts the primary first, then the rest by number descending", ()
 test("prLinkSummary omits missing parts", () => {
   expect(prLinkSummary(pr())).toBe("o/r#12 · open · Fix the parser");
   expect(prLinkSummary(pr({ state: null, title: null }))).toBe("o/r#12");
-});
-
-test("prTooltip lists every link, primary first", () => {
-  expect(
-    prTooltip([
-      pr({ number: 7, state: "MERGED", title: "Old" }),
-      pr({ createdHere: true }),
-    ]),
-  ).toBe("o/r#12 · open · Fix the parser\no/r#7 · merged · Old");
 });

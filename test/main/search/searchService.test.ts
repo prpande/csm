@@ -12,7 +12,7 @@ import {
   createSearchService,
   IDLE_BEFORE_MAINTENANCE_MS,
   MERGE_PAGES,
-  OPTIMIZE_AFTER_TURNS,
+  MAINTENANCE_AFTER_TURNS,
   type SearchServiceDeps,
   type ServiceTimers,
 } from "../../../src/search/searchService";
@@ -265,7 +265,7 @@ describe("createSearchService", () => {
 
 describe("fts maintenance", () => {
   test("a large pass optimizes once the store is idle", async () => {
-    writeTranscript(OPTIMIZE_AFTER_TURNS);
+    writeTranscript(MAINTENANCE_AFTER_TURNS);
     const optimize = vi.spyOn(db, "optimizeFts");
     const { svc, fire, live } = service();
     svc.start();
@@ -276,7 +276,7 @@ describe("fts maintenance", () => {
   });
 
   test("after the cold optimize, later thresholds merge instead", async () => {
-    writeTranscript(OPTIMIZE_AFTER_TURNS);
+    writeTranscript(MAINTENANCE_AFTER_TURNS);
     const optimize = vi.spyOn(db, "optimizeFts");
     const merge = vi.spyOn(db, "mergeFts");
     const { svc, fire } = service();
@@ -285,7 +285,7 @@ describe("fts maintenance", () => {
     fire();
     expect(optimize).toHaveBeenCalledTimes(1);
     expect(merge).not.toHaveBeenCalled();
-    writeTranscript(OPTIMIZE_AFTER_TURNS * 3);
+    writeTranscript(MAINTENANCE_AFTER_TURNS * 3);
     svc.handle({ type: "ingest" });
     await svc.whenIdle();
     fire();
@@ -300,7 +300,7 @@ describe("fts maintenance", () => {
     await first.svc.whenIdle();
     const optimize = vi.spyOn(db, "optimizeFts");
     const merge = vi.spyOn(db, "mergeFts");
-    writeTranscript(OPTIMIZE_AFTER_TURNS + 1);
+    writeTranscript(MAINTENANCE_AFTER_TURNS + 1);
     const { svc, fire } = service();
     svc.start();
     await svc.whenIdle();
@@ -310,7 +310,7 @@ describe("fts maintenance", () => {
   });
 
   test("maintenance waits while queries keep arriving", async () => {
-    writeTranscript(OPTIMIZE_AFTER_TURNS);
+    writeTranscript(MAINTENANCE_AFTER_TURNS);
     const optimize = vi.spyOn(db, "optimizeFts");
     const { svc, fire, live } = service();
     svc.start();
@@ -325,7 +325,7 @@ describe("fts maintenance", () => {
   });
 
   test("overlapping ingest triggers do not double-count turns toward maintenance", async () => {
-    writeTranscript(Math.ceil(OPTIMIZE_AFTER_TURNS * 0.6));
+    writeTranscript(Math.ceil(MAINTENANCE_AFTER_TURNS * 0.6));
     const { svc, live } = service();
     svc.start();
     svc.handle({ type: "ingest" });

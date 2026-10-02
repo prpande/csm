@@ -5,7 +5,7 @@ import type { SearchDb } from "./searchDb";
 
 export const ENRICH_INTERVAL_MS = 10 * 60_000;
 export const IDLE_BEFORE_MAINTENANCE_MS = 2_000;
-export const OPTIMIZE_AFTER_TURNS = 1_000;
+export const MAINTENANCE_AFTER_TURNS = 1_000;
 export const MERGE_PAGES = 500;
 export const PROGRESS_EVERY = 50;
 
@@ -46,7 +46,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
   const timers = deps.timers ?? realTimers;
   let closed = false;
   let lastQueryAt = Number.NEGATIVE_INFINITY;
-  let turnsSinceOptimize = 0;
+  let turnsSinceMaintenance = 0;
   let coldBuild = !db.hasTurns();
   let cancelMaintenance: (() => void) | null = null;
   let cancelEnrichTimer: (() => void) | null = null;
@@ -118,7 +118,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
         if (closed) return;
         if (r.changed) {
           post({ type: "changed" });
-          turnsSinceOptimize += r.turnsInserted;
+          turnsSinceMaintenance += r.turnsInserted;
           scheduleMaintenance();
         }
         await enrich();
@@ -129,7 +129,8 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
   }
 
   function scheduleMaintenance(): void {
-    if (cancelMaintenance || turnsSinceOptimize < OPTIMIZE_AFTER_TURNS) return;
+    if (cancelMaintenance || turnsSinceMaintenance < MAINTENANCE_AFTER_TURNS)
+      return;
     cancelMaintenance = timers.setTimeout(
       runMaintenance,
       IDLE_BEFORE_MAINTENANCE_MS,
@@ -148,14 +149,14 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
       );
       return;
     }
-    const optimizing = coldBuild;
+    const op = coldBuild ? "optimize" : "merge";
     try {
-      if (optimizing) db.optimizeFts();
+      if (op === "optimize") db.optimizeFts();
       else db.mergeFts(MERGE_PAGES);
       coldBuild = false;
-      turnsSinceOptimize = 0;
+      turnsSinceMaintenance = 0;
     } catch (err) {
-      log(optimizing ? "fts optimize failed" : "fts merge failed", err);
+      log(`fts ${op} failed`, err);
     }
   }
 

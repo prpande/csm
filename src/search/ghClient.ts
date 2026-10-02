@@ -4,7 +4,7 @@ import { isPrState } from "../ipcTypes";
 import { isRecord } from "../typeGuards";
 import type { PrDetails } from "./searchDb";
 
-export const GH_TIMEOUT_MS = 20_000;
+const GH_TIMEOUT_MS = 20_000;
 export const BODY_MAX_BYTES = 65_536;
 export const MAX_GH_STDOUT_BYTES = 16 * 1024 * 1024;
 

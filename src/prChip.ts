@@ -48,7 +48,3 @@ export function prLinkSummary(link: SessionPrLink): string {
     .filter((part): part is string => !!part)
     .join(" · ");
 }
-
-export function prTooltip(links: readonly SessionPrLink[]): string {
-  return orderedPrs(links).map(prLinkSummary).join("\n");
-}

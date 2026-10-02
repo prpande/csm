@@ -1,12 +1,6 @@
 import type { SessionMetadata } from "../../sessionParser";
 import type { SessionPrLink } from "../../ipcTypes";
-import {
-  orderedPrs,
-  primaryPr,
-  prLinkSummary,
-  prStateLabel,
-  prTooltip,
-} from "../../prChip";
+import { orderedPrs, prLinkSummary, prStateLabel } from "../../prChip";
 import {
   chipVariant,
   formatRelativeTime,
@@ -83,9 +77,10 @@ export function SessionRow({
     ? session.gitBranch
     : undefined;
   const branchLabel = worktreeBranch ?? ownBranch;
-  const primary = prLinks ? primaryPr(prLinks) : undefined;
+  const orderedLinks = prLinks ? orderedPrs(prLinks) : [];
+  const primary = orderedLinks[0];
   const primaryState = primary ? prStateLabel(primary) : undefined;
-  const morePrs = (prLinks?.length ?? 0) - 1;
+  const linkSummaries = orderedLinks.map(prLinkSummary);
   return (
     <div
       className={styles.row}
@@ -138,10 +133,8 @@ export function SessionRow({
               data-testid="pr-chip"
               // Not a tab stop, like the Open button: Shift+Enter on the row opens it.
               tabIndex={-1}
-              title={prTooltip(prLinks ?? [])}
-              aria-label={`Pull requests: ${orderedPrs(prLinks ?? [])
-                .map(prLinkSummary)
-                .join("; ")}`}
+              title={linkSummaries.join("\n")}
+              aria-label={`Pull requests: ${linkSummaries.join("; ")}`}
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenPr?.(primary);
@@ -154,7 +147,11 @@ export function SessionRow({
                   {primaryState}
                 </span>
               )}
-              {morePrs > 0 && <span className={styles.prMore}>+{morePrs}</span>}
+              {orderedLinks.length > 1 && (
+                <span className={styles.prMore}>
+                  +{orderedLinks.length - 1}
+                </span>
+              )}
             </button>
           )}
           <span className={styles.sep} aria-hidden="true">
