@@ -1,5 +1,9 @@
-import { isNonEmptyString, isRecord } from "../typeGuards";
-import { eligiblePromptText, truncateTitle } from "../sessionParser";
+import { isNonEmptyString } from "../typeGuards";
+import {
+  assistantText,
+  eligiblePromptText,
+  truncateTitle,
+} from "../sessionParser";
 import { searchTextOf } from "./searchText";
 
 type Rec = Record<string, unknown>;
@@ -27,24 +31,6 @@ export function recordTimestamp(rec: Rec): number | null {
   if (typeof rec.timestamp !== "string") return null;
   const t = Date.parse(rec.timestamp);
   return Number.isNaN(t) ? null : t;
-}
-
-function assistantText(rec: Rec): string | undefined {
-  const message = rec.message;
-  if (!isRecord(message)) return undefined;
-  const content = message.content;
-  if (typeof content === "string") return content.trim() || undefined;
-  if (!Array.isArray(content)) return undefined;
-  const parts: string[] = [];
-  for (const block of content) {
-    if (
-      isRecord(block) &&
-      block.type === "text" &&
-      isNonEmptyString(block.text)
-    )
-      parts.push(block.text.trim());
-  }
-  return parts.length > 0 ? parts.join("\n\n") : undefined;
 }
 
 export function extractTurn(rec: Rec): TurnRow | undefined {

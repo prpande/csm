@@ -329,21 +329,28 @@ function toolUseBlocks(rec: Record_): Record_[] {
   );
 }
 
-// An assistant record counts as a conversational turn only if it emitted text
-// (a pure tool-use turn is plumbing, not a message the user reads).
-function hasAssistantText(rec: Record_): boolean {
+// The readable text of an assistant record, undefined for a pure tool-use turn
+// (plumbing, not a message the user reads).
+export function assistantText(rec: Record_): string | undefined {
   const message = rec.message;
-  if (!isRecord(message)) return false;
+  if (!isRecord(message)) return undefined;
   const content = message.content;
-  if (typeof content === "string") return content.trim().length > 0;
-  if (!Array.isArray(content)) return false;
-  return content.some(
-    (b) =>
-      isRecord(b) &&
-      b.type === "text" &&
-      asNonEmptyString(b.text) !== undefined,
-  );
+  if (typeof content === "string") return content.trim() || undefined;
+  if (!Array.isArray(content)) return undefined;
+  const parts: string[] = [];
+  for (const block of content) {
+    if (
+      isRecord(block) &&
+      block.type === "text" &&
+      isNonEmptyString(block.text)
+    )
+      parts.push(block.text.trim());
+  }
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
 }
+
+const hasAssistantText = (rec: Record_): boolean =>
+  assistantText(rec) !== undefined;
 
 /**
  * Extract the heavier per-session facts for the enriched row (spec §4). Shares the
