@@ -87,6 +87,8 @@ Tests live in `test/main/search/` (node environment, `tsconfig.node.json`) and `
 - **Tooltip format** is `owner/repo#N · state · title`, primary first, because one session can link PRs in several repos. Spec §8.4 updated.
 - **Orphan PR rows are pruned after each pass** (`pruneOrphanPrs`), so a PR whose only session was rewritten without the link stops being enriched.
 - **Opt-out purge ordering stays as today.** With the index setting off, main deletes `search.*` files at startup with a 5 s retry; changing the setting at runtime is #134's scope.
+- **Corruption is detected at open only** (spec §12), including corruption met while rebuilding the FTS index. A store that goes bad mid-session keeps logging per-file ingest errors until it is moved aside; runtime detection is #211.
+- **The enricher reruns once when called mid-run**, so a PR first linked during an enrichment round gets its state and title right after it rather than at the next 10-minute tick.
 
 ---
 
@@ -2327,6 +2329,7 @@ git commit -m "feat: add PR link queries and enrichment writes to searchDb (#206
   - `export interface SafeOpenOptions extends OpenOptions { now: number }`
   - `export function openSearchDbSafe(dir: string, opts: SafeOpenOptions): { db: SearchDb; recovered: boolean }` — on a corruption error renames the file to `search.corrupt-<now>.db`, keeps only that corrupt copy, opens a fresh database and salvages tombstoned sessions; any other error is rethrown.
   - New `SearchDb` method `salvageTombstoned(corruptPath: string): void` — best effort; never throws for a bad source file.
+  - `ensureFts` (Task 7) rethrows corruption errors instead of reporting FTS5 as unavailable, so corruption met while rebuilding the index reaches `openSearchDbSafe`'s recovery.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2335,7 +2338,17 @@ git commit -m "feat: add PR link queries and enrichment writes to searchDb (#206
 ```ts
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -2420,6 +2433,27 @@ describe("openSearchDbSafe", () => {
     expect(readdirSync(dir).filter((n) => n.startsWith("search.corrupt-"))).toEqual([
       "search.corrupt-2.db",
     ]);
+  });
+
+  test("corruption met while rebuilding the FTS index is recovered, not reported as no FTS5", () => {
+    const first = openSearchDb(dir, { platform: process.platform });
+    for (let i = 0; i < 40; i++) write(first, `s${i}`, `words ${i} ${"x".repeat(2000)}`);
+    first.close();
+    const file = join(dir, SEARCH_DB_FILENAME);
+    const raw = new DatabaseSync(file);
+    raw.exec("UPDATE meta SET value = '0' WHERE key = 'fts_ok'");
+    const { rootpage } = raw
+      .prepare("SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = 'turn'")
+      .get() as { rootpage: number };
+    const { page_size } = raw.prepare("PRAGMA page_size").get() as { page_size: number };
+    raw.close();
+    const fd = openSync(file, "r+");
+    writeSync(fd, Buffer.alloc(page_size, 7), 0, page_size, (rootpage - 1) * page_size);
+    closeSync(fd);
+    const { db, recovered } = openSearchDbSafe(dir, { platform: process.platform, now: 9 });
+    opened.push(db);
+    expect(recovered).toBe(true);
+    expect(db.ftsOk).toBe(true);
   });
 });
 
@@ -2545,6 +2579,25 @@ export function openSearchDbSafe(
   return { db, recovered: true };
 }
 ```
+
+5. In `ensureFts` (Task 7), replace
+
+```ts
+  } catch {
+    ok = false;
+  }
+```
+
+with
+
+```ts
+  } catch (err) {
+    if (isCorruptionError(err)) throw err;
+    ok = false;
+  }
+```
+
+`openSearchDb` already closes the connection and rethrows, so corruption met while rebuilding the index reaches `openSearchDbSafe`'s recovery instead of opening as "FTS5 unavailable". `isCorruptionError` is a hoisted function declaration, so it can stay at the end of the file.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -4290,7 +4343,7 @@ git commit -m "feat: fetch PR details through gh api graphql (#206)"
   - `export type RunBatch = (repo: string, numbers: number[]) => Promise<BatchOutcome>;`
   - `export interface EnrichResult { wrote: number; failures: number }` — `wrote` counts PRs whose details were applied.
   - `export interface EnricherDeps { db: Pick<SearchDb, "duePrs" | "applyPrDetails" | "markPrError">; runBatch: RunBatch; now: () => number }`
-  - `export function createEnricher(deps: EnricherDeps): { runDue(): Promise<EnrichResult> }` — a call while one runs returns the running promise.
+  - `export function createEnricher(deps: EnricherDeps): { runDue(): Promise<EnrichResult> }` — a call while one runs returns the running promise and makes it run exactly one more round after the current one, for PRs that became due meanwhile; the promise resolves to the summed result.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4408,14 +4461,15 @@ describe("createEnricher", () => {
     expect(db.markPrError).toHaveBeenCalledWith({ repo: "o/r", number: 1 }, "bad-output", 0);
   });
 
-  test("a call while running shares the running promise", async () => {
+  test("a call while running shares the running promise and adds exactly one more round", async () => {
     const db = fakeDb([{ repo: "o/r", number: 1 }]);
     const runBatch = vi.fn(allData);
     const enricher = createEnricher({ db, runBatch, now: () => 0 });
     const a = enricher.runDue();
     expect(enricher.runDue()).toBe(a);
-    await a;
-    expect(runBatch).toHaveBeenCalledTimes(1);
+    expect(enricher.runDue()).toBe(a);
+    expect(await a).toEqual({ wrote: 2, failures: 0 });
+    expect(runBatch).toHaveBeenCalledTimes(2);
   });
 });
 ```
@@ -4472,6 +4526,7 @@ export function createEnricher(deps: EnricherDeps): {
 } {
   const backoffUntil = new Map<string, number>();
   let running: Promise<EnrichResult> | null = null;
+  let rerun = false;
 
   function batchesDue(now: number): Batch[] {
     const groups = new Map<string, Batch>();
@@ -4519,9 +4574,25 @@ export function createEnricher(deps: EnricherDeps): {
     return result;
   }
 
+  async function loop(): Promise<EnrichResult> {
+    rerun = false;
+    const total = await runOnce();
+    while (rerun) {
+      rerun = false;
+      const more = await runOnce();
+      total.wrote += more.wrote;
+      total.failures += more.failures;
+    }
+    return total;
+  }
+
   return {
     runDue() {
-      running ??= runOnce().finally(() => {
+      if (running) {
+        rerun = true;
+        return running;
+      }
+      running = loop().finally(() => {
         running = null;
       });
       return running;
