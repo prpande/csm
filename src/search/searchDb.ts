@@ -1,6 +1,13 @@
 // The only module that touches node:sqlite, so an API change or a move to
 // utilityProcess stays contained here.
-import { closeSync, existsSync, openSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { isPrState, type PrState, type SessionPrsResult } from "../ipcTypes";
@@ -175,6 +182,7 @@ export interface SearchDb {
   markPrError(key: PrKey, code: string, now: number): void;
   pruneOrphanPrs(): number;
   optimizeFts(): void;
+  salvageTombstoned(corruptPath: string): void;
   close(): void;
 }
 
@@ -278,7 +286,8 @@ function ensureFts(db: DatabaseSync, ddl: string): boolean {
     if (!exists || !wasOk) db.exec("INSERT INTO fts(fts) VALUES('rebuild')");
     else db.prepare("SELECT rowid FROM fts LIMIT 0").all();
     ok = true;
-  } catch {
+  } catch (err) {
+    if (isCorruptionError(err)) throw err;
     ok = false;
   }
   db.prepare(
@@ -524,8 +533,78 @@ export function openSearchDb(dir: string, opts: OpenOptions): SearchDb {
     optimizeFts() {
       if (ftsOk) db.exec("INSERT INTO fts(fts) VALUES('optimize')");
     },
+    salvageTombstoned(corruptPath) {
+      try {
+        db.prepare("ATTACH DATABASE ? AS old").run(corruptPath);
+      } catch {
+        return;
+      }
+      const steps = [
+        `INSERT OR IGNORE INTO session (${SESSION_COLUMNS})
+         SELECT ${SESSION_COLUMNS} FROM old.session WHERE deleted_at IS NOT NULL`,
+        `INSERT OR IGNORE INTO turn (root, sid, uuid, role, ts, text, search_text)
+         SELECT t.root, t.sid, t.uuid, t.role, t.ts, t.text, t.search_text
+         FROM old.turn t JOIN old.session s ON s.root = t.root AND s.sid = t.sid
+         WHERE s.deleted_at IS NOT NULL`,
+        `INSERT OR IGNORE INTO session_pr (root, sid, repo, number, created_here, first_seen, last_seen)
+         SELECT sp.root, sp.sid, sp.repo, sp.number, sp.created_here, sp.first_seen, sp.last_seen
+         FROM old.session_pr sp JOIN old.session s ON s.root = sp.root AND s.sid = sp.sid
+         WHERE s.deleted_at IS NOT NULL`,
+        `INSERT OR IGNORE INTO pr (repo, number, url, title, state, is_draft, body, fetched_at, fetch_error)
+         SELECT p.repo, p.number, p.url, p.title, p.state, p.is_draft, p.body, p.fetched_at, p.fetch_error
+         FROM old.pr p
+         WHERE EXISTS (SELECT 1 FROM main.session_pr sp WHERE sp.repo = p.repo AND sp.number = p.number)`,
+      ];
+      for (const sql of steps) {
+        try {
+          db.exec(sql);
+        } catch {
+          // Best effort: a table that no longer reads cleanly is skipped.
+        }
+      }
+      try {
+        db.exec("DETACH DATABASE old");
+      } catch {
+        // Nothing attached means nothing to detach.
+      }
+      if (ftsOk) db.exec("INSERT INTO fts(fts) VALUES('rebuild')");
+    },
     close() {
       if (db.isOpen) db.close();
     },
   };
+}
+
+const CORRUPT_COPY_RE = /^search\.corrupt-.+\.db$/;
+
+export function isCorruptionError(err: unknown): boolean {
+  const code = (err as { errcode?: unknown } | null | undefined)?.errcode;
+  if (typeof code !== "number") return false;
+  const primary = code & 0xff;
+  return primary === 11 || primary === 26;
+}
+
+export interface SafeOpenOptions extends OpenOptions {
+  now: number;
+}
+
+export function openSearchDbSafe(
+  dir: string,
+  opts: SafeOpenOptions,
+): { db: SearchDb; recovered: boolean } {
+  try {
+    return { db: openSearchDb(dir, opts), recovered: false };
+  } catch (err) {
+    if (!isCorruptionError(err)) throw err;
+  }
+  const file = join(dir, SEARCH_DB_FILENAME);
+  for (const name of readdirSync(dir))
+    if (CORRUPT_COPY_RE.test(name)) rmSync(join(dir, name), { force: true });
+  const corrupt = join(dir, `search.corrupt-${opts.now}.db`);
+  renameSync(file, corrupt);
+  rmSync(`${file}-wal`, { force: true });
+  rmSync(`${file}-shm`, { force: true });
+  const db = openSearchDb(dir, opts);
+  db.salvageTombstoned(corrupt);
+  return { db, recovered: true };
 }
