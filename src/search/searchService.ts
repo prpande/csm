@@ -78,21 +78,44 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
     inflight.add(p);
   }
 
+  // The ingester and enricher coalesce overlapping calls into one running
+  // promise, so only the first caller owns the posts and counters.
+  let enrichInFlight = false;
+  let ingestInFlight = false;
+
   async function enrich(): Promise<void> {
-    const r = await enricher.runDue();
-    if (r.failures > 0) log(`gh enrichment: ${r.failures} batch(es) failed`);
-    if (!closed && r.wrote > 0) post({ type: "changed" });
+    if (enrichInFlight) {
+      void enricher.runDue();
+      return;
+    }
+    enrichInFlight = true;
+    try {
+      const r = await enricher.runDue();
+      if (r.failures > 0) log(`gh enrichment: ${r.failures} batch(es) failed`);
+      if (!closed && r.wrote > 0) post({ type: "changed" });
+    } finally {
+      enrichInFlight = false;
+    }
   }
 
   async function ingestThenEnrich(): Promise<void> {
-    const r = await ingester.runPass();
-    if (closed) return;
-    if (r.changed) {
-      post({ type: "changed" });
-      turnsSinceOptimize += r.turnsInserted;
-      scheduleMaintenance();
+    if (ingestInFlight) {
+      void ingester.runPass();
+      return;
     }
-    await enrich();
+    ingestInFlight = true;
+    try {
+      const r = await ingester.runPass();
+      if (closed) return;
+      if (r.changed) {
+        post({ type: "changed" });
+        turnsSinceOptimize += r.turnsInserted;
+        scheduleMaintenance();
+      }
+      await enrich();
+    } finally {
+      ingestInFlight = false;
+    }
   }
 
   function scheduleMaintenance(): void {

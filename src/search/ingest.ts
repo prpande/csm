@@ -337,13 +337,17 @@ export function createIngester(deps: IngesterDeps): {
   let rerun = false;
 
   async function loop(): Promise<PassResult> {
-    rerun = false;
-    let merged = await pass();
-    while (rerun) {
+    try {
       rerun = false;
-      merged = mergeResults(merged, await pass());
+      let merged = await pass();
+      while (rerun) {
+        rerun = false;
+        merged = mergeResults(merged, await pass());
+      }
+      return merged;
+    } finally {
+      running = null;
     }
-    return merged;
   }
 
   return {
@@ -352,9 +356,7 @@ export function createIngester(deps: IngesterDeps): {
         rerun = true;
         return running;
       }
-      running = loop().finally(() => {
-        running = null;
-      });
+      running = loop();
       return running;
     },
   };

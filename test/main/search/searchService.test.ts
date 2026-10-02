@@ -131,6 +131,16 @@ describe("createSearchService", () => {
     });
   });
 
+  test("overlapping ingest triggers post changed once per outcome", async () => {
+    writeTranscript();
+    const { svc } = service();
+    svc.start();
+    svc.handle({ type: "ingest" });
+    svc.handle({ type: "ingest" });
+    await svc.whenIdle();
+    expect(changedCount()).toBe(2);
+  });
+
   test("prsFor replies with the session's links", async () => {
     writeTranscript();
     const { svc } = service();
@@ -211,6 +221,16 @@ describe("fts maintenance", () => {
     clock += IDLE_BEFORE_MAINTENANCE_MS;
     fire();
     expect(optimize).toHaveBeenCalledTimes(1);
+  });
+
+  test("overlapping ingest triggers do not double-count turns toward maintenance", async () => {
+    writeTranscript(Math.ceil(OPTIMIZE_AFTER_TURNS * 0.6));
+    const { svc, live } = service();
+    svc.start();
+    svc.handle({ type: "ingest" });
+    svc.handle({ type: "ingest" });
+    await svc.whenIdle();
+    expect(live()).toEqual([]);
   });
 
   test("a small pass schedules no maintenance", async () => {

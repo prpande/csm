@@ -477,4 +477,28 @@ describe("invariants", () => {
     expect(r.filesIngested).toBe(1);
     expect(texts()).toEqual(["a"]);
   });
+
+  test("a runPass requested at any microtask hop after the last pass starts still gets one more pass", async () => {
+    write([user("u1", "a")]);
+    for (let hops = 0; hops <= 12; hops++) {
+      if (hops > 0) append([user(`u${hops + 1}`, `t${hops}`)]);
+      let passes = 0;
+      let late: Promise<unknown> | null = null;
+      const ing = ingester({
+        onProgress: ({ done, total }) => {
+          if (done === 0) passes++;
+          if (total === 0 || done !== total || passes !== 1) return;
+          let chain: Promise<void> = Promise.resolve();
+          for (let i = 0; i < hops; i++) chain = chain.then(() => undefined);
+          void chain.then(() => {
+            late = ing.runPass();
+          });
+        },
+      });
+      await ing.runPass();
+      await new Promise((resolve) => setImmediate(resolve));
+      await late;
+      expect(passes, `hops=${hops}`).toBe(2);
+    }
+  });
 });
