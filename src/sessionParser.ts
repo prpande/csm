@@ -103,7 +103,9 @@ function parseRecords(content: string): Record_[] {
 // prompt) OR a block array (tool_result, or isMeta text wrappers) — verified
 // against real data. isMeta / isVisibleInTranscriptOnly records and wrapper
 // text are rejected here so only a genuine prompt can become the title.
-function eligiblePromptText(rec: Record_): string | undefined {
+export function eligiblePromptText(
+  rec: Record<string, unknown>,
+): string | undefined {
   if (rec.type !== "user") return undefined;
   if (rec.isMeta === true || rec.isVisibleInTranscriptOnly === true)
     return undefined;
@@ -135,7 +137,7 @@ function eligiblePromptText(rec: Record_): string | undefined {
 // whole code points, so a supplementary-plane character (emoji, some CJK) that
 // straddles the limit is kept or dropped as a unit rather than being sliced into
 // a lone, malformed surrogate. TITLE_MAX_LENGTH is thus a code-point budget.
-function truncateTitle(text: string): string {
+export function truncateTitle(text: string): string {
   const codePoints = [...text];
   return codePoints.length > TITLE_MAX_LENGTH
     ? codePoints.slice(0, TITLE_MAX_LENGTH).join("") + "…"
@@ -205,6 +207,23 @@ function firstPromptTitle(records: Record_[]): string | undefined {
   return undefined;
 }
 
+export interface TitleSources {
+  customTitle?: string | null;
+  aiTitle?: string | null;
+  summary?: string | null;
+  /** Already truncated with truncateTitle. */
+  firstPrompt?: string | null;
+}
+
+// The single title rule shared by the browse parser and the search index, so the
+// two cannot drift.
+export function composeTitleFrom(src: TitleSources): string {
+  return composeTitle(
+    src.customTitle ?? undefined,
+    src.aiTitle ?? src.summary ?? src.firstPrompt ?? undefined,
+  );
+}
+
 // Row title (spec §4.1). A user-assigned name (`custom-title`, set by /rename)
 // LEADS when present; the derived descriptor — ai-title -> summary -> first
 // eligible user prompt (truncated), read top to bottom as strict priority —
@@ -212,14 +231,14 @@ function firstPromptTitle(records: Record_[]): string | undefined {
 // (name-only, descriptor-only, over-budget). Falls back to "(untitled)" only
 // when neither a name nor any descriptor exists.
 function extractTitle(records: Record_[]): string {
-  const name = fieldValue(records, "custom-title", "customTitle", {
-    last: true,
+  return composeTitleFrom({
+    customTitle: fieldValue(records, "custom-title", "customTitle", {
+      last: true,
+    }),
+    aiTitle: fieldValue(records, "ai-title", "aiTitle"),
+    summary: fieldValue(records, "summary", "summary"),
+    firstPrompt: firstPromptTitle(records),
   });
-  const descriptor =
-    fieldValue(records, "ai-title", "aiTitle") ??
-    fieldValue(records, "summary", "summary") ??
-    firstPromptTitle(records);
-  return composeTitle(name, descriptor);
 }
 
 // LAST permission-mode record wins — a session can change mode mid-run, and the
