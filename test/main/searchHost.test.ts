@@ -5,6 +5,7 @@ import {
   RESTART_DELAYS_MS,
   SHUTDOWN_ACK_MS,
   STABLE_AFTER_MS,
+  TERMINATE_MS,
   type SearchEvent,
   type WorkerLike,
 } from "../../src/searchHost";
@@ -220,6 +221,27 @@ describe("createSearchHost", () => {
     vi.advanceTimersByTime(SHUTDOWN_ACK_MS);
     await stopping;
     expect(last().terminated).toBe(true);
+  });
+
+  test("stop resolves after the terminate deadline when terminate never settles", async () => {
+    class HungWorker extends FakeWorker {
+      override terminate(): Promise<number> {
+        return new Promise(() => {});
+      }
+    }
+    const hung = new HungWorker();
+    const { host } = setup(() => hung);
+    host.start();
+    let done = false;
+    const stopping = host.stop().then(() => {
+      done = true;
+    });
+    await vi.advanceTimersByTimeAsync(SHUTDOWN_ACK_MS);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(TERMINATE_MS);
+    await stopping;
+    expect(done).toBe(true);
+    expect(host.state).toBe("stopped");
   });
 
   test("a fatal worker is terminated and no longer used", async () => {

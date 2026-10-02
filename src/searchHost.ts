@@ -18,6 +18,7 @@ export type SearchHostState = "stopped" | "starting" | "running" | "failed";
 export const RESTART_DELAYS_MS = [1_000, 5_000, 30_000];
 export const STABLE_AFTER_MS = 60_000;
 export const SHUTDOWN_ACK_MS = 2_000;
+export const TERMINATE_MS = 2_000;
 export const REQUEST_TIMEOUT_MS = 10_000;
 
 export interface SearchHostDeps {
@@ -183,7 +184,19 @@ export function createSearchHost(deps: SearchHostDeps): SearchHost {
         onAck = undefined;
         worker = null;
         settleAll();
-        await w.terminate().catch(() => 0);
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, TERMINATE_MS);
+          w.terminate().then(
+            () => {
+              clearTimeout(t);
+              resolve();
+            },
+            () => {
+              clearTimeout(t);
+              resolve();
+            },
+          );
+        });
       }
       state = "stopped";
     },
