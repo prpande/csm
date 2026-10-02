@@ -79,7 +79,7 @@ Tests live in `test/main/search/` (node environment, `tsconfig.node.json`) and `
 - **`pr.fetched_at` is the last attempt**, success or failure, so a deleted or forbidden PR is retried every 10 minutes rather than on every pass. Spec §8.2 updated.
 - **`search:progress` is forwarded by main but not yet exposed in the preload**; slices 2 and 3 add the renderer listener with its first consumer.
 - **`gh.exe` only on Windows.** `spawn(…, { shell: false })` cannot run a `.cmd`/`.bat` shim, so a `gh` reachable only through a shim counts as not installed. Main resolves the path when it starts the worker and passes it in `WorkerInit.ghPath`, which also lets tests run the real worker with `gh` off.
-- **The worker ships unpacked.** A worker thread cannot load its script from inside `app.asar`; `dist/searchWorker.js` is one esbuild bundle listed in `asarUnpack`, and main rewrites its path to `app.asar.unpacked`.
+- **The worker ships unpacked.** `dist/searchWorker.js` is one esbuild bundle listed in `asarUnpack`, and main rewrites its path to `app.asar.unpacked`, so the packaged worker loads from a plain file and does not rely on asar support inside `worker_threads` (spec §2's probe ran one from inside an asar; spec §5 keeps it unpacked). `test/main/packagingSearchWorker.test.ts` pins the bundle path, the unpack entry and the rewrite together.
 - **Ready counts as a change.** The host emits `search:changed` when the worker reports ready, so a warm start that ingests nothing still makes the renderer fetch PR links. `prsFor` requests sent while the worker starts are queued by the message port and answered after the open.
 - **One before-quit handler** flushes the session index and stops the worker together; two handlers would each re-quit and the second flush would be cut short.
 - **The host owns the `search:changed` generation**; the worker posts a bare `changed`. Spec §5 updated.
@@ -109,13 +109,6 @@ Tests live in `test/main/search/` (node environment, `tsconfig.node.json`) and `
 Append to `test/sessionParser.test.ts`:
 
 ```ts
-import {
-  composeTitleFrom,
-  eligiblePromptText,
-  truncateTitle,
-  TITLE_MAX_LENGTH,
-} from "../src/sessionParser";
-
 describe("composeTitleFrom", () => {
   const jsonl = (recs: object[]) => recs.map((r) => JSON.stringify(r)).join("\n");
   const prompt = (text: string) => ({
@@ -167,7 +160,7 @@ describe("composeTitleFrom", () => {
 });
 ```
 
-If `parseSession` / `describe` / `test` / `expect` are not already imported at the top of the file, add them to the existing imports instead of duplicating import lines.
+Add `composeTitleFrom`, `eligiblePromptText` and `truncateTitle` to the existing `../src/sessionParser` import at the top of the file, which already imports `parseSession` and `TITLE_MAX_LENGTH`. Add `describe` to the existing `import { test, expect } from "vitest";` line. Do not add a second import statement for either module.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -222,6 +215,7 @@ Expected: PASS (all existing title tests still pass — the refactor is behaviou
 - [ ] **Step 5: Commit**
 
 ```powershell
+& .\node_modules\.bin\prettier.cmd --write src/sessionParser.ts test/sessionParser.test.ts
 git add src/sessionParser.ts test/sessionParser.test.ts
 git commit -m "feat: export the shared title helpers from sessionParser (#206)"
 ```
@@ -376,6 +370,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```powershell
+& .\node_modules\.bin\prettier.cmd --write src/search/searchText.ts test/main/search/searchText.test.ts
 git add src/search/searchText.ts test/main/search/searchText.test.ts
 git commit -m "feat: add searchText folding and identifier expansion (#206)"
 ```
@@ -656,6 +651,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```powershell
+& .\node_modules\.bin\prettier.cmd --write src/search/turnExtractor.ts test/main/search/turnExtractor.test.ts
 git add src/search/turnExtractor.ts test/main/search/turnExtractor.test.ts
 git commit -m "feat: extract conversation turns and session fields for search (#206)"
 ```
@@ -998,6 +994,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```powershell
+& .\node_modules\.bin\prettier.cmd --write src/search/prExtractor.ts test/main/search/prExtractor.test.ts
 git add src/search/prExtractor.ts test/main/search/prExtractor.test.ts
 git commit -m "feat: extract validated PR links from pr-link and gh pr create (#206)"
 ```
@@ -1179,6 +1176,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```powershell
+& .\node_modules\.bin\prettier.cmd --write src/search/fileCursor.ts test/main/search/fileCursor.test.ts
 git add src/search/fileCursor.ts test/main/search/fileCursor.test.ts
 git commit -m "feat: add fileCursor change detection for incremental ingest (#206)"
 ```
@@ -1304,6 +1302,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```powershell
+& .\node_modules\.bin\prettier.cmd --write src/search/tombstone.ts test/main/search/tombstone.test.ts
 git add src/search/tombstone.ts test/main/search/tombstone.test.ts
 git commit -m "feat: add the transcript tombstone state machine (#206)"
 ```
@@ -3166,6 +3165,15 @@ describe("ingest", () => {
     expect(texts()).toEqual(["first", "second"]);
   });
 
+  test("a tail that never completes reports no change on later passes", async () => {
+    const second = line(user("u2", "second"));
+    writeFileSync(transcript(), line(user("u1", "first")) + second.slice(0, 10));
+    const ing = ingester();
+    expect((await ing.runPass()).changed).toBe(true);
+    expect(await ing.runPass()).toMatchObject({ changed: false, filesIngested: 0 });
+    expect(texts()).toEqual(["first"]);
+  });
+
   test("an in-place rewrite re-ingests from byte 0", async () => {
     write([user("u1", "alpha"), user("u2", "beta")]);
     await ingester().runPass();
@@ -3597,7 +3605,7 @@ export function createIngester(deps: IngesterDeps): {
 
   async function ingestFile(
     w: Work,
-  ): Promise<{ turns: number; invalid: number }> {
+  ): Promise<{ turns: number; invalid: number; advanced: boolean }> {
     const { file } = w;
     const fields = w.base ? fieldsFromRow(w.base) : emptySessionFields();
     let pending = w.base ? [...w.base.pendingPrCreate] : [];
@@ -3650,8 +3658,10 @@ export function createIngester(deps: IngesterDeps): {
       }
       if (sinceCommit >= COMMIT_EVERY_BYTES) await commit();
     }
-    await commit();
-    return { turns: turnsInserted, invalid };
+    // An append that read no complete line (an unterminated tail) has nothing to commit.
+    const advanced = !w.base || offset > w.start;
+    if (advanced) await commit();
+    return { turns: turnsInserted, invalid, advanced };
   }
 
   async function settleAbsent(
@@ -3737,10 +3747,12 @@ export function createIngester(deps: IngesterDeps): {
       try {
         if (w.reset) db.resetSession(root, w.file.sid);
         const r = await ingestFile(w);
-        result.filesIngested++;
-        result.turnsInserted += r.turns;
-        result.invalidPrRefs += r.invalid;
-        result.changed = true;
+        if (r.advanced) {
+          result.filesIngested++;
+          result.turnsInserted += r.turns;
+          result.invalidPrRefs += r.invalid;
+          result.changed = true;
+        }
       } catch (err) {
         deps.log?.("search: could not ingest a transcript", err);
       }
@@ -3925,6 +3937,12 @@ describe("resolveGhPath", () => {
     expect(resolveGhPath({ PATH: "/usr/bin" }, "darwin", isFile)).toBe("/usr/local/bin/gh");
     expect(resolveGhPath({ PATH: "/usr/bin" }, "linux", isFile)).toBeUndefined();
   });
+
+  test("skips relative PATH entries", () => {
+    const isFile = (p: string) => p === "gh.exe" || p === "C:\\b\\gh.exe";
+    expect(resolveGhPath({ Path: ".;C:\\b" }, "win32", isFile)).toBe("C:\\b\\gh.exe");
+    expect(resolveGhPath({ PATH: "bin" }, "linux", () => true)).toBeUndefined();
+  });
 });
 
 test("ghEnv prepends gh's directory on darwin only", () => {
@@ -4105,9 +4123,11 @@ export function resolveGhPath(
   const p = platform === "win32" ? path.win32 : path.posix;
   // shell:false cannot run a .cmd/.bat shim, so only the real executable counts.
   const name = platform === "win32" ? "gh.exe" : "gh";
-  for (const dir of (env.PATH ?? env.Path ?? "").split(p.delimiter)) {
-    if (!dir) continue;
-    const candidate = p.join(dir.replace(/^"(.*)"$/, "$1"), name);
+  for (const entry of (env.PATH ?? env.Path ?? "").split(p.delimiter)) {
+    const dir = entry.replace(/^"(.*)"$/, "$1");
+    // A relative entry resolves against the app's cwd, not an install location.
+    if (!dir || !p.isAbsolute(dir)) continue;
+    const candidate = p.join(dir, name);
     if (isFile(candidate)) return candidate;
   }
   // Apps launched from the Dock or Finder get launchd's minimal PATH.
@@ -4713,6 +4733,18 @@ describe("createSearchService", () => {
     expect(log).toHaveBeenCalled();
   });
 
+  test("failed gh batches are logged", async () => {
+    writeTranscript();
+    const { svc, log } = service({
+      runBatch: async () => ({ kind: "failed", reason: "ENOENT" }),
+    });
+    svc.start();
+    await svc.whenIdle();
+    expect(log.mock.calls.map((c) => c[0])).toContain(
+      "gh enrichment: 1 batch(es) failed",
+    );
+  });
+
   test("shutdown closes the store, acks, and ignores later messages", () => {
     const { svc } = service();
     svc.handle({ type: "shutdown" });
@@ -4955,6 +4987,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
 
   async function enrich(): Promise<void> {
     const r = await enricher.runDue();
+    if (r.failures > 0) log(`gh enrichment: ${r.failures} batch(es) failed`);
     if (!closed && r.wrote > 0) post({ type: "changed" });
   }
 
@@ -5074,9 +5107,8 @@ try {
 `scripts/build-worker.mjs`:
 
 ```js
-// Bundles the search worker into one CommonJS file. A worker thread cannot load
-// its script from inside app.asar, so the packaged app ships this single file
-// unpacked (electron-builder.yml asarUnpack); bundling keeps it self-contained.
+// Bundles the search worker into one self-contained CommonJS file, which the
+// packaged app ships unpacked (electron-builder.yml asarUnpack).
 // test/main/search/workerBundle.test.ts imports workerBuildOptions so the test
 // and the real build never drift.
 
@@ -5727,7 +5759,9 @@ git commit -m "feat: supervise the search worker from main and purge its files o
 
 **Files:**
 - Modify: `src/ipcChannels.ts`, `src/ipcTypes.ts`, `src/ipc.ts`, `src/preload.ts`, `src/renderer/types/csm.d.ts`, `src/main.ts`, `electron-builder.yml`
+- Modify: `src/searchHost.ts` (one export added)
 - Test: `test/main/ipc.test.ts`
+- Test: `test/main/packagingSearchWorker.test.ts`
 
 **Interfaces:**
 - Consumes: `SessionPrsResult` (Task 8); `resolveGhPath` (Task 13); `WorkerInit` (Task 15); `createSearchHost`, `SearchHost` (Task 16); `purgeSearchFiles` (Task 16); `isValidSessionId` from `src/terminalLauncher.ts`.
@@ -5806,12 +5840,61 @@ test("a failing search store logs and returns {}", async () => {
 });
 ```
 
+5. Create `test/main/packagingSearchWorker.test.ts`:
+
+```ts
+// @vitest-environment node
+import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { workerBuildOptions } from "../../scripts/build-worker.mjs";
+import { asarUnpackedPath } from "../../src/searchHost";
+
+// Packaging is not in CI, so this is the only guard that the bundle, the unpack
+// entry and main's path rewrite agree.
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+describe("packaged search worker", () => {
+  test("electron-builder unpacks the worker bundle", () => {
+    const yml = readFileSync(join(repoRoot, "electron-builder.yml"), "utf8");
+    expect(yml).toMatch(/^asarUnpack:\s+-\s+dist\/searchWorker\.js\s*$/m);
+  });
+
+  test("the bundle is written where the unpack entry points", () => {
+    expect(workerBuildOptions(repoRoot).outfile).toBe(
+      join(repoRoot, "dist", "searchWorker.js"),
+    );
+  });
+
+  test("a packaged path moves to app.asar.unpacked; a dev path is unchanged", () => {
+    expect(
+      asarUnpackedPath("C:\\x\\resources\\app.asar\\dist\\searchWorker.js", "\\"),
+    ).toBe("C:\\x\\resources\\app.asar.unpacked\\dist\\searchWorker.js");
+    expect(asarUnpackedPath("/x/Resources/app.asar/dist/searchWorker.js", "/")).toBe(
+      "/x/Resources/app.asar.unpacked/dist/searchWorker.js",
+    );
+    expect(asarUnpackedPath("/repo/dist/searchWorker.js", "/")).toBe(
+      "/repo/dist/searchWorker.js",
+    );
+  });
+});
+```
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `& .\node_modules\.bin\vitest.cmd run test/main/ipc.test.ts`
 Expected: FAIL — `CH.searchPrsFor` is undefined and `requestIngest` is never called.
 
 - [ ] **Step 3: Implement**
+
+`src/searchHost.ts` — add this export:
+
+```ts
+export function asarUnpackedPath(p: string, sep: string): string {
+  return p.replace(`app.asar${sep}`, `app.asar.unpacked${sep}`);
+}
+```
 
 `src/ipcChannels.ts` — add inside `CH`, after `sessionGetFacts`:
 
@@ -5951,18 +6034,18 @@ export interface CsmSearch {
 import { Worker } from "node:worker_threads";
 import { resolveGhPath } from "./search/ghClient";
 import type { WorkerInit } from "./search/protocol";
-import { createSearchHost } from "./searchHost";
+import { asarUnpackedPath, createSearchHost } from "./searchHost";
 import { purgeSearchFiles } from "./searchFiles";
 ```
 
 2. Below `RENDERER_INDEX` add:
 
 ```ts
-// A worker thread cannot load its script from inside app.asar, so the packaged
-// app ships it unpacked (electron-builder.yml asarUnpack).
-const SEARCH_WORKER = path
-  .join(__dirname, "searchWorker.js")
-  .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+// Packaged builds load the worker from app.asar.unpacked (electron-builder.yml asarUnpack).
+const SEARCH_WORKER = asarUnpackedPath(
+  path.join(__dirname, "searchWorker.js"),
+  path.sep,
+);
 
 const isFile = (p: string): boolean => {
   try {
@@ -6088,15 +6171,15 @@ const isFile = (p: string): boolean => {
 `electron-builder.yml` — add after the `files:` list:
 
 ```yaml
-# A worker thread cannot load its script from inside app.asar; main.ts rewrites
-# the worker path to app.asar.unpacked.
+# The search worker loads from a plain file; main.ts rewrites its path to
+# app.asar.unpacked (guarded by test/main/packagingSearchWorker.test.ts).
 asarUnpack:
   - dist/searchWorker.js
 ```
 
 - [ ] **Step 4: Run tests and checks**
 
-Run: `& .\node_modules\.bin\vitest.cmd run test/main/ipc.test.ts`
+Run: `& .\node_modules\.bin\vitest.cmd run test/main/ipc.test.ts test/main/packagingSearchWorker.test.ts`
 Expected: PASS
 
 Run: `npm run typecheck` (timeout 300000). Expected: exits 0.
@@ -6104,8 +6187,8 @@ Run: `npm run typecheck` (timeout 300000). Expected: exits 0.
 - [ ] **Step 5: Commit**
 
 ```powershell
-& .\node_modules\.bin\prettier.cmd --write src/ipcChannels.ts src/ipcTypes.ts src/ipc.ts src/preload.ts src/renderer/types/csm.d.ts src/main.ts electron-builder.yml test/main/ipc.test.ts
-git add src/ipcChannels.ts src/ipcTypes.ts src/ipc.ts src/preload.ts src/renderer/types/csm.d.ts src/main.ts electron-builder.yml test/main/ipc.test.ts
+& .\node_modules\.bin\prettier.cmd --write src/ipcChannels.ts src/ipcTypes.ts src/ipc.ts src/preload.ts src/renderer/types/csm.d.ts src/main.ts electron-builder.yml test/main/ipc.test.ts src/searchHost.ts test/main/packagingSearchWorker.test.ts
+git add src/ipcChannels.ts src/ipcTypes.ts src/ipc.ts src/preload.ts src/renderer/types/csm.d.ts src/main.ts electron-builder.yml test/main/ipc.test.ts src/searchHost.ts test/main/packagingSearchWorker.test.ts
 git commit -m "feat: expose PR links over IPC and start the search worker from main (#206)"
 ```
 
@@ -6695,12 +6778,14 @@ import {
 
 ```css
 /* PR chip (#206): the session's primary PR, outlined like the branch chip so it
-   reads as information, with the state and the count of further PRs muted. */
+   reads as information. Like the branch chip it may shrink, eliding the state
+   label first, so a narrow pane keeps the row's time/id in view. */
 .pr {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+  min-width: 0;
   padding: 0.05rem 0.4rem;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -6720,6 +6805,16 @@ import {
 .prState,
 .prMore {
   color: var(--text-muted);
+}
+
+.prState {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prMore {
+  flex: 0 0 auto;
 }
 ```
 
@@ -6908,8 +7003,9 @@ Manual checks:
 
 - `npm start`: rows of sessions that opened PRs show the chip within a few seconds; hovering lists every PR; clicking opens the PR in the browser; Shift+Enter on a focused row does the same.
 - In `%APPDATA%\csm` (Windows) or `~/Library/Application Support/csm` (macOS): `search.db`, `search.db-wal` exist after the first run.
-- Rename `gh.exe` off `PATH` and restart: chips still show `#N` with no state, and nothing errors in the log beyond the enrichment failure line.
+- Rename `gh.exe` off `PATH` and restart: chips still show `#N` with no state, and the log shows `[csm search] gh enrichment: N batch(es) failed` and no other error.
 - `npm run dist` then run the packaged app: chips appear (proves the unpacked worker path).
+- Drag the sidebar to its widest: on rows with a PR chip and a branch chip, the time and id stay visible.
 
 - [ ] **Step 5: Commit**
 

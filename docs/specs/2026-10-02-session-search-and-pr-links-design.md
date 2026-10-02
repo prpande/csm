@@ -164,9 +164,10 @@ Renderer ──preload IPC──► main (relay, sender-guarded) ──postMessa
   `search:changed {generation}`, a counter main increments. Counting `ready`
   makes a warm start that ingests nothing still refresh the renderer.
 - **Bundling.** The worker entry is bundled with esbuild into one file the same
-  way the preload is (`build:worker`). A worker thread cannot load its script
-  from inside `app.asar`, so that file is listed in `asarUnpack` and main
-  starts it from `app.asar.unpacked`. `node:sqlite` is a built-in.
+  way the preload is (`build:worker`). That file is listed in `asarUnpack` and
+  main starts it from `app.asar.unpacked`, so the packaged worker loads from a
+  plain file and does not depend on asar support inside `worker_threads`.
+  `node:sqlite` is a built-in.
 - **Shared pure units** (no I/O, unit-tested, used by the worker):
   - `sessionParser` (existing): exports `eligiblePromptText` and a pure
     `composeTitleFrom({customTitle, aiTitle, summary, firstPrompt})`, which
