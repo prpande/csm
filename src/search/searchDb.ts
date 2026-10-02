@@ -607,10 +607,17 @@ export function openSearchDbSafe(
     if (!isCorruptionError(err)) throw err;
   }
   const file = join(dir, SEARCH_DB_FILENAME);
-  for (const name of readdirSync(dir))
-    if (CORRUPT_COPY_RE.test(name)) rmSync(join(dir, name), { force: true });
-  const corrupt = join(dir, `search.corrupt-${opts.now}.db`);
+  const corruptName = `search.corrupt-${opts.now}.db`;
+  const corrupt = join(dir, corruptName);
   renameSync(file, corrupt);
+  for (const name of readdirSync(dir)) {
+    if (!CORRUPT_COPY_RE.test(name) || name === corruptName) continue;
+    try {
+      rmSync(join(dir, name), { force: true });
+    } catch {
+      // A copy another process holds is pruned on a later recovery.
+    }
+  }
   rmSync(`${file}-wal`, { force: true });
   rmSync(`${file}-shm`, { force: true });
   const db = openSearchDb(dir, opts);

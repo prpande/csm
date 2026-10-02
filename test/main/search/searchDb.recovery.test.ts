@@ -106,6 +106,20 @@ describe("openSearchDbSafe", () => {
     ).toEqual(["search.corrupt-2.db"]);
   });
 
+  test("an old corrupt copy that cannot be deleted does not abort recovery", () => {
+    mkdirSync(join(dir, "search.corrupt-1.db"));
+    writeFileSync(join(dir, SEARCH_DB_FILENAME), Buffer.alloc(8192, 7));
+    const { db, recovered } = openSearchDbSafe(dir, {
+      platform: process.platform,
+      now: 2,
+    });
+    opened.push(db);
+    expect(recovered).toBe(true);
+    expect(existsSync(join(dir, "search.corrupt-2.db"))).toBe(true);
+    write(db, "s1", "works");
+    expect(db.getSession(ROOT, "s1")?.title).toBe("works");
+  });
+
   test("corruption met while rebuilding the FTS index is recovered, not reported as no FTS5", () => {
     const first = openSearchDb(dir, { platform: process.platform });
     for (let i = 0; i < 40; i++)
