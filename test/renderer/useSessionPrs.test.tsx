@@ -83,3 +83,37 @@ test("without the search bridge requestPrs does nothing", () => {
   act(() => result.current.requestPrs(["a"]));
   expect(result.current.prs.size).toBe(0);
 });
+
+test("links stay shown while a refetch is pending, then are replaced", async () => {
+  const replies: ((r: SessionPrsResult) => void)[] = [];
+  const { bridge, fireChanged } = fakeSearch(
+    () => new Promise<SessionPrsResult>((resolve) => replies.push(resolve)),
+  );
+  const { result } = renderHook(() => useSessionPrs(bridge));
+  act(() => result.current.requestPrs(["a"]));
+  await act(async () => replies[0]({ a: [link("old")] }));
+  expect(result.current.prs.get("a")?.[0].title).toBe("old");
+  act(() => fireChanged(2));
+  expect(replies).toHaveLength(2);
+  expect(result.current.prs.get("a")?.[0].title).toBe("old");
+  await act(async () => replies[1]({ a: [link("new")] }));
+  expect(result.current.prs.get("a")?.[0].title).toBe("new");
+});
+
+test("a rejected request leaves its ids retryable", async () => {
+  const prsFor = vi
+    .fn<(ids: string[]) => Promise<SessionPrsResult>>()
+    .mockRejectedValueOnce(new Error("worker down"))
+    .mockResolvedValue({ a: [link("ok")] });
+  const { bridge, search } = fakeSearch(prsFor);
+  const { result } = renderHook(() => useSessionPrs(bridge));
+  act(() => result.current.requestPrs(["a"]));
+  await waitFor(() => expect(search.prsFor).toHaveBeenCalledTimes(1));
+  await act(async () => {});
+  expect(result.current.prs.has("a")).toBe(false);
+  act(() => result.current.requestPrs(["a"]));
+  await waitFor(() =>
+    expect(result.current.prs.get("a")?.[0].title).toBe("ok"),
+  );
+  expect(search.prsFor).toHaveBeenCalledTimes(2);
+});

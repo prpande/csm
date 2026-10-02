@@ -21,6 +21,7 @@ import {
 } from "../../../src/search/searchDb";
 import {
   createIngester,
+  COMMIT_EVERY_BYTES,
   EXTRACT_VERSION,
   type IngesterDeps,
 } from "../../../src/search/ingest";
@@ -330,6 +331,69 @@ describe("ingest", () => {
     await ingester().runPass();
     const browse = parseSession(SID, readFileSync(transcript(), "utf8")).title;
     expect(db.getSession(root, SID)?.title).toBe(browse);
+  });
+});
+
+describe("mid-file commits", () => {
+  const LINE_TEXT = "x".repeat(6_000);
+  const LINES = 720;
+  const bigTranscript = () => {
+    const recs: object[] = [prLink(1)];
+    for (let i = 0; i < LINES; i++)
+      recs.push(user(`u${i}`, `turn ${i} ${LINE_TEXT}`, T0 + i));
+    recs.push(prLink(2, T0 + LINES));
+    write(recs);
+    return statSync(transcript()).size;
+  };
+  const linkNumbers = () =>
+    q<{ number: number }>("SELECT number FROM session_pr ORDER BY number").map(
+      (r) => r.number,
+    );
+  const turnCount = () =>
+    q<{ n: number }>("SELECT count(*) AS n FROM turn")[0].n;
+
+  test("a transcript over the commit threshold commits mid-file and loses nothing", async () => {
+    const size = bigTranscript();
+    expect(size).toBeGreaterThan(COMMIT_EVERY_BYTES);
+    const writeChunk = vi.spyOn(db, "writeChunk");
+    const r = await ingester().runPass();
+    expect(writeChunk.mock.calls.length).toBeGreaterThan(1);
+    expect(r.turnsInserted).toBe(LINES);
+    expect(turnCount()).toBe(LINES);
+    expect(linkNumbers()).toEqual([1, 2]);
+    expect(db.getSession(root, SID)?.offset).toBe(size);
+    const again = await ingester().runPass();
+    expect(again).toMatchObject({ changed: false, turnsInserted: 0 });
+    expect(turnCount()).toBe(LINES);
+  });
+
+  test("a crash after the first mid-file commit resumes without duplicates", async () => {
+    const size = bigTranscript();
+    const crashAfter = 705;
+    const crashing: typeof readCompleteLines = async function* (path, start) {
+      let n = 0;
+      for await (const l of readCompleteLines(path, start)) {
+        if (n++ === crashAfter) throw new Error("simulated crash");
+        yield l;
+      }
+    };
+    const log = vi.fn();
+    await ingester({ readLines: crashing, log }).runPass();
+    expect(log).toHaveBeenCalledWith(
+      "search: could not ingest a transcript",
+      expect.any(Error),
+    );
+    const partial = db.getSession(root, SID);
+    expect(partial?.offset).toBeGreaterThan(0);
+    expect(partial?.offset).toBeLessThan(size);
+    expect(turnCount()).toBeGreaterThan(0);
+    expect(turnCount()).toBeLessThan(LINES);
+
+    await ingester().runPass();
+    expect(turnCount()).toBe(LINES);
+    expect(new Set(texts()).size).toBe(LINES);
+    expect(linkNumbers()).toEqual([1, 2]);
+    expect(db.getSession(root, SID)?.offset).toBe(size);
   });
 });
 

@@ -1,5 +1,6 @@
 import { test, expect, vi, afterEach } from "vitest";
 import {
+  act,
   render,
   screen,
   fireEvent,
@@ -272,4 +273,25 @@ test("Shift+Enter opens the focused session's primary PR (#206)", async () => {
     shiftKey: true,
   });
   expect(openExternal).toHaveBeenCalledWith("https://github.com/o/r/pull/12");
+});
+
+test("Shift+Enter on a row with no PR does nothing", async () => {
+  const sessions = makeSessions(3);
+  const openExternal = vi.fn(async () => true);
+  const onOpen = vi.fn();
+  const prsFor = vi.fn(async () => ({}));
+  window.csm = {
+    ...window.csm!,
+    openExternal,
+    search: { prsFor, onChanged: vi.fn(() => () => {}) },
+  };
+  render(<SessionList sessions={sessions} onOpen={onOpen} />);
+  await waitFor(() => expect(prsFor).toHaveBeenCalled());
+  await act(async () => {});
+  fireEvent.keyDown(screen.getByRole("listbox"), {
+    key: "Enter",
+    shiftKey: true,
+  });
+  expect(onOpen).not.toHaveBeenCalled();
+  expect(openExternal).not.toHaveBeenCalled();
 });
