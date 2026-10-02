@@ -121,7 +121,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
           turnsSinceMaintenance += r.turnsInserted;
           scheduleMaintenance();
         }
-        await enrich();
+        track(enrich);
       } while (ingestPending && !closed);
     } finally {
       ingestInFlight = false;

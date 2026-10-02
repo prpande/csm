@@ -178,6 +178,44 @@ describe("createSearchService", () => {
     expect(changedCount()).toBe(4);
   });
 
+  test("an ingest trigger during a pending gh batch ingests before the batch settles", async () => {
+    writeTranscript();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let entered!: () => void;
+    const inBatch = new Promise<void>((r) => (entered = r));
+    const runBatch: RunBatch = async (repo, numbers, ...rest) => {
+      entered();
+      await gate;
+      return okBatch(repo, numbers, ...rest);
+    };
+    const { svc } = service({ runBatch });
+    svc.start();
+    await inBatch;
+    const SID2 = "4c9f1c2a-1e2d-4a5b-8c7d-0f1e2d3c4b5b";
+    writeFileSync(
+      join(root, "proj-a", `${SID2}.jsonl`),
+      rec({
+        type: "pr-link",
+        sessionId: SID2,
+        prNumber: 13,
+        prRepository: "o/r",
+        prUrl: "https://github.com/o/r/pull/13",
+        timestamp: new Date(T0).toISOString(),
+      }),
+    );
+    svc.handle({ type: "ingest" });
+    for (let i = 0; i < 200; i++) {
+      if (db.prsForSessions(root, [SID2])[SID2]) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(db.prsForSessions(root, [SID2])[SID2]?.[0]).toMatchObject({
+      number: 13,
+    });
+    release();
+    await svc.whenIdle();
+  });
+
   test("an enrich trigger during a pending round runs exactly one more round", async () => {
     writeTranscript();
     let tick!: () => void;
