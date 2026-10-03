@@ -69,8 +69,6 @@ export function tierIndex(ageMs: number): number {
   return TIER_BOUNDS_DAYS.length;
 }
 
-type FileEntry = TranscriptFile;
-
 // Epoch ms for a lastActivity value, used only for sorting. The parser passes a
 // record's `timestamp` through unvalidated, so precision may vary or the value
 // may be junk; parsing to a number avoids the lexicographic pitfall (e.g.
@@ -140,7 +138,7 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   }
 
   async function readMetadata(
-    entry: FileEntry,
+    entry: TranscriptFile,
   ): Promise<SessionMetadata | null> {
     const id = entry.sid;
     const existing = index.get(id);
@@ -191,7 +189,10 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
     for (const f of files) pathById.set(f.sid, f.path);
 
     // Bucket by tier; within a tier, newest file first.
-    const tiers: FileEntry[][] = Array.from({ length: TIER_COUNT }, () => []);
+    const tiers: TranscriptFile[][] = Array.from(
+      { length: TIER_COUNT },
+      () => [],
+    );
     for (const f of files) tiers[tierIndex(now - f.mtimeMs)].push(f);
     for (const tier of tiers) tier.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
@@ -234,7 +235,7 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   // under the cognitive-complexity threshold. Prune ONLY after a complete scan and
   // NEVER when zero files were observed (a missing/transient root returns []),
   // so a transient failure can't wipe the index (spec §7.2, §11).
-  async function finalizeScan(files: FileEntry[]): Promise<void> {
+  async function finalizeScan(files: TranscriptFile[]): Promise<void> {
     if (files.length > 0) {
       index.prune(new Set(pathById.keys()));
     }

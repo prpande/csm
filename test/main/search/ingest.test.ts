@@ -181,6 +181,21 @@ describe("ingest", () => {
     expect(texts()).toEqual(["nine"]);
   });
 
+  test("a rewrite whose read fails still reports the reset as a change", async () => {
+    write([user("u1", "alpha"), user("u2", "beta")]);
+    await ingester().runPass();
+    write([user("u3", "gamma"), user("u4", "delta"), user("u5", "epsilon")]);
+    const failing: typeof readCompleteLines = async function* (path, start) {
+      for await (const l of readCompleteLines(path, start)) {
+        yield l;
+        throw new Error("simulated EIO");
+      }
+    };
+    const r = await ingester({ readLines: failing, log: vi.fn() }).runPass();
+    expect(r.changed).toBe(true);
+    expect(texts()).toEqual([]);
+  });
+
   test("a replayed uuid is stored once, within and across passes", async () => {
     write([user("u1", "same"), user("u1", "same")]);
     await ingester().runPass();

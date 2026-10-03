@@ -799,8 +799,9 @@ work.
   `search.corrupt-<timestamp>.db`, create a fresh database, copy out what can
   still be read of tombstoned sessions' rows from the corrupt copy (best
   effort: tables that read cleanly are copied, the rest skipped), then
-  re-ingest live transcripts. At most one `search.corrupt-*` file is kept;
-  older ones are deleted.
+  re-ingest live transcripts. One `search.corrupt-*` file is kept and older
+  ones are deleted, best effort: a locked copy stays until a later recovery
+  or purge removes it.
 - **Projects root unreadable:** the pass records nothing (no tombstones).
 - **Second app instance:** prevented by the existing
   `requestSingleInstanceLock`; the worker also keeps WAL-mode single-writer

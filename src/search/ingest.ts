@@ -315,7 +315,10 @@ export function createIngester(deps: IngesterDeps): {
     for (const [i, w] of work.entries()) {
       const tally: FileTally = { turns: 0, invalid: 0, advanced: false };
       try {
-        if (w.reset) db.resetSession(root, w.file.sid);
+        if (w.reset) {
+          db.resetSession(root, w.file.sid);
+          result.changed = true;
+        }
         await ingestFile(w, tally);
       } catch (err) {
         deps.log?.("search: could not ingest a transcript", err);

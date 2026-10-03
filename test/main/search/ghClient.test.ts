@@ -72,7 +72,7 @@ describe("buildGraphqlArgs", () => {
 
   test("passes owner and name as raw -f strings and numbers as -F ints", () => {
     expect(args.slice(0, 2)).toEqual(["api", "graphql"]);
-    expect(args).toEqual(expect.arrayContaining(["--hostname", "github.com"]));
+    expect(args[args.indexOf("--hostname") + 1]).toBe("github.com");
     expect(args).toEqual(
       expect.arrayContaining(["-f", "owner=Owner", "-f", "name=2048"]),
     );
