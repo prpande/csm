@@ -198,7 +198,7 @@ if (!gotLock) {
     });
     await sessionIndex.load();
 
-    // Search store (#206). The same privacy opt-out as the session index: when
+    // Search store. The same privacy opt-out as the session index: when
     // it is off, nothing is written and any earlier search files are removed.
     const userData = app.getPath("userData");
     const projectsRoot = defaultProjectsRoot();

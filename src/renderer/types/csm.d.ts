@@ -38,7 +38,7 @@ export interface CsmTheme {
   set(value: ThemePreference): Promise<void>;
 }
 
-/** The search store bridge (#206). Optional: absent in a plain browser or a unit
+/** The search store bridge. Optional: absent in a plain browser or a unit
  * test without the preload. */
 export interface CsmSearch {
   /** PR links per session id; ids with no links are absent from the result. */

@@ -1,7 +1,4 @@
-// Bundles the search worker into one self-contained CommonJS file, which the
-// packaged app ships unpacked (electron-builder.yml asarUnpack).
-// test/main/search/workerBundle.test.ts imports workerBuildOptions so the test
-// and the real build never drift.
+// Bundles the search worker into the CommonJS file the packaged app ships unpacked.
 
 import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";

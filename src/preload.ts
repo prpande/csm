@@ -134,7 +134,7 @@ contextBridge.exposeInMainWorld("csm", {
       ipcRenderer.invoke(CH.themeSet, value),
   },
 
-  // Search store (#206). prsFor fetches PR links for the visible rows; onChanged
+  // Search store. prsFor fetches PR links for the visible rows; onChanged
   // fires when stored links or titles moved, so the renderer refetches its window.
   search: {
     prsFor: (ids: string[]): Promise<SessionPrsResult> =>

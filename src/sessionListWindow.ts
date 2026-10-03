@@ -101,7 +101,7 @@ export type ListKeyAction =
  * Arrow/Home/End clamp to the ends and still return a `focus` action at the
  * boundary (never null) so the handler can `preventDefault` — arrow keys belong
  * to the listbox and must not also scroll the page. Enter opens the focused row.
- * Shift+Enter opens the focused row's primary PR (#206).
+ * Shift+Enter opens the focused row's primary PR.
  */
 export function listKeyAction(
   key: string,

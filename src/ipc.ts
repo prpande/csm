@@ -83,7 +83,7 @@ export interface IpcHandlerDeps {
    * The main-process log is a trusted local sink — this is the ONE place the real
    * error may go; it must never reach `post`. */
   logError: (context: string, err: unknown) => void;
-  /** The search store (#206), owned by main's worker host. Injected so the
+  /** The search store, owned by main's worker host. Injected so the
    * handlers stay testable without a worker thread. */
   search: {
     requestIngest(): void;
@@ -300,7 +300,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return store.getFacts(valid);
   });
 
-  // prsFor (#206): PR links for the visible rows. Untrusted frame, malformed or
+  // prsFor: PR links for the visible rows. Untrusted frame, malformed or
   // oversized input → {} (rows render without a chip). Ids are UUID-validated
   // here because they cross into the worker's SQL as bound parameters.
   ipcMain.handle(

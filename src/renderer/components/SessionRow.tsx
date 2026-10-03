@@ -39,9 +39,9 @@ interface SessionRowProps {
   worktreeBranch?: string;
   /** Lazily-loaded facts (#115). Undefined = still loading (renders a skeleton). */
   factState?: FactEntry;
-  /** PR links for this session (#206). Undefined or empty renders no chip. */
+  /** PR links for this session. Undefined or empty renders no chip. */
   prLinks?: SessionPrLink[];
-  /** Opens a PR in the browser (#206). */
+  /** Opens a PR in the browser. */
   onOpenPr?: (link: SessionPrLink) => void;
 }
 
