@@ -497,3 +497,18 @@ test("when a refetch leaves one PR the popover closes without throwing", async (
   });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
+
+test("Shift+Enter on a multi-PR row scrolled out of the window reveals the row and opens the popover", async () => {
+  const sessions = makeSessions(100);
+  installPrs(() => ({ [sessions[0].sessionId]: [linkOf(3), linkOf(4)] }));
+  render(<SessionList sessions={sessions} />);
+  await screen.findByTestId("pr-button");
+  const list = screen.getByRole("listbox");
+  fireEvent.scroll(list, { target: { scrollTop: 50 * ROW_HEIGHT } });
+  expect(screen.queryByTestId("pr-button")).toBeNull();
+  fireEvent.keyDown(list, { key: "Enter", shiftKey: true });
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(list.scrollTop).toBe(0);
+  fireEvent.scroll(list, { target: { scrollTop: 0 } });
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});

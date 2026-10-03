@@ -132,6 +132,22 @@ export function SessionList({
     });
   }, [sessions]);
 
+  const revealRow = (index: number, activate?: string) => {
+    const newScrollTop = scrollTopToReveal(
+      index,
+      scrollTop,
+      viewportHeight,
+      ROW_HEIGHT,
+    );
+    flushSync(() => {
+      setScrollTop(newScrollTop);
+      if (activate !== undefined) setFocusedId(activate);
+    });
+    // React state moved the windowed slice; also move the real scrollbar so the
+    // revealed row is actually on screen (state alone doesn't scroll the div).
+    if (scrollRef.current) scrollRef.current.scrollTop = newScrollTop;
+  };
+
   // One handler on the listbox: keys bubble up from the container (which holds
   // real focus). The pure listKeyAction owns the semantics; this dispatches and,
   // for a move, reveals the target row BEFORE it becomes the active descendant —
@@ -151,27 +167,16 @@ export function SessionList({
     if (action.type === "openPr") {
       if (e.repeat) return;
       const sessionId = sessions[action.index].sessionId;
+      const links = prs.get(sessionId) ?? [];
+      if (links.length > 1) revealRow(action.index);
       activatePr(
         sessionId,
-        prs.get(sessionId) ?? [],
+        links,
         document.getElementById(prButtonId(optionId(sessionId))),
       );
       return;
     }
-    const target = sessions[action.index];
-    const newScrollTop = scrollTopToReveal(
-      action.index,
-      scrollTop,
-      viewportHeight,
-      ROW_HEIGHT,
-    );
-    flushSync(() => {
-      setScrollTop(newScrollTop);
-      setFocusedId(target.sessionId);
-    });
-    // React state moved the windowed slice; also move the real scrollbar so the
-    // revealed row is actually on screen (state alone doesn't scroll the div).
-    if (scrollRef.current) scrollRef.current.scrollTop = newScrollTop;
+    revealRow(action.index, sessions[action.index].sessionId);
   };
 
   // Only reference the active option when it is actually mounted: a dangling
@@ -231,8 +236,9 @@ export function SessionList({
       tabIndex={sessions.length > 0 ? 0 : -1}
       aria-activedescendant={activeDescendant}
       onScroll={(e) => {
-        setScrollTop(e.currentTarget.scrollTop);
-        setPicker(null);
+        const next = e.currentTarget.scrollTop;
+        if (next !== scrollTop) setPicker(null);
+        setScrollTop(next);
       }}
       onKeyDown={onKeyDown}
     >
