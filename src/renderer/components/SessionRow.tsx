@@ -194,7 +194,7 @@ export function SessionRow({
               className={styles.prButton}
               id={id ? prButtonId(id) : undefined}
               data-testid="pr-button"
-              data-state={label.state ?? "unfetched"}
+              data-pr-state={label.state ?? "unfetched"}
               tabIndex={-1}
               onMouseDown={(e) => e.preventDefault()}
               title={linkSummaries.join("\n")}

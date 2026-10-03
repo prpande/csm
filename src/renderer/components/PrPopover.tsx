@@ -79,9 +79,10 @@ export function PrPopover({
     setPosition({ top, left, placement });
   }, [anchor, ordered.length]);
 
+  const shown = position !== null;
   useEffect(() => {
-    itemRefs.current[index]?.focus();
-  }, [index, ordered.length]);
+    if (shown) itemRefs.current[index]?.focus();
+  }, [shown, index, ordered.length]);
 
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
@@ -109,6 +110,7 @@ export function PrPopover({
     e.preventDefault();
     if (action.type === "move") setIndex(action.index);
     else if (action.type === "open") {
+      if (e.repeat) return;
       const link = ordered[action.index];
       if (link) onOpenPr(link);
     } else onClose({ keyboard: true });
@@ -149,14 +151,15 @@ export function PrPopover({
               className={styles.item}
               tabIndex={i === index ? 0 : -1}
               onFocus={() => setIndex(i)}
-              onClick={() => {
+              onClick={(e) => {
                 setIndex(i);
+                if (e.detail > 1) return;
                 onOpenPr(link);
               }}
             >
               <span className={styles.line1}>
                 {state && (
-                  <span className={styles.pill} data-state={state}>
+                  <span className={styles.pill} data-pr-state={state}>
                     {state}
                   </span>
                 )}

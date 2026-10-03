@@ -208,7 +208,8 @@
 }
 
 .actions {
-  flex: 0 0 7.6rem;
+  flex: 0 0 9rem;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -262,63 +263,30 @@
   transform: rotate(90deg);
 }
 
-.prButton[data-state="open"] {
-  background: var(--pr-open-bg);
-  color: var(--pr-open-text);
-  border-color: var(--pr-open-text);
+.prButton[data-pr-state]:not([data-pr-state="unfetched"]) {
+  background: var(--pr-bg);
+  color: var(--pr-fg);
+  border-color: var(--pr-fg);
 }
 
-.prButton[data-state="draft"] {
-  background: var(--pr-draft-bg);
-  color: var(--pr-draft-text);
-  border-color: var(--pr-draft-text);
+.prButton[data-pr-state]:not([data-pr-state="unfetched"]):hover {
+  background: var(--pr-fg);
+  color: var(--pr-bg);
 }
 
-.prButton[data-state="merged"] {
-  background: var(--pr-merged-bg);
-  color: var(--pr-merged-text);
-  border-color: var(--pr-merged-text);
-}
-
-.prButton[data-state="closed"] {
-  background: var(--pr-closed-bg);
-  color: var(--pr-closed-text);
-  border-color: var(--pr-closed-text);
-}
-
-.prButton[data-state="unfetched"]:hover {
+.prButton[data-pr-state="unfetched"]:hover {
   background: var(--text);
   color: var(--bg);
 }
 
-.row[data-selected] .prButton[data-state="unfetched"] {
+.row[data-selected] .prButton[data-pr-state="unfetched"] {
   color: var(--selection-text);
   border-color: var(--selection-text);
 }
 
-.row[data-selected] .prButton[data-state="unfetched"]:hover {
+.row[data-selected] .prButton[data-pr-state="unfetched"]:hover {
   background: var(--selection-text);
   color: var(--selection-bg);
-}
-
-.prButton[data-state="open"]:hover {
-  background: var(--pr-open-text);
-  color: var(--pr-open-bg);
-}
-
-.prButton[data-state="draft"]:hover {
-  background: var(--pr-draft-text);
-  color: var(--pr-draft-bg);
-}
-
-.prButton[data-state="merged"]:hover {
-  background: var(--pr-merged-text);
-  color: var(--pr-merged-bg);
-}
-
-.prButton[data-state="closed"]:hover {
-  background: var(--pr-closed-text);
-  color: var(--pr-closed-bg);
 }
 
 .prButton:focus-visible {

@@ -494,7 +494,9 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
 ### 8.4 PR button on session rows (Sessions view)
 
 - **Placement.** Every row has a fixed-width action column on the right
-  (`7.6rem`), so the Open buttons line up down the list. Open sits on top. A
+  (`9rem`, which fits `#12345 merged +12`; a longer label ellipsizes the state
+  word rather than widening the column), so the Open buttons line up down the
+  list. Open sits on top. A
   row with linked PRs gets a PR button under it, `9px` below; a row without
   PRs shows Open alone. Both buttons are `24px` tall and as wide as the
   column. The row's meta line no longer carries a PR element.

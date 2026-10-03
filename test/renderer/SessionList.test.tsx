@@ -536,6 +536,21 @@ test("Shift+Enter on a multi-PR row scrolled out of the window reveals the row a
   expect(screen.getByRole("dialog")).toBeTruthy();
 });
 
+test("a sub-pixel scroll readback after a reveal keeps the popover open", async () => {
+  const sessions = makeSessions(100);
+  installPrs(() => ({ [sessions[60].sessionId]: [linkOf(3), linkOf(4)] }));
+  render(<SessionList sessions={sessions} />);
+  const list = screen.getByRole("listbox");
+  fireEvent.scroll(list, { target: { scrollTop: 55 * ROW_HEIGHT } });
+  await screen.findByTestId("pr-button");
+  fireEvent.click(screen.getByTestId("pr-button"));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  fireEvent.scroll(list, { target: { scrollTop: 55 * ROW_HEIGHT + 0.33 } });
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  fireEvent.scroll(list, { target: { scrollTop: 56 * ROW_HEIGHT } });
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
 test("a popover that closes while holding focus hands focus back to the list", async () => {
   const sessions = makeSessions(3);
   let links = [linkOf(3), linkOf(4)];

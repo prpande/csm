@@ -79,6 +79,35 @@ test("the primary item takes focus on open", () => {
   expect(document.activeElement).toBe(items[0]);
 });
 
+test("focus moves only once the popover is visible, since Chromium ignores focus on a hidden element", () => {
+  const visibleAtFocus: string[] = [];
+  const focus = HTMLElement.prototype.focus;
+  vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (
+    this: HTMLElement,
+    opts?: FocusOptions,
+  ) {
+    const dialog = this.closest<HTMLElement>('[role="dialog"]');
+    if (dialog) visibleAtFocus.push(dialog.style.visibility);
+    focus.call(this, opts);
+  });
+  setup();
+  expect(visibleAtFocus.length).toBeGreaterThan(0);
+  expect(visibleAtFocus).not.toContain("hidden");
+  expect(document.activeElement).toBe(itemsOf()[0]);
+});
+
+test("a held Enter and a double-click each open the PR once", () => {
+  const { onOpenPr } = setup();
+  const items = itemsOf();
+  fireEvent.keyDown(items[0], { key: "Enter" });
+  fireEvent.keyDown(items[0], { key: "Enter", repeat: true });
+  fireEvent.keyDown(items[0], { key: "Enter", repeat: true });
+  expect(onOpenPr).toHaveBeenCalledTimes(1);
+  fireEvent.click(items[1], { detail: 1 });
+  fireEvent.click(items[1], { detail: 2 });
+  expect(onOpenPr).toHaveBeenCalledTimes(2);
+});
+
 test("a title is never parsed as markup", () => {
   setup({
     links: [pr({ title: "<img src=x onerror=alert(1)>" }), pr({ number: 3 })],

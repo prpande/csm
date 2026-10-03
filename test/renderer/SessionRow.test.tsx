@@ -340,7 +340,7 @@ test("the PR button shows the primary PR, its state, how many more and a chevron
   );
   const btn = prButton();
   expect(btn.textContent).toBe("#12open+1");
-  expect(btn.getAttribute("data-state")).toBe("open");
+  expect(btn.getAttribute("data-pr-state")).toBe("open");
   expect(btn.getAttribute("title")).toBe(
     "o/r#12 · open · Fix the parser\no/r#9 · merged · Fix the parser",
   );
@@ -388,7 +388,7 @@ test("a draft PR reads draft, and an unfetched PR shows only its number", () => 
     />,
   );
   expect(prButton().textContent).toBe("#12draft");
-  expect(prButton().getAttribute("data-state")).toBe("draft");
+  expect(prButton().getAttribute("data-pr-state")).toBe("draft");
   rerender(
     <SessionRow
       session={makeSession()}
@@ -397,7 +397,7 @@ test("a draft PR reads draft, and an unfetched PR shows only its number", () => 
     />,
   );
   expect(prButton().textContent).toBe("#12");
-  expect(prButton().getAttribute("data-state")).toBe("unfetched");
+  expect(prButton().getAttribute("data-pr-state")).toBe("unfetched");
 });
 
 test("a PR title is never parsed as markup", () => {

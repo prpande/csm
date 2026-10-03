@@ -114,6 +114,26 @@
   }
 }
 
+[data-pr-state="open"] {
+  --pr-bg: var(--pr-open-bg);
+  --pr-fg: var(--pr-open-text);
+}
+
+[data-pr-state="draft"] {
+  --pr-bg: var(--pr-draft-bg);
+  --pr-fg: var(--pr-draft-text);
+}
+
+[data-pr-state="merged"] {
+  --pr-bg: var(--pr-merged-bg);
+  --pr-fg: var(--pr-merged-text);
+}
+
+[data-pr-state="closed"] {
+  --pr-bg: var(--pr-closed-bg);
+  --pr-fg: var(--pr-closed-text);
+}
+
 body {
   margin: 0;
   background: var(--bg);

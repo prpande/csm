@@ -47,6 +47,22 @@ describe("PR state token contrast", () => {
     expect(contrast("#000000", "#ffffff")).toBeCloseTo(21, 0);
   });
 
+  test("each data-pr-state reads its own state's tokens", () => {
+    const css = readFileSync(globalCss, "utf8");
+    for (const state of STATES) {
+      const block = new RegExp(
+        `\\[data-pr-state="${state}"\\]\\s*\\{([^}]*)\\}`,
+      ).exec(css);
+      expect(block, state).not.toBeNull();
+      expect(block![1]).toMatch(
+        new RegExp(`--pr-bg:\\s*var\\(--pr-${state}-bg\\)`),
+      );
+      expect(block![1]).toMatch(
+        new RegExp(`--pr-fg:\\s*var\\(--pr-${state}-text\\)`),
+      );
+    }
+  });
+
   for (const theme of ["light", "dark"] as const) {
     describe(theme, () => {
       for (const state of STATES) {

@@ -58,7 +58,7 @@ Measured: text on fill is 4.93:1 at worst (light draft). The text colour, used a
 
 **Row**
 - Remove the PR chip from the meta line.
-- Wrap Open and the new PR button in an action column: `flex: 0 0 7.6rem`, a vertical stack, `gap: 9px`, centred. Both buttons are `24px` tall and full width.
+- Wrap Open and the new PR button in an action column: `flex: 0 0 9rem` with `min-width: 0`, a vertical stack, `gap: 9px`, centred. Both buttons are `24px` tall and full width.
 - The PR button follows spec §8.4:
   - label: number, state, `+N`, and the external-link icon for one PR or the chevron for several (`is-open` rotation while expanded);
   - colours from `--pr-<state>-*`; an unfetched PR uses a transparent fill and `--text-muted`;

@@ -112,26 +112,8 @@
   border: 1px solid var(--border);
 }
 
-.pill[data-state="open"] {
-  background: var(--pr-open-bg);
-  color: var(--pr-open-text);
-  border-color: var(--pr-open-text);
-}
-
-.pill[data-state="draft"] {
-  background: var(--pr-draft-bg);
-  color: var(--pr-draft-text);
-  border-color: var(--pr-draft-text);
-}
-
-.pill[data-state="merged"] {
-  background: var(--pr-merged-bg);
-  color: var(--pr-merged-text);
-  border-color: var(--pr-merged-text);
-}
-
-.pill[data-state="closed"] {
-  background: var(--pr-closed-bg);
-  color: var(--pr-closed-text);
-  border-color: var(--pr-closed-text);
+.pill[data-pr-state] {
+  background: var(--pr-bg);
+  color: var(--pr-fg);
+  border-color: var(--pr-fg);
 }

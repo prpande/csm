@@ -246,7 +246,7 @@ export function SessionList({
       aria-activedescendant={activeDescendant}
       onScroll={(e) => {
         const next = e.currentTarget.scrollTop;
-        if (next !== scrollTop) setPicker(null);
+        if (Math.abs(next - scrollTop) >= 1) setPicker(null);
         setScrollTop(next);
       }}
       onKeyDown={onKeyDown}
