@@ -8,7 +8,6 @@
 // (docs/specs/2026-06-30-csm-design.md §5 module table, §6 tiered scan).
 
 import { stat, readFile } from "node:fs/promises";
-import { basename } from "node:path";
 import {
   parseSession,
   extractSessionFacts,
@@ -22,7 +21,7 @@ import {
   type IndexFacts,
   type SessionIndex,
 } from "./sessionIndex";
-import { JSONL_EXT, listTranscripts } from "./search/transcriptFiles";
+import { listTranscripts, type TranscriptFile } from "./search/transcriptFiles";
 
 export interface SessionFolder {
   cwd: string;
@@ -70,24 +69,7 @@ export function tierIndex(ageMs: number): number {
   return TIER_BOUNDS_DAYS.length;
 }
 
-interface FileEntry {
-  path: string;
-  mtimeMs: number;
-  size: number;
-}
-
-// Collect every *.jsonl one directory level below the root (the encoded-cwd
-// folders). A missing/unreadable root or subdir is skipped, never fatal.
-async function collectFiles(rootDir: string): Promise<FileEntry[]> {
-  const { files } = await listTranscripts(rootDir);
-  return files.map(({ path, mtimeMs, size }) => ({ path, mtimeMs, size }));
-}
-
-// `<sessionId>.jsonl` -> `<sessionId>`. The filename is the authoritative id
-// (trusted over any in-file field), matching sessionParser's contract.
-function sessionIdOf(filePath: string): string {
-  return basename(filePath, JSONL_EXT);
-}
+type FileEntry = TranscriptFile;
 
 // Epoch ms for a lastActivity value, used only for sorting. The parser passes a
 // record's `timestamp` through unvalidated, so precision may vary or the value
@@ -160,7 +142,7 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   async function readMetadata(
     entry: FileEntry,
   ): Promise<SessionMetadata | null> {
-    const id = sessionIdOf(entry.path);
+    const id = entry.sid;
     const existing = index.get(id);
     // Hit: mtime AND size match the persisted freshness key → no read, no parse.
     if (
@@ -202,11 +184,11 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   async function scan(opts: ScanOptions): Promise<GroupedSessions> {
     const { now, onBatch } = opts;
     await index.load(); // idempotent — reads disk at most once
-    const files = await collectFiles(rootDir);
+    const { files } = await listTranscripts(rootDir);
     // Rebuild the id->path map each scan so sessions deleted between scans
     // don't linger as stale entries (the map is exactly one scan's worth).
     pathById.clear();
-    for (const f of files) pathById.set(sessionIdOf(f.path), f.path);
+    for (const f of files) pathById.set(f.sid, f.path);
 
     // Bucket by tier; within a tier, newest file first.
     const tiers: FileEntry[][] = Array.from({ length: TIER_COUNT }, () => []);
