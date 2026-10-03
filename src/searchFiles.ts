@@ -1,8 +1,7 @@
 import { readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-
-export const SEARCH_FILE_RE = /^search\.(db|db-wal|db-shm|bak-.+|corrupt-.+)$/;
+import { SEARCH_FILE_RE } from "./search/searchFileNames";
 
 export interface PurgeDeps {
   readdir?: (dir: string) => Promise<string[]>;

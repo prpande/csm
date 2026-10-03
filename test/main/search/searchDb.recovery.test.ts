@@ -22,6 +22,11 @@ import {
   type ChunkWrite,
   type SearchDb,
 } from "../../../src/search/searchDb";
+import {
+  CORRUPT_COPY_RE,
+  corruptCopyName,
+  SEARCH_FILE_RE,
+} from "../../../src/search/searchFileNames";
 import { emptySessionFields } from "../../../src/search/turnExtractor";
 
 const ROOT = "/projects";
@@ -192,4 +197,17 @@ describe("salvageTombstoned", () => {
     expect(() => fresh.salvageTombstoned(junk)).not.toThrow();
     expect(fresh.listSessions(ROOT)).toEqual([]);
   });
+});
+
+test("the purge matcher accepts every file name the store can create", () => {
+  const names = [
+    SEARCH_DB_FILENAME,
+    `${SEARCH_DB_FILENAME}-wal`,
+    `${SEARCH_DB_FILENAME}-shm`,
+    corruptCopyName(123),
+  ];
+  for (const name of names) {
+    expect(SEARCH_FILE_RE.test(name), name).toBe(true);
+  }
+  expect(CORRUPT_COPY_RE.test(corruptCopyName(123))).toBe(true);
 });

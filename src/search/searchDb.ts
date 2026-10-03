@@ -9,13 +9,18 @@ import {
   rmSync,
 } from "node:fs";
 import { join } from "node:path";
+import {
+  CORRUPT_COPY_RE,
+  corruptCopyName,
+  SEARCH_DB_FILENAME,
+} from "./searchFileNames";
 import { DatabaseSync } from "node:sqlite";
 import { isPrState, type PrState, type SessionPrsResult } from "../ipcTypes";
 import type { PrLinkObs } from "./prExtractor";
 import type { TombstoneState } from "./tombstone";
 import type { SessionFields, TurnRow } from "./turnExtractor";
 
-export const SEARCH_DB_FILENAME = "search.db";
+export { SEARCH_DB_FILENAME };
 export const SCHEMA_VERSION = 1;
 export const OPEN_REFRESH_MS = 10 * 60_000;
 export const CLOSED_REFRESH_MS = 24 * 60 * 60_000;
@@ -584,8 +589,6 @@ export function openSearchDb(dir: string, opts: OpenOptions): SearchDb {
   };
 }
 
-const CORRUPT_COPY_RE = /^search\.corrupt-.+\.db$/;
-
 export function isCorruptionError(err: unknown): boolean {
   const code = (err as { errcode?: unknown } | null | undefined)?.errcode;
   if (typeof code !== "number") return false;
@@ -607,7 +610,7 @@ export function openSearchDbSafe(
     if (!isCorruptionError(err)) throw err;
   }
   const file = join(dir, SEARCH_DB_FILENAME);
-  const corruptName = `search.corrupt-${opts.now}.db`;
+  const corruptName = corruptCopyName(opts.now);
   const corrupt = join(dir, corruptName);
   renameSync(file, corrupt);
   for (const name of readdirSync(dir)) {
