@@ -67,6 +67,7 @@ export function SessionList({
 
   const [picker, setPicker] = useState<{
     sessionId: string;
+    index: number;
     anchor: HTMLElement;
   } | null>(null);
   const closePicker = (how: { keyboard: boolean }) => {
@@ -87,7 +88,13 @@ export function SessionList({
     }
     if (!anchor) return;
     setPicker((prev) =>
-      prev?.sessionId === sessionId ? null : { sessionId, anchor },
+      prev?.sessionId === sessionId
+        ? null
+        : {
+            sessionId,
+            index: sessions.findIndex((s) => s.sessionId === sessionId),
+            anchor,
+          },
     );
   };
 
@@ -193,8 +200,11 @@ export function SessionList({
   const pickerSession = picker
     ? sessions.find((s) => s.sessionId === picker.sessionId)
     : undefined;
-  const pickerValid = pickerSession !== undefined && pickerLinks.length > 1;
-  useEffect(() => {
+  const pickerValid =
+    pickerSession !== undefined &&
+    pickerLinks.length > 1 &&
+    sessions[picker?.index ?? -1] === pickerSession;
+  useLayoutEffect(() => {
     if (picker && !pickerValid) setPicker(null);
   }, [picker, pickerValid]);
   useEffect(() => {

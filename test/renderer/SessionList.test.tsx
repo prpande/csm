@@ -459,6 +459,21 @@ test("the popover closes when its session leaves the list", async () => {
   expect(screen.getByRole("dialog")).toBeTruthy();
   rerender(<SessionList sessions={sessions.slice(1)} />);
   expect(screen.queryByRole("dialog")).toBeNull();
+  rerender(<SessionList sessions={sessions} />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("the popover closes when a session is inserted above its row", async () => {
+  const sessions = makeSessions(3);
+  installPrs(() => ({ [sessions[0].sessionId]: [linkOf(3), linkOf(4)] }));
+  const { rerender } = render(<SessionList sessions={sessions} />);
+  fireEvent.click(await screen.findByTestId("pr-button"));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  const newer = { ...makeSessions(1)[0], sessionId: "id-newer" };
+  rerender(<SessionList sessions={[newer, ...sessions]} />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  rerender(<SessionList sessions={sessions} />);
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("after a search:changed refetch an open popover shows the new links", async () => {
@@ -496,6 +511,14 @@ test("when a refetch leaves one PR the popover closes without throwing", async (
     fireChanged();
   });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  links = [linkOf(3), linkOf(4)];
+  await act(async () => {
+    fireChanged();
+  });
+  await waitFor(() =>
+    expect(screen.getAllByTestId("pr-button").length).toBe(1),
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("Shift+Enter on a multi-PR row scrolled out of the window reveals the row and opens the popover", async () => {
