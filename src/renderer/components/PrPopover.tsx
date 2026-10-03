@@ -24,6 +24,8 @@ interface PrPopoverProps {
   links: readonly SessionPrLink[];
   onOpenPr: (link: SessionPrLink) => void;
   onClose: (how: PrPopoverClose) => void;
+  /** Called when the popover unmounts while it still holds DOM focus. */
+  onFocusLost?: () => void;
 }
 
 interface Position {
@@ -38,6 +40,7 @@ export function PrPopover({
   links,
   onOpenPr,
   onClose,
+  onFocusLost,
 }: PrPopoverProps) {
   const ordered = orderedPrs(links);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -47,6 +50,15 @@ export function PrPopover({
   const index = Math.min(rawIndex, Math.max(ordered.length - 1, 0));
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const focusLostRef = useRef(onFocusLost);
+  focusLostRef.current = onFocusLost;
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    return () => {
+      if (root?.contains(document.activeElement)) focusLostRef.current?.();
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const root = rootRef.current;

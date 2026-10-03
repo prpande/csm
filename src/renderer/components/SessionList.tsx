@@ -294,6 +294,7 @@ export function SessionList({
           links={pickerLinks}
           onOpenPr={openPr}
           onClose={closePicker}
+          onFocusLost={() => scrollRef.current?.focus()}
         />
       )}
     </div>
