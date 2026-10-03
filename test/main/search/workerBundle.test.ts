@@ -64,40 +64,43 @@ test("the built worker opens the store, ingests and answers prsFor", async () =>
       ghPath: null,
     };
     const worker = new Worker(out, { workerData: init });
-    const messages: WorkerToHost[] = [];
-    worker.on("message", (m: WorkerToHost) => messages.push(m));
-    const next = (type: WorkerToHost["type"]) =>
-      new Promise<WorkerToHost>((resolve, reject) => {
-        const seen = messages.find((m) => m.type === type);
-        if (seen) return resolve(seen);
-        const onMsg = (m: WorkerToHost) => {
-          if (m.type !== type) return;
-          worker.off("message", onMsg);
-          resolve(m);
-        };
-        worker.on("message", onMsg);
-        worker.once("error", reject);
-      });
+    try {
+      const messages: WorkerToHost[] = [];
+      worker.on("message", (m: WorkerToHost) => messages.push(m));
+      const next = (type: WorkerToHost["type"]) =>
+        new Promise<WorkerToHost>((resolve, reject) => {
+          const seen = messages.find((m) => m.type === type);
+          if (seen) return resolve(seen);
+          const onMsg = (m: WorkerToHost) => {
+            if (m.type !== type) return;
+            worker.off("message", onMsg);
+            resolve(m);
+          };
+          worker.on("message", onMsg);
+          worker.once("error", reject);
+        });
 
-    expect(await next("ready")).toEqual({
-      type: "ready",
-      ftsOk: true,
-      recovered: false,
-    });
-    await next("changed");
-    worker.postMessage({
-      type: "prsFor",
-      id: 1,
-      sids: [SID],
-    } satisfies HostToWorker);
-    expect(await next("result")).toMatchObject({
-      id: 1,
-      ok: true,
-      value: { [SID]: [{ repo: "o/r", number: 3, title: null }] },
-    });
-    worker.postMessage({ type: "shutdown" } satisfies HostToWorker);
-    await next("shutdownAck");
-    await worker.terminate();
+      expect(await next("ready")).toEqual({
+        type: "ready",
+        ftsOk: true,
+        recovered: false,
+      });
+      await next("changed");
+      worker.postMessage({
+        type: "prsFor",
+        id: 1,
+        sids: [SID],
+      } satisfies HostToWorker);
+      expect(await next("result")).toMatchObject({
+        id: 1,
+        ok: true,
+        value: { [SID]: [{ repo: "o/r", number: 3, title: null }] },
+      });
+      worker.postMessage({ type: "shutdown" } satisfies HostToWorker);
+      await next("shutdownAck");
+    } finally {
+      await worker.terminate();
+    }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
