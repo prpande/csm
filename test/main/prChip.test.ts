@@ -133,12 +133,11 @@ describe("prButtonLabel", () => {
     expect(prButtonLabel([])).toBeUndefined();
   });
 
-  test("one link: its number and state, no more, not multiple", () => {
+  test("one link: its number and state, no more", () => {
     expect(prButtonLabel([pr({ number: 7, isDraft: true })])).toEqual({
       number: 7,
       state: "draft",
       more: 0,
-      multiple: false,
     });
   });
 
@@ -152,7 +151,6 @@ describe("prButtonLabel", () => {
       number: 2,
       state: "merged",
       more: 2,
-      multiple: true,
     });
   });
 

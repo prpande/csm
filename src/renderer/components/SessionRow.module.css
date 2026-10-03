@@ -207,7 +207,6 @@
   background: var(--skeleton-bg);
 }
 
-/* Right-hand action column: Open on top, the PR button under it. */
 .actions {
   flex: 0 0 7.6rem;
   display: flex;

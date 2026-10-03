@@ -196,10 +196,11 @@ export function SessionRow({
               data-testid="pr-button"
               data-state={label.state ?? "unfetched"}
               tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
               title={linkSummaries.join("\n")}
               aria-label={`Pull requests: ${linkSummaries.join("; ")}`}
-              aria-haspopup={label.multiple ? "dialog" : undefined}
-              aria-expanded={label.multiple ? prOpen : undefined}
+              aria-haspopup={label.more > 0 ? "dialog" : undefined}
+              aria-expanded={label.more > 0 ? prOpen : undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 if (e.detail > 1) return;
@@ -216,12 +217,11 @@ export function SessionRow({
                   <span className={styles.prMore}>+{label.more}</span>
                 )}
               </span>
-              {label.multiple ? (
+              {label.more > 0 ? (
                 <ChevronIcon
                   className={
                     prOpen ? `${styles.prIcon} ${styles.isOpen}` : styles.prIcon
                   }
-                  size={13}
                 />
               ) : (
                 <ExternalLinkIcon className={styles.prIcon} size={13} />

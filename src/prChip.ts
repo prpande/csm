@@ -94,7 +94,6 @@ export interface PrButtonLabel {
   number: number;
   state: PrStateLabel | undefined;
   more: number;
-  multiple: boolean;
 }
 
 export function prButtonLabel(
@@ -106,7 +105,6 @@ export function prButtonLabel(
     number: primary.number,
     state: prStateLabel(primary),
     more: links.length - 1,
-    multiple: links.length > 1,
   };
 }
 

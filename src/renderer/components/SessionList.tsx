@@ -13,7 +13,7 @@ import {
 } from "../../sessionListWindow";
 import { useSessionFacts } from "../hooks/useSessionFacts";
 import { useSessionPrs } from "../hooks/useSessionPrs";
-import { PrPopover } from "./PrPopover";
+import { PrPopover, type PrPopoverClose } from "./PrPopover";
 import { SessionRow } from "./SessionRow";
 import styles from "./SessionList.module.css";
 
@@ -70,12 +70,11 @@ export function SessionList({
     index: number;
     anchor: HTMLElement;
   } | null>(null);
-  const closePicker = (how: { keyboard: boolean }) => {
+  const closePicker = (how: PrPopoverClose) => {
     setPicker(null);
     if (how.keyboard) scrollRef.current?.focus();
   };
 
-  // One PR opens directly; several toggle the popover on that row's button.
   const activatePr = (
     sessionId: string,
     links: readonly SessionPrLink[],

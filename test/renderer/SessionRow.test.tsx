@@ -330,7 +330,7 @@ const pr = (over: Partial<SessionPrLink> = {}): SessionPrLink => ({
 
 const prButton = () => screen.getByTestId("pr-button");
 
-test("the PR button shows the primary PR, its state, how many more and a chevron (#206)", () => {
+test("the PR button shows the primary PR, its state, how many more and a chevron", () => {
   const { container } = render(
     <SessionRow
       session={makeSession()}
@@ -472,4 +472,16 @@ test("the second click of a double-click on the PR button is ignored", () => {
   fireEvent.click(prButton(), { detail: 1 });
   fireEvent.click(prButton(), { detail: 2 });
   expect(onPrButton).toHaveBeenCalledTimes(1);
+});
+
+test("the PR button keeps focus on the list and its chevron matches the tree's size", () => {
+  render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr(), pr({ number: 9 })]}
+    />,
+  );
+  expect(fireEvent.mouseDown(prButton())).toBe(false);
+  expect(prButton().querySelector("svg")?.getAttribute("width")).toBe("15");
 });
