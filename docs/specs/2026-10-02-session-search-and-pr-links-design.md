@@ -2,7 +2,7 @@
 
 - **Tracking issue:** [#205](https://github.com/prpande/csm/issues/205)
 - **Slices:** [#206](https://github.com/prpande/csm/issues/206) engine + ingest +
-  `gh` enrichment + PR chip, [#207](https://github.com/prpande/csm/issues/207)
+  `gh` enrichment + PR button, [#207](https://github.com/prpande/csm/issues/207)
   PR view, [#208](https://github.com/prpande/csm/issues/208) search query
   engine + UI.
 - **Epic:** [#88](https://github.com/prpande/csm/issues/88). Supersedes #117.
@@ -16,7 +16,8 @@ Answer "which session worked on which PR, or on which topic" from inside CSM,
 without resuming sessions to ask Claude. Three user-visible pieces:
 
 1. **PR links on session rows.** Each session row shows the GitHub PR it worked
-   on, with title and state, and opens it in the browser.
+   on, with its state, and opens it in the browser, or lets you pick one when it
+   worked on several.
 2. **PR view.** A `Sessions | PRs` toggle. The folder tree lists folders with
    PRs; a folder lists its PRs newest-first, each opening in the browser or
    reopening the session that worked on it.
@@ -123,7 +124,7 @@ These were decided with the owner during design and are not open:
 - `searchWorker` and `search.db`: schema, migrations, FTS5 self-test.
 - Incremental ingest with byte offsets, rewrite detection and tombstones.
 - PR extraction and `gh` enrichment.
-- PR chip on session rows (Sessions view).
+- PR button and PR popover on session rows (Sessions view).
 - PR view mode.
 - Query engine and as-you-type combined search UI.
 - `indexEnabled` integration and a "Remove deleted sessions from search"
@@ -426,7 +427,7 @@ From `turnExtractor` and `prExtractor`:
   through `fileCursor` as usual (a different head hash means rewritten).
 - A pass that cannot read the projects root at all records nothing.
 
-## 8. PRs: extraction, enrichment, chip
+## 8. PRs: extraction, enrichment, row button
 
 ### 8.1 Validation (untrusted input)
 
@@ -490,26 +491,67 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
   latest batch for any visible repo failed.
 - No prompts, no retries storm, no blocking of ingest or queries.
 
-### 8.4 PR chip on session rows (Sessions view)
+### 8.4 PR button on session rows (Sessions view)
 
-- Placed after the branch chip on the row's meta line, following the branch
-  chip pattern. It shows `#212`, a text state label (open, draft, merged,
-  closed; nothing while unfetched), and `+N` when more PRs are linked.
+- **Placement.** Every row has a fixed-width action column on the right
+  (`7.6rem`), so the Open buttons line up down the list. Open sits on top. A
+  row with linked PRs gets a PR button under it, `9px` below; a row without
+  PRs shows Open alone. Both buttons are `24px` tall and as wide as the
+  column. The row's meta line no longer carries a PR element.
 - **Primary PR:** among the session's linked PRs, the `created_here = 1` one
   with the latest `first_seen`; otherwise the one with the latest `last_seen`.
   Remaining ties break on PR number descending.
-- Tooltip and accessible name list every linked PR, primary first, as
-  `owner/repo#N · state · title` (missing parts omitted).
-- The chip is a `tabIndex=-1` button (same pattern as the row's Open button);
-  click opens the primary PR via the existing `csm.openExternal`. Keyboard:
-  Shift+Enter on the row.
+- **Label.** `#212`, the primary PR's state label (open, draft, merged,
+  closed; nothing while unfetched), `+N` when more PRs are linked, then a
+  trailing icon:
+  - One PR: the external-link icon (a box with an arrow leaving it). A click
+    opens the PR in the browser through the existing `csm.openExternal`.
+  - Several PRs: the folder tree's chevron (same path, stroke and size; a
+    shared icon component). It points right when closed and turns down while
+    the popover is open, as in the tree. A click toggles the PR popover.
+- **State colours.** Four new token pairs per theme, `--pr-<state>-bg` and
+  `--pr-<state>-text` for open (green), draft (neutral), merged (purple) and
+  closed (red). The button has a tinted fill, text in the state colour and a
+  `1px` border in the state colour; an unfetched PR uses a transparent fill
+  and `--text-muted`. Text on fill is at least 4.5:1 and the border at least
+  3:1 against the row, the hovered row and the selected row, in both themes.
+  The state is always written as text, so colour is never the only signal.
+  On hover the fill and text swap.
+- **PR popover.** Anchored to the PR button, rendered in a portal on
+  `document.body` so the virtual list's transform and the row's
+  `overflow: hidden` can't clip it. It opens below the button, and above it
+  when the space below is too small. `23rem` wide, list capped at `228px` with
+  its own scroll.
+  - Header: `N pull requests`, plus the hint `Enter opens · Esc closes`.
+  - One item per linked PR, primary first, then the order of `orderedPrs`.
+    Line 1: state pill (same tokens as the button), `#N`, title or
+    "Title unavailable", external-link icon. Line 2: `owner/repo`, plus
+    `opened here` when `created_here = 1`.
+  - Opening a PR (click, or Enter on the focused item) calls
+    `csm.openExternal` and leaves the popover open, so several PRs can be
+    opened in turn.
+  - It closes on Esc, on a click outside it, on a second click of its
+    button, when the list scrolls, and when the window resizes. Closing by Esc
+    or by keyboard returns focus to the session list.
+  - Role `dialog`, labelled `Pull requests for <session title>`. On open the
+    primary item takes focus; Up/Down move between items (clamped at the ends),
+    Home/End jump. Tab stays inside the popover.
+- **Keyboard on the row.** Shift+Enter does what a click on the PR button
+  does: opens the PR when there is one, opens the popover when there are
+  several. A held Shift+Enter (`repeat`) is ignored. A row with no PRs does
+  nothing (#220 tracks feedback for that).
+- **Accessibility.** The PR button is `tabIndex=-1`, like Open (the listbox is
+  the pane's one tab stop). Its accessible name lists every linked PR, primary
+  first, as `owner/repo#N · state · title` (missing parts omitted), and so
+  does its tooltip. With several PRs it carries `aria-haspopup="dialog"` and
+  `aria-expanded`. Icons are `aria-hidden`.
 - **Data:** `search:prsFor(sessionIds[])`, requested for the visible window the
   same way the facts line is, cached per folder view until the next
   `search:changed`; on that event the hook drops its cached entries and
   re-requests the visible window. Ids are UUID-validated in main before relay,
-  and a request carries at most 500 ids.
-- The chip renders only text nodes; state colors pass the existing AA rules
-  and are never the only signal.
+  and a request carries at most 500 ids. An open popover shows the refreshed
+  links when they arrive.
+- Titles and repos render only as text nodes.
 
 ## 9. PR view (#207)
 
@@ -774,7 +816,7 @@ work.
   Session-metadata search still works: `useSearch` does not call
   `search:query` and instead runs `quickMatch` in the renderer over the scanned
   `SessionMetadata[]` (composed `title`, `cwd`, `branch`; there is no
-  `titles_text`). It returns session rows only. PR chips, the PR view and
+  `titles_text`). It returns session rows only. PR buttons, the PR view and
   conversation search are unavailable, and the UI says so (§9, §10.6).
   Turning it back on rebuilds from the transcripts that still exist.
 - **"Remove deleted sessions from search"** (Settings): deletes every row of
@@ -869,8 +911,12 @@ work.
   fake binary; asserts the argument array never contains interpolated query
   text, that owner and name are passed with `-f` (raw strings), and that no
   `-F` value starts with `@` (gh reads `@file` values from disk).
-- **Renderer:** PR chip (primary selection, `+N`, tooltip, text-only, a chip
-  whose title appears after a `search:changed` event with no folder switch),
+- **Renderer:** PR button (primary selection, `+N`, one PR opens directly,
+  several open the popover, tooltip, text-only, a title that appears after a
+  `search:changed` event with no folder switch), PR popover (order, Enter and
+  click open and stay open, Up/Down/Home/End, Esc returns focus, outside click
+  and list scroll close it, placement flips above near the bottom), state
+  tokens meet the contrast floors in both themes,
   PR view (toggle, list order, actions, popover, disabled open, a PR linked
   from both a main-checkout and a worktree session counted once), search
   combobox keys, cursor rules, pills, live region, empty states.
@@ -880,7 +926,7 @@ work.
 
 | Slice | Issue | Contents |
 |---|---|---|
-| 1 | #206 | `searchDb`, `searchWorker`, `build:worker`, ingest (§7), PR extraction and enrichment (§8.1–8.3), PR chip (§8.4), `search:prsFor`, `indexEnabled` deletion, FTS5 CI probe, this spec and the plan |
+| 1 | #206 | `searchDb`, `searchWorker`, `build:worker`, ingest (§7), PR extraction and enrichment (§8.1–8.3), PR button and popover (§8.4), `search:prsFor`, `indexEnabled` deletion, FTS5 CI probe, this spec and the plan |
 | 2 | #207 | PR view (§9), `search:prFolders`, `search:folderPrs`, `viewMode` setting |
 | 3 | #208 | Query engine (§10.1–10.5), search UI (§10.6), "Remove deleted sessions from search" |
 
