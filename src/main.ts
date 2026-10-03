@@ -10,6 +10,7 @@ import {
 } from "electron";
 import * as path from "node:path";
 import * as fs from "node:fs";
+import { Worker } from "node:worker_threads";
 import { pathToFileURL } from "node:url";
 import { isOpenableUrl, navigationDecision, windowOpenDecision } from "./urls";
 import { registerIpcHandlers } from "./ipc";
@@ -30,6 +31,10 @@ import { createSettingsStore } from "./settingsStore";
 import { reopenSession } from "./reopenSession";
 import { launchNewSession, openTerminalHere } from "./newSession";
 import { defaultProjectsRoot, tempRoots } from "./pathAdapter";
+import { resolveGhPath } from "./search/ghClient";
+import type { WorkerInit } from "./search/protocol";
+import { asarUnpackedPath, createSearchHost } from "./searchHost";
+import { purgeSearchFiles } from "./searchFiles";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -45,6 +50,20 @@ const iconEnv = (): IconEnv => ({
 // Built renderer: dist/renderer/index.html, resolved relative to the compiled
 // main.js in dist/. Loaded via loadFile() in the packaged app.
 const RENDERER_INDEX = path.join(__dirname, "renderer", "index.html");
+
+// Packaged builds load the worker from app.asar.unpacked (electron-builder.yml asarUnpack).
+const SEARCH_WORKER = asarUnpackedPath(
+  path.join(__dirname, "searchWorker.js"),
+  path.sep,
+);
+
+const isFile = (p: string): boolean => {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+};
 
 // Dev mode loads the Vite dev server (HMR) instead of the built files. Gated by a
 // RUNTIME check (env var + not-packaged), never a VITE_ build-time gate — those
@@ -179,6 +198,43 @@ if (!gotLock) {
     });
     await sessionIndex.load();
 
+    // Search store. The same privacy opt-out as the session index: when
+    // it is off, nothing is written and any earlier search files are removed.
+    const userData = app.getPath("userData");
+    const projectsRoot = defaultProjectsRoot();
+    const searchHost = indexEnabled
+      ? createSearchHost({
+          createWorker: () =>
+            new Worker(SEARCH_WORKER, {
+              workerData: {
+                dbDir: userData,
+                projectsRoot,
+                platform: process.platform,
+                ghPath:
+                  resolveGhPath(process.env, process.platform, isFile) ?? null,
+              } satisfies WorkerInit,
+            }),
+          emit: (e) => {
+            const wc = mainWindow?.webContents;
+            if (!wc || wc.isDestroyed()) return;
+            if (e.type === "changed")
+              wc.send(CH.searchChanged, { generation: e.generation });
+            else wc.send(CH.searchProgress, { done: e.done, total: e.total });
+          },
+          log: (msg, err) => console.error(`[csm] ${msg}`, err ?? ""),
+        })
+      : null;
+    if (!searchHost) {
+      void purgeSearchFiles(userData)
+        .then((r) => {
+          if (!r.ok)
+            console.error("[csm] could not remove search files:", r.remaining);
+        })
+        .catch((err: unknown) =>
+          console.error("[csm] could not remove search files:", err),
+        );
+    }
+
     registerIpcHandlers({
       ipcMain,
       isTrustedSender: isMainWindowSender,
@@ -215,18 +271,28 @@ if (!gotLock) {
       // self-evident instead of silent.
       logError: (context, err) =>
         console.error(`[csm] ${context} failed:`, err),
-      projectsRoot: defaultProjectsRoot(),
+      search: searchHost ?? {
+        requestIngest: () => {},
+        prsFor: async () => ({}),
+      },
+      projectsRoot,
       platform: process.platform,
       now: () => Date.now(),
     });
 
-    // Flush a dirty index on quit. Electron does not delay quit for a
-    // fire-and-forget async task, so intercept before-quit, flush, then re-quit.
+    // Flush a dirty index and stop the search worker on quit. Electron does not
+    // delay quit for a fire-and-forget async task, so intercept before-quit,
+    // finish both, then re-quit. One handler: two would each re-quit on their own.
     app.on(
       "before-quit",
       createBeforeQuitHandler({
-        isDirty: () => sessionIndex.isDirty(),
-        flush: () => sessionIndex.flush(),
+        isDirty: () =>
+          sessionIndex.isDirty() ||
+          searchHost?.state === "running" ||
+          searchHost?.state === "starting",
+        flush: async () => {
+          await Promise.allSettled([sessionIndex.flush(), searchHost?.stop()]);
+        },
         quit: () => app.quit(),
       }),
     );
@@ -242,7 +308,9 @@ if (!gotLock) {
     // CSP is installed ONCE here (onHeadersReceived is a single-slot, session-wide
     // API) — not inside createWindow, which the macOS `activate` path re-enters.
     installCsp(devServerUrl);
-    return createWindow(devServerUrl);
+    await createWindow(devServerUrl);
+    // After the first paint, so indexing never competes with startup.
+    searchHost?.start();
   });
 
   app.on("window-all-closed", () => app.quit());

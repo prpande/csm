@@ -4,6 +4,7 @@ import { SessionRow } from "../../src/renderer/components/SessionRow";
 import type { SessionMetadata } from "../../src/sessionParser";
 import type { PermissionMode } from "../../src/sessionParser";
 import type { FactEntry } from "../../src/renderer/hooks/useSessionFacts";
+import type { SessionPrLink } from "../../src/ipcTypes";
 
 const makeSession = (over: Partial<SessionMetadata> = {}): SessionMetadata => ({
   sessionId: "abcdefgh-1111-2222-3333-444455556666",
@@ -312,4 +313,175 @@ test("shows an em-dash on fact error", () => {
     />,
   );
   expect(screen.getByText("—")).toBeTruthy();
+});
+
+const pr = (over: Partial<SessionPrLink> = {}): SessionPrLink => ({
+  repo: "o/r",
+  number: 12,
+  url: "https://github.com/o/r/pull/12",
+  title: "Fix the parser",
+  state: "OPEN",
+  isDraft: false,
+  createdHere: true,
+  firstSeen: 1,
+  lastSeen: 2,
+  ...over,
+});
+
+const prButton = () => screen.getByTestId("pr-button");
+
+test("the PR button shows the primary PR, its state, how many more and a chevron", () => {
+  const { container } = render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr(), pr({ number: 9, state: "MERGED", createdHere: false })]}
+    />,
+  );
+  const btn = prButton();
+  expect(btn.textContent).toBe("#12open+1");
+  expect(btn.getAttribute("data-pr-state")).toBe("open");
+  expect(btn.getAttribute("title")).toBe(
+    "o/r#12 · open · Fix the parser\no/r#9 · merged · Fix the parser",
+  );
+  expect(btn.getAttribute("aria-label")).toBe(
+    "Pull requests: o/r#12 · open · Fix the parser; o/r#9 · merged · Fix the parser",
+  );
+  expect(btn.getAttribute("aria-haspopup")).toBe("dialog");
+  expect(btn.getAttribute("aria-expanded")).toBe("false");
+  expect(btn.querySelector('path[d="M6 4l4 4-4 4"]')).toBeTruthy();
+  expect(container.querySelector('[data-testid="pr-chip"]')).toBeNull();
+});
+
+test("the chevron turns while the popover is open", () => {
+  render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr(), pr({ number: 9 })]}
+      prOpen
+    />,
+  );
+  expect(prButton().getAttribute("aria-expanded")).toBe("true");
+  expect(prButton().querySelector("svg")?.getAttribute("class")).toMatch(
+    /isOpen/,
+  );
+});
+
+test("a single PR shows the external-link icon and no popup attributes", () => {
+  render(
+    <SessionRow session={makeSession()} rowHeight={56} prLinks={[pr()]} />,
+  );
+  const btn = prButton();
+  expect(btn.textContent).toBe("#12open");
+  expect(btn.querySelector('path[d^="M9.5 2.5"]')).toBeTruthy();
+  expect(btn.hasAttribute("aria-haspopup")).toBe(false);
+  expect(btn.hasAttribute("aria-expanded")).toBe(false);
+});
+
+test("a draft PR reads draft, and an unfetched PR shows only its number", () => {
+  const { rerender } = render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr({ isDraft: true })]}
+    />,
+  );
+  expect(prButton().textContent).toBe("#12draft");
+  expect(prButton().getAttribute("data-pr-state")).toBe("draft");
+  rerender(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr({ state: null })]}
+    />,
+  );
+  expect(prButton().textContent).toBe("#12");
+  expect(prButton().getAttribute("data-pr-state")).toBe("unfetched");
+});
+
+test("a PR title is never parsed as markup", () => {
+  const { container } = render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr({ title: "<img src=x onerror=alert(1)>" })]}
+    />,
+  );
+  expect(container.querySelector("img")).toBeNull();
+  expect(prButton().getAttribute("title")).toContain(
+    "<img src=x onerror=alert(1)>",
+  );
+});
+
+test("no links, no PR button; with links it sits under Open, outside the meta line", () => {
+  const { rerender, container } = render(
+    <SessionRow session={makeSession()} rowHeight={56} onOpen={vi.fn()} />,
+  );
+  expect(screen.queryByTestId("pr-button")).toBeNull();
+  expect(screen.getByRole("button", { name: /open session:/i })).toBeTruthy();
+  rerender(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr()]}
+      onOpen={vi.fn()}
+    />,
+  );
+  const open = screen.getByRole("button", { name: /open session:/i });
+  expect(open.parentElement).toBe(prButton().parentElement);
+  expect(open.nextElementSibling).toBe(prButton());
+  expect(container.querySelector('[class*="meta"] button')).toBeNull();
+});
+
+test("clicking the PR button reports the session and anchor without selecting or reopening", () => {
+  const onSelect = vi.fn();
+  const onOpen = vi.fn();
+  const onPrButton = vi.fn();
+  const session = makeSession();
+  render(
+    <SessionRow
+      session={session}
+      rowHeight={56}
+      prLinks={[pr()]}
+      onSelect={onSelect}
+      onOpen={onOpen}
+      onPrButton={onPrButton}
+    />,
+  );
+  const btn = prButton();
+  fireEvent.click(btn);
+  fireEvent.doubleClick(btn);
+  expect(onPrButton).toHaveBeenCalledTimes(1);
+  expect(onPrButton).toHaveBeenCalledWith(session, btn);
+  expect(onSelect).not.toHaveBeenCalled();
+  expect(onOpen).not.toHaveBeenCalled();
+  expect(btn.tabIndex).toBe(-1);
+});
+
+test("the second click of a double-click on the PR button is ignored", () => {
+  const onPrButton = vi.fn();
+  render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr()]}
+      onPrButton={onPrButton}
+    />,
+  );
+  fireEvent.click(prButton(), { detail: 1 });
+  fireEvent.click(prButton(), { detail: 2 });
+  expect(onPrButton).toHaveBeenCalledTimes(1);
+});
+
+test("the PR button keeps focus on the list and its chevron matches the tree's size", () => {
+  render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr(), pr({ number: 9 })]}
+    />,
+  );
+  expect(fireEvent.mouseDown(prButton())).toBe(false);
+  expect(prButton().querySelector("svg")?.getAttribute("width")).toBe("15");
 });

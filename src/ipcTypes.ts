@@ -1,8 +1,7 @@
 // Wire-shape types shared across the IPC boundary: consumed by the main-process
 // bridge (src/ipc.ts) and the renderer contract (src/renderer/types/csm.d.ts).
-// Dependency-free at runtime (type-only) — it references only SessionMetadata
-// from the pure sessionParser, so it is safe to import from the DOM-only renderer
-// tsconfig as well as the node main tsconfig.
+// Safe to import from both the DOM-only renderer tsconfig and the node main
+// tsconfig: it imports only types, and its runtime exports are plain constants.
 
 import type { SessionMetadata, SessionFacts } from "./sessionParser";
 
@@ -92,3 +91,41 @@ export interface SessionsListener {
 /** Result of a batch getFacts call: per requested id, the facts or an error marker.
  *  Structured-clone safe (plain objects). */
 export type SessionFactsResult = Record<string, SessionFacts | { error: true }>;
+
+/** GitHub PR states as stored after enrichment. A runtime array so main
+ * validates stored values against the same source the type is derived from. */
+export const PR_STATES = ["OPEN", "MERGED", "CLOSED"] as const;
+
+export type PrState = (typeof PR_STATES)[number];
+
+export const isPrState = (v: unknown): v is PrState =>
+  (PR_STATES as readonly unknown[]).includes(v);
+
+/** One PR linked to a session. `title`/`state` are null until `gh`
+ * enrichment succeeds. Times are epoch ms; `lastSeen` is null when the link came
+ * only from the session's own `gh pr create`. */
+export interface SessionPrLink {
+  repo: string;
+  number: number;
+  url: string;
+  title: string | null;
+  state: PrState | null;
+  isDraft: boolean;
+  createdHere: boolean;
+  firstSeen: number | null;
+  lastSeen: number | null;
+}
+
+/** `search:prsFor` result: sessionId → its links. Absent ids have none. */
+export type SessionPrsResult = Record<string, SessionPrLink[]>;
+
+/** `search:changed` payload. The generation rises by one per change. */
+export interface SearchChangedMessage {
+  generation: number;
+}
+
+/** `search:progress` payload: transcripts ingested so far in this pass. */
+export interface SearchProgressMessage {
+  done: number;
+  total: number;
+}

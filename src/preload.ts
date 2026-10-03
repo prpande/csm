@@ -6,6 +6,8 @@ import type {
   PickFolderResult,
   ReopenRequestDto,
   ReopenResult,
+  SearchChangedMessage,
+  SessionPrsResult,
   SessionsBatchMessage,
   SessionsListener,
   SessionsSignalMessage,
@@ -130,5 +132,20 @@ contextBridge.exposeInMainWorld("csm", {
     get: (): Promise<ThemePreference> => ipcRenderer.invoke(CH.themeGet),
     set: (value: ThemePreference): Promise<void> =>
       ipcRenderer.invoke(CH.themeSet, value),
+  },
+
+  // Search store. prsFor fetches PR links for the visible rows; onChanged
+  // fires when stored links or titles moved, so the renderer refetches its window.
+  search: {
+    prsFor: (ids: string[]): Promise<SessionPrsResult> =>
+      ipcRenderer.invoke(CH.searchPrsFor, ids),
+    onChanged: (cb: (generation: number) => void): (() => void) => {
+      const listener = (
+        _e: IpcRendererEvent,
+        msg: SearchChangedMessage,
+      ): void => cb(msg.generation);
+      ipcRenderer.on(CH.searchChanged, listener);
+      return () => ipcRenderer.off(CH.searchChanged, listener);
+    },
   },
 });

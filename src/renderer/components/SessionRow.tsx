@@ -1,4 +1,11 @@
 import type { SessionMetadata } from "../../sessionParser";
+import type { SessionPrLink } from "../../ipcTypes";
+import {
+  orderedPrs,
+  prButtonId,
+  prButtonLabel,
+  prLinkSummary,
+} from "../../prChip";
 import {
   chipVariant,
   formatRelativeTime,
@@ -7,6 +14,8 @@ import {
   shouldShowGitBranch,
 } from "../../sessionRowView";
 import type { FactEntry } from "../hooks/useSessionFacts";
+import { ChevronIcon } from "./ChevronIcon";
+import { ExternalLinkIcon } from "./ExternalLinkIcon";
 import { GitBranchIcon } from "./GitBranchIcon";
 import styles from "./SessionRow.module.css";
 
@@ -37,6 +46,12 @@ interface SessionRowProps {
   worktreeBranch?: string;
   /** Lazily-loaded facts (#115). Undefined = still loading (renders a skeleton). */
   factState?: FactEntry;
+  /** PR links for this session. Undefined or empty renders no PR button. */
+  prLinks?: SessionPrLink[];
+  /** True while this row's PR popover is open. */
+  prOpen?: boolean;
+  /** PR button click; the list decides between opening a PR and the popover. */
+  onPrButton?: (session: SessionMetadata, anchor: HTMLElement) => void;
 }
 
 // One presentational session row (spec §9): a text block (title over a
@@ -54,6 +69,9 @@ export function SessionRow({
   onOpen,
   worktreeBranch,
   factState,
+  prLinks,
+  prOpen = false,
+  onPrButton,
 }: SessionRowProps) {
   const variant = chipVariant(session.permissionMode);
   // Non-empty only in the loaded state; the skeleton/error arms don't read it.
@@ -69,6 +87,9 @@ export function SessionRow({
     ? session.gitBranch
     : undefined;
   const branchLabel = worktreeBranch ?? ownBranch;
+  const orderedLinks = prLinks ? orderedPrs(prLinks) : [];
+  const label = prLinks ? prButtonLabel(prLinks) : undefined;
+  const linkSummaries = orderedLinks.map(prLinkSummary);
   return (
     <div
       className={styles.row}
@@ -148,29 +169,66 @@ export function SessionRow({
           </div>
         )}
       </div>
-      {/* Rendered only when a reopen handler is wired (always, in the app). The
-          accessible name is per-row; stopPropagation keeps a click from also
-          firing the row's double-click reopen. */}
-      {onOpen && (
-        <button
-          type="button"
-          className={styles.open}
-          // Not a tab stop: the listbox is the pane's single tab stop (spec §9,
-          // matching the tree chevron). Keyboard users open via Enter on the row;
-          // the button stays mouse-clickable and its accessible name is per-row.
-          tabIndex={-1}
-          aria-label={`Open session: ${session.title}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen(session);
-          }}
-          // Swallow a double-click on the button so it can't also bubble to the
-          // row's double-click reopen — the button owns its own gesture,
-          // independent of the reopen consumer being idempotent.
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          Open
-        </button>
+      {(onOpen || label) && (
+        <div className={styles.actions}>
+          {onOpen && (
+            <button
+              type="button"
+              className={styles.open}
+              // Not a tab stop: the listbox is the pane's single tab stop (spec §9);
+              // Enter on the row opens it.
+              tabIndex={-1}
+              aria-label={`Open session: ${session.title}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen(session);
+              }}
+              onDoubleClick={(e) => e.stopPropagation()}
+            >
+              Open
+            </button>
+          )}
+          {label && (
+            <button
+              type="button"
+              className={styles.prButton}
+              id={id ? prButtonId(id) : undefined}
+              data-testid="pr-button"
+              data-pr-state={label.state ?? "unfetched"}
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
+              title={linkSummaries.join("\n")}
+              aria-label={`Pull requests: ${linkSummaries.join("; ")}`}
+              aria-haspopup={label.more > 0 ? "dialog" : undefined}
+              aria-expanded={label.more > 0 ? prOpen : undefined}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (e.detail > 1) return;
+                onPrButton?.(session, e.currentTarget);
+              }}
+              onDoubleClick={(e) => e.stopPropagation()}
+            >
+              <span className={styles.prText}>
+                #{label.number}
+                {label.state && (
+                  <span className={styles.prState}>{label.state}</span>
+                )}
+                {label.more > 0 && (
+                  <span className={styles.prMore}>+{label.more}</span>
+                )}
+              </span>
+              {label.more > 0 ? (
+                <ChevronIcon
+                  className={
+                    prOpen ? `${styles.prIcon} ${styles.isOpen}` : styles.prIcon
+                  }
+                />
+              ) : (
+                <ExternalLinkIcon className={styles.prIcon} size={13} />
+              )}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

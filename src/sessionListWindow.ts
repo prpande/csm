@@ -87,7 +87,9 @@ export function scrollTopToReveal(
 
 /** A keyboard navigation intent from the listbox key map. */
 export type ListKeyAction =
-  { type: "focus"; index: number } | { type: "open"; index: number };
+  | { type: "focus"; index: number }
+  | { type: "open"; index: number }
+  | { type: "openPr"; index: number };
 
 /**
  * Pure key map for the virtualized session listbox (#70).
@@ -99,11 +101,13 @@ export type ListKeyAction =
  * Arrow/Home/End clamp to the ends and still return a `focus` action at the
  * boundary (never null) so the handler can `preventDefault` — arrow keys belong
  * to the listbox and must not also scroll the page. Enter opens the focused row.
+ * Shift+Enter activates the focused row's PR button.
  */
 export function listKeyAction(
   key: string,
   focusedIndex: number,
   itemCount: number,
+  modifiers: { shift?: boolean } = {},
 ): ListKeyAction | null {
   if (itemCount <= 0) return null;
   const last = itemCount - 1;
@@ -120,9 +124,11 @@ export function listKeyAction(
       return { type: "focus", index: last };
     case "Enter":
       // Only a real, in-range focused row can be opened.
-      return focusedIndex >= 0 && focusedIndex <= last
-        ? { type: "open", index: focusedIndex }
-        : null;
+      if (focusedIndex < 0 || focusedIndex > last) return null;
+      return {
+        type: modifiers.shift ? "openPr" : "open",
+        index: focusedIndex,
+      };
     default:
       return null;
   }

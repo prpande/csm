@@ -51,6 +51,15 @@
   --chip-plan-bg: #e6ddef;
   --chip-plan-text: #6a49a0;
 
+  --pr-open-bg: #dcecd8;
+  --pr-open-text: #2b6a34;
+  --pr-draft-bg: #eae0d2;
+  --pr-draft-text: #675d52;
+  --pr-merged-bg: #eedcf2;
+  --pr-merged-text: #7a2d8e;
+  --pr-closed-bg: #f9dcdb;
+  --pr-closed-text: #a0262f;
+
   /* Traffic-light window controls (#86). The fixed macOS palette, drawn the same
      on every OS AND theme so the control reads identically cross-platform (PRism
      parity) — hence the only color set NOT duplicated in the dark block below. */
@@ -93,7 +102,36 @@
     --chip-info-text: #8cc3d1;
     --chip-plan-bg: #322850;
     --chip-plan-text: #c3b2ee;
+
+    --pr-open-bg: #1b3a22;
+    --pr-open-text: #93d39d;
+    --pr-draft-bg: #383029;
+    --pr-draft-text: #c4b8aa;
+    --pr-merged-bg: #3b2045;
+    --pr-merged-text: #dcaaea;
+    --pr-closed-bg: #4a1e21;
+    --pr-closed-text: #f3a5a9;
   }
+}
+
+[data-pr-state="open"] {
+  --pr-bg: var(--pr-open-bg);
+  --pr-fg: var(--pr-open-text);
+}
+
+[data-pr-state="draft"] {
+  --pr-bg: var(--pr-draft-bg);
+  --pr-fg: var(--pr-draft-text);
+}
+
+[data-pr-state="merged"] {
+  --pr-bg: var(--pr-merged-bg);
+  --pr-fg: var(--pr-merged-text);
+}
+
+[data-pr-state="closed"] {
+  --pr-bg: var(--pr-closed-bg);
+  --pr-fg: var(--pr-closed-text);
 }
 
 body {

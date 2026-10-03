@@ -7,8 +7,7 @@
 // session file (a hard CLAUDE.md constraint, asserted in tests). Design spec
 // (docs/specs/2026-06-30-csm-design.md §5 module table, §6 tiered scan).
 
-import { readdir, stat, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { stat, readFile } from "node:fs/promises";
 import {
   parseSession,
   extractSessionFacts,
@@ -22,6 +21,7 @@ import {
   type IndexFacts,
   type SessionIndex,
 } from "./sessionIndex";
+import { listTranscripts, type TranscriptFile } from "./search/transcriptFiles";
 
 export interface SessionFolder {
   cwd: string;
@@ -53,11 +53,6 @@ export interface StoreDeps {
   index?: SessionIndex;
 }
 
-// Session files. The match is case-sensitive: Claude always writes lowercase
-// `.jsonl`, and this reads Claude's own files (spec §6) — a `.JSONL` from an
-// external tool is out of scope and intentionally ignored.
-const JSONL_EXT = ".jsonl";
-
 // Age tiers by mtime (spec §6): <=1d, <=3d, <=7d, <=14d, <=30d, then a final
 // "older than 30d" bucket. Newest tier is parsed and emitted first.
 const DAY_MS = 86_400_000;
@@ -72,62 +67,6 @@ export function tierIndex(ageMs: number): number {
     if (ageMs <= TIER_BOUNDS_DAYS[i] * DAY_MS) return i;
   }
   return TIER_BOUNDS_DAYS.length;
-}
-
-interface FileEntry {
-  path: string;
-  mtimeMs: number;
-  size: number;
-}
-
-// Collect every *.jsonl one directory level below the root (the encoded-cwd
-// folders). A missing/unreadable root or subdir is skipped, never fatal.
-async function collectFiles(rootDir: string): Promise<FileEntry[]> {
-  let subdirs: string[];
-  try {
-    const entries = await readdir(rootDir, { withFileTypes: true });
-    subdirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
-  } catch {
-    return [];
-  }
-
-  const files: FileEntry[] = [];
-  for (const sub of subdirs) {
-    const dir = join(rootDir, sub);
-    let names: string[];
-    try {
-      const entries = await readdir(dir, { withFileTypes: true });
-      // Require a non-empty stem: a file named exactly ".jsonl" would yield an
-      // empty sessionId (basename(".jsonl", ".jsonl") === ""), leaking a bogus
-      // un-reopenable session — skip it rather than emit it (fail-soft, §12).
-      names = entries
-        .filter(
-          (e) =>
-            e.isFile() &&
-            e.name.endsWith(JSONL_EXT) &&
-            e.name.length > JSONL_EXT.length,
-        )
-        .map((e) => e.name);
-    } catch {
-      continue;
-    }
-    for (const name of names) {
-      const path = join(dir, name);
-      try {
-        const st = await stat(path);
-        files.push({ path, mtimeMs: st.mtimeMs, size: st.size });
-      } catch {
-        // Unreadable between readdir and stat (e.g. removed) — skip.
-      }
-    }
-  }
-  return files;
-}
-
-// `<sessionId>.jsonl` -> `<sessionId>`. The filename is the authoritative id
-// (trusted over any in-file field), matching sessionParser's contract.
-function sessionIdOf(filePath: string): string {
-  return basename(filePath, JSONL_EXT);
 }
 
 // Epoch ms for a lastActivity value, used only for sorting. The parser passes a
@@ -199,9 +138,9 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   }
 
   async function readMetadata(
-    entry: FileEntry,
+    entry: TranscriptFile,
   ): Promise<SessionMetadata | null> {
-    const id = sessionIdOf(entry.path);
+    const id = entry.sid;
     const existing = index.get(id);
     // Hit: mtime AND size match the persisted freshness key → no read, no parse.
     if (
@@ -243,14 +182,17 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   async function scan(opts: ScanOptions): Promise<GroupedSessions> {
     const { now, onBatch } = opts;
     await index.load(); // idempotent — reads disk at most once
-    const files = await collectFiles(rootDir);
+    const { files } = await listTranscripts(rootDir);
     // Rebuild the id->path map each scan so sessions deleted between scans
     // don't linger as stale entries (the map is exactly one scan's worth).
     pathById.clear();
-    for (const f of files) pathById.set(sessionIdOf(f.path), f.path);
+    for (const f of files) pathById.set(f.sid, f.path);
 
     // Bucket by tier; within a tier, newest file first.
-    const tiers: FileEntry[][] = Array.from({ length: TIER_COUNT }, () => []);
+    const tiers: TranscriptFile[][] = Array.from(
+      { length: TIER_COUNT },
+      () => [],
+    );
     for (const f of files) tiers[tierIndex(now - f.mtimeMs)].push(f);
     for (const tier of tiers) tier.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
@@ -293,7 +235,7 @@ export function createSessionStore(rootDir: string, deps: StoreDeps = {}) {
   // under the cognitive-complexity threshold. Prune ONLY after a complete scan and
   // NEVER when zero files were observed (a missing/transient root returns []),
   // so a transient failure can't wipe the index (spec §7.2, §11).
-  async function finalizeScan(files: FileEntry[]): Promise<void> {
+  async function finalizeScan(files: TranscriptFile[]): Promise<void> {
     if (files.length > 0) {
       index.prune(new Set(pathById.keys()));
     }

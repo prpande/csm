@@ -24,6 +24,11 @@ files:
   - dist/**
   - package.json
 
+# The search worker loads from a plain file; main.ts rewrites its path to
+# app.asar.unpacked (guarded by test/main/packagingSearchWorker.test.ts).
+asarUnpack:
+  - dist/searchWorker.js
+
 win:
   # Multi-resolution .ico from the committed source set; embedded in the portable
   # .exe and the nsis installer, and shown on the taskbar.

@@ -1,6 +1,9 @@
-import { test, expect } from "vitest";
+import { describe, test, expect } from "vitest";
 import {
+  composeTitleFrom,
+  eligiblePromptText,
   parseSession,
+  truncateTitle,
   TITLE_MAX_LENGTH,
   type SessionMetadata,
 } from "../src/sessionParser";
@@ -409,4 +412,68 @@ test("gitBranch: null when no record carries one (or all blank)", () => {
       }),
     ).gitBranch,
   ).toBeNull();
+});
+
+describe("composeTitleFrom", () => {
+  const lines = (recs: object[]) =>
+    recs.map((r) => JSON.stringify(r)).join("\n");
+  const prompt = (text: string) => ({
+    type: "user",
+    message: { role: "user", content: text },
+  });
+  const long = "x".repeat(TITLE_MAX_LENGTH + 30);
+
+  const cases: {
+    name: string;
+    recs: object[];
+    sources: Parameters<typeof composeTitleFrom>[0];
+  }[] = [
+    {
+      name: "custom name leads the ai-title",
+      recs: [
+        { type: "custom-title", customTitle: "fix-auth" },
+        { type: "ai-title", aiTitle: "Fix login bug" },
+      ],
+      sources: { customTitle: "fix-auth", aiTitle: "Fix login bug" },
+    },
+    {
+      name: "summary when no ai-title",
+      recs: [{ type: "summary", summary: "Refactor parser" }, prompt("hello")],
+      sources: { summary: "Refactor parser", firstPrompt: "hello" },
+    },
+    {
+      name: "truncated first prompt",
+      recs: [prompt(long)],
+      sources: { firstPrompt: truncateTitle(long) },
+    },
+    {
+      name: "fallback when nothing",
+      recs: [{ type: "mode", mode: "normal" }],
+      sources: {},
+    },
+    {
+      name: "null columns behave like absent ones",
+      recs: [{ type: "ai-title", aiTitle: "T" }],
+      sources: {
+        customTitle: null,
+        aiTitle: "T",
+        summary: null,
+        firstPrompt: null,
+      },
+    },
+  ];
+
+  test.each(cases)("$name matches parseSession", ({ recs, sources }) => {
+    expect(composeTitleFrom(sources)).toBe(
+      parseSession("s", lines(recs)).title,
+    );
+  });
+
+  test("eligiblePromptText rejects wrappers and meta records", () => {
+    expect(eligiblePromptText(prompt("  real prompt "))).toBe("real prompt");
+    expect(eligiblePromptText(prompt("<system-reminder>x"))).toBeUndefined();
+    expect(
+      eligiblePromptText({ ...prompt("x"), isMeta: true }),
+    ).toBeUndefined();
+  });
 });

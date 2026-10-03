@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { SessionMetadata } from "../../sessionParser";
+import type { SessionPrLink } from "../../ipcTypes";
+import { prButtonId } from "../../prChip";
+import { currentBridge } from "../bridge";
 import {
   computeWindow,
   scrollTopToReveal,
@@ -9,6 +12,8 @@ import {
   OVERSCAN,
 } from "../../sessionListWindow";
 import { useSessionFacts } from "../hooks/useSessionFacts";
+import { useSessionPrs } from "../hooks/useSessionPrs";
+import { PrPopover, type PrPopoverClose } from "./PrPopover";
 import { SessionRow } from "./SessionRow";
 import styles from "./SessionList.module.css";
 
@@ -56,6 +61,42 @@ export function SessionList({
     setFocusedId(session.sessionId);
   };
 
+  const openPr = (link: SessionPrLink) => {
+    void currentBridge()?.openExternal(link.url);
+  };
+
+  const [picker, setPicker] = useState<{
+    sessionId: string;
+    index: number;
+    anchor: HTMLElement;
+  } | null>(null);
+  const closePicker = (how: PrPopoverClose) => {
+    setPicker(null);
+    if (how.keyboard) scrollRef.current?.focus();
+  };
+
+  const activatePr = (
+    sessionId: string,
+    links: readonly SessionPrLink[],
+    anchor: HTMLElement | null,
+  ) => {
+    if (links.length === 0) return;
+    if (links.length === 1) {
+      openPr(links[0]);
+      return;
+    }
+    if (!anchor) return;
+    setPicker((prev) =>
+      prev?.sessionId === sessionId
+        ? null
+        : {
+            sessionId,
+            index: sessions.findIndex((s) => s.sessionId === sessionId),
+            anchor,
+          },
+    );
+  };
+
   // Measure the viewport height and keep it current on resize. ResizeObserver is
   // absent under jsdom (tests) — the guard falls back to a 0 height, which still
   // yields a bounded (overscan-only) window rather than mounting every row.
@@ -97,6 +138,22 @@ export function SessionList({
     });
   }, [sessions]);
 
+  const revealRow = (index: number, activate?: string) => {
+    const newScrollTop = scrollTopToReveal(
+      index,
+      scrollTop,
+      viewportHeight,
+      ROW_HEIGHT,
+    );
+    flushSync(() => {
+      setScrollTop(newScrollTop);
+      if (activate !== undefined) setFocusedId(activate);
+    });
+    // React state moved the windowed slice; also move the real scrollbar so the
+    // revealed row is actually on screen (state alone doesn't scroll the div).
+    if (scrollRef.current) scrollRef.current.scrollTop = newScrollTop;
+  };
+
   // One handler on the listbox: keys bubble up from the container (which holds
   // real focus). The pure listKeyAction owns the semantics; this dispatches and,
   // for a move, reveals the target row BEFORE it becomes the active descendant —
@@ -104,27 +161,28 @@ export function SessionList({
   // activedescendant to resolve to it. flushSync commits the new window so the
   // row is mounted before we sync the real scrollbar position.
   const onKeyDown = (e: React.KeyboardEvent) => {
-    const action = listKeyAction(e.key, focusedIndex, sessions.length);
+    const action = listKeyAction(e.key, focusedIndex, sessions.length, {
+      shift: e.shiftKey,
+    });
     if (!action) return; // not ours (Tab, etc.) — let it through
     e.preventDefault();
     if (action.type === "open") {
       onOpen?.(sessions[action.index]);
       return;
     }
-    const target = sessions[action.index];
-    const newScrollTop = scrollTopToReveal(
-      action.index,
-      scrollTop,
-      viewportHeight,
-      ROW_HEIGHT,
-    );
-    flushSync(() => {
-      setScrollTop(newScrollTop);
-      setFocusedId(target.sessionId);
-    });
-    // React state moved the windowed slice; also move the real scrollbar so the
-    // revealed row is actually on screen (state alone doesn't scroll the div).
-    if (scrollRef.current) scrollRef.current.scrollTop = newScrollTop;
+    if (action.type === "openPr") {
+      if (e.repeat) return;
+      const sessionId = sessions[action.index].sessionId;
+      const links = prs.get(sessionId) ?? [];
+      if (links.length > 1) revealRow(action.index);
+      activatePr(
+        sessionId,
+        links,
+        document.getElementById(prButtonId(optionId(sessionId))),
+      );
+      return;
+    }
+    revealRow(action.index, sessions[action.index].sessionId);
   };
 
   // Only reference the active option when it is actually mounted: a dangling
@@ -136,15 +194,35 @@ export function SessionList({
     focusedId !== null && activeMounted ? optionId(focusedId) : undefined;
 
   const { facts, requestFacts } = useSessionFacts();
+  const { prs, requestPrs } = useSessionPrs();
+  const pickerLinks = picker ? (prs.get(picker.sessionId) ?? []) : [];
+  const pickerSession = picker
+    ? sessions.find((s) => s.sessionId === picker.sessionId)
+    : undefined;
+  const pickerValid =
+    pickerSession !== undefined &&
+    pickerLinks.length > 1 &&
+    sessions[picker?.index ?? -1] === pickerSession;
+  useLayoutEffect(() => {
+    if (picker && !pickerValid) setPicker(null);
+  }, [picker, pickerValid]);
+  useEffect(() => {
+    if (!picker) return;
+    const close = () => setPicker(null);
+    window.addEventListener("resize", close);
+    return () => window.removeEventListener("resize", close);
+  }, [picker]);
   // Request facts for the rows actually mounted (the window). Keyed on the id list
   // so a scroll into new rows fetches just the newly-visible, uncached ones.
   const visibleIds = visible.map((s) => s.sessionId);
   const visibleKey = visibleIds.join(",");
   useEffect(() => {
-    if (visibleIds.length > 0) requestFacts(visibleIds);
+    if (visibleIds.length === 0) return;
+    requestFacts(visibleIds);
+    requestPrs(visibleIds);
     // visibleKey is the stable dependency; the ids array's identity changes each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleKey, requestFacts]);
+  }, [visibleKey, requestFacts, requestPrs]);
 
   return (
     <div
@@ -166,7 +244,11 @@ export function SessionList({
       // contract sound.
       tabIndex={sessions.length > 0 ? 0 : -1}
       aria-activedescendant={activeDescendant}
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      onScroll={(e) => {
+        const next = e.currentTarget.scrollTop;
+        if (Math.abs(next - scrollTop) >= 1) setPicker(null);
+        setScrollTop(next);
+      }}
       onKeyDown={onKeyDown}
     >
       {/* The spacer/window wrappers carry no semantics — mark them presentation
@@ -195,10 +277,25 @@ export function SessionList({
               onOpen={onOpen}
               worktreeBranch={worktreeBranches?.get(session.sessionId)}
               factState={facts.get(session.sessionId)}
+              prLinks={prs.get(session.sessionId)}
+              prOpen={picker?.sessionId === session.sessionId}
+              onPrButton={(s, anchor) =>
+                activatePr(s.sessionId, prs.get(s.sessionId) ?? [], anchor)
+              }
             />
           ))}
         </div>
       </div>
+      {picker && pickerSession && pickerValid && (
+        <PrPopover
+          anchor={picker.anchor}
+          sessionTitle={pickerSession.title}
+          links={pickerLinks}
+          onOpenPr={openPr}
+          onClose={closePicker}
+          onFocusLost={() => scrollRef.current?.focus()}
+        />
+      )}
     </div>
   );
 }

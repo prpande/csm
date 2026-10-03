@@ -5,9 +5,9 @@
 // without an Electron runtime — main.ts only wires the real callbacks in.
 
 export interface QuitFlushDeps {
-  /** True when the index has unpersisted changes or a write is in flight. */
+  /** True when quit must wait: unpersisted index changes, a write in flight, or a worker still to stop. */
   isDirty: () => boolean;
-  /** Single-writer atomic flush; cancels its own debounce internally. */
+  /** Finishes that work: the single-writer atomic flush and any worker shutdown. */
   flush: () => Promise<void>;
   /** Re-invoke the quit that this handler intercepted (e.g. app.quit). */
   quit: () => void;

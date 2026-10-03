@@ -1,10 +1,12 @@
 import { test, expect, vi, afterEach } from "vitest";
 import {
+  act,
   render,
   screen,
   fireEvent,
   createEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { SessionList } from "../../src/renderer/components/SessionList";
 import { ROW_HEIGHT } from "../../src/sessionListWindow";
@@ -238,4 +240,331 @@ test("requests facts for the visible window and passes them to rows", async () =
   await waitFor(() => expect(getFacts).toHaveBeenCalled());
   expect(getFacts.mock.calls[0][0]).toContain(sampleSession.sessionId);
   await waitFor(() => expect(screen.getByText(/7 msgs/)).toBeTruthy());
+});
+
+test("Shift+Enter opens the focused session's primary PR (#206)", async () => {
+  const sessions = makeSessions(3);
+  const openExternal = vi.fn(async () => true);
+  window.csm = {
+    ...window.csm!,
+    openExternal,
+    search: {
+      prsFor: vi.fn(async () => ({
+        [sessions[0].sessionId]: [
+          {
+            repo: "o/r",
+            number: 12,
+            url: "https://github.com/o/r/pull/12",
+            title: null,
+            state: null,
+            isDraft: false,
+            createdHere: false,
+            firstSeen: null,
+            lastSeen: 1,
+          },
+        ],
+      })),
+      onChanged: vi.fn(() => () => {}),
+    },
+  };
+  render(<SessionList sessions={sessions} />);
+  await screen.findByTestId("pr-button");
+  fireEvent.keyDown(screen.getByRole("listbox"), {
+    key: "Enter",
+    shiftKey: true,
+  });
+  expect(openExternal).toHaveBeenCalledWith("https://github.com/o/r/pull/12");
+});
+
+test("a held Shift+Enter opens the PR once", async () => {
+  const sessions = makeSessions(3);
+  const openExternal = vi.fn(async () => true);
+  window.csm = {
+    ...window.csm!,
+    openExternal,
+    search: {
+      prsFor: vi.fn(async () => ({
+        [sessions[0].sessionId]: [
+          {
+            repo: "o/r",
+            number: 12,
+            url: "https://github.com/o/r/pull/12",
+            title: null,
+            state: null,
+            isDraft: false,
+            createdHere: false,
+            firstSeen: null,
+            lastSeen: 1,
+          },
+        ],
+      })),
+      onChanged: vi.fn(() => () => {}),
+    },
+  };
+  render(<SessionList sessions={sessions} />);
+  await screen.findByTestId("pr-button");
+  const list = screen.getByRole("listbox");
+  fireEvent.keyDown(list, { key: "Enter", shiftKey: true });
+  fireEvent.keyDown(list, { key: "Enter", shiftKey: true, repeat: true });
+  expect(openExternal).toHaveBeenCalledTimes(1);
+});
+
+test("Shift+Enter on a row with no PR does nothing", async () => {
+  const sessions = makeSessions(3);
+  const openExternal = vi.fn(async () => true);
+  const onOpen = vi.fn();
+  const prsFor = vi.fn(async () => ({}));
+  window.csm = {
+    ...window.csm!,
+    openExternal,
+    search: { prsFor, onChanged: vi.fn(() => () => {}) },
+  };
+  render(<SessionList sessions={sessions} onOpen={onOpen} />);
+  await waitFor(() => expect(prsFor).toHaveBeenCalled());
+  await act(async () => {});
+  fireEvent.keyDown(screen.getByRole("listbox"), {
+    key: "Enter",
+    shiftKey: true,
+  });
+  expect(onOpen).not.toHaveBeenCalled();
+  expect(openExternal).not.toHaveBeenCalled();
+});
+
+const linkOf = (number: number, over: Record<string, unknown> = {}) => ({
+  repo: "o/r",
+  number,
+  url: `https://github.com/o/r/pull/${number}`,
+  title: `PR ${number}`,
+  state: "OPEN" as const,
+  isDraft: false,
+  createdHere: false,
+  firstSeen: null,
+  lastSeen: number,
+  ...over,
+});
+
+const installPrs = (
+  byId: () => Record<string, ReturnType<typeof linkOf>[]>,
+  openExternal = vi.fn(async () => true),
+) => {
+  let changed: () => void = () => {};
+  window.csm = {
+    ...window.csm!,
+    openExternal,
+    search: {
+      prsFor: vi.fn(async () => byId()),
+      onChanged: vi.fn((cb: () => void) => {
+        changed = cb;
+        return () => {};
+      }),
+    },
+  };
+  return { openExternal, fireChanged: () => changed() };
+};
+
+test("Shift+Enter with several PRs opens the popover instead of a PR", async () => {
+  const sessions = makeSessions(3);
+  const { openExternal } = installPrs(() => ({
+    [sessions[0].sessionId]: [linkOf(3), linkOf(4)],
+  }));
+  render(<SessionList sessions={sessions} />);
+  await screen.findByTestId("pr-button");
+  fireEvent.keyDown(screen.getByRole("listbox"), {
+    key: "Enter",
+    shiftKey: true,
+  });
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.parentElement).toBe(document.body);
+  expect(openExternal).not.toHaveBeenCalled();
+  expect(screen.getByTestId("pr-button").getAttribute("aria-expanded")).toBe(
+    "true",
+  );
+});
+
+test("a held Shift+Enter with several PRs opens the popover once", async () => {
+  const sessions = makeSessions(3);
+  installPrs(() => ({ [sessions[0].sessionId]: [linkOf(3), linkOf(4)] }));
+  render(<SessionList sessions={sessions} />);
+  await screen.findByTestId("pr-button");
+  const list = screen.getByRole("listbox");
+  fireEvent.keyDown(list, { key: "Enter", shiftKey: true });
+  await screen.findByRole("dialog");
+  list.focus();
+  fireEvent.keyDown(list, { key: "Enter", shiftKey: true, repeat: true });
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});
+
+test("clicking the PR button opens a single PR directly and toggles the popover for several", async () => {
+  const sessions = makeSessions(3);
+  const { openExternal } = installPrs(() => ({
+    [sessions[0].sessionId]: [linkOf(3)],
+    [sessions[1].sessionId]: [linkOf(5), linkOf(6)],
+  }));
+  render(<SessionList sessions={sessions} />);
+  await waitFor(() =>
+    expect(screen.getAllByTestId("pr-button").length).toBe(2),
+  );
+  const [one, many] = screen.getAllByTestId("pr-button");
+  fireEvent.click(one);
+  expect(openExternal).toHaveBeenCalledWith("https://github.com/o/r/pull/3");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(many);
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  fireEvent.click(many);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("opening a PR from the popover keeps it open; Escape closes it and focuses the list", async () => {
+  const sessions = makeSessions(3);
+  const { openExternal } = installPrs(() => ({
+    [sessions[0].sessionId]: [linkOf(3), linkOf(4)],
+  }));
+  render(<SessionList sessions={sessions} />);
+  const btn = await screen.findByTestId("pr-button");
+  fireEvent.click(btn);
+  const items = within(screen.getByRole("dialog")).getAllByRole("button");
+  fireEvent.click(items[0]);
+  expect(openExternal).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  fireEvent.keyDown(items[0], { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("listbox"));
+});
+
+test("an outside pointerdown, a list scroll and a window resize each close the popover", async () => {
+  const sessions = makeSessions(3);
+  installPrs(() => ({ [sessions[0].sessionId]: [linkOf(3), linkOf(4)] }));
+  render(<SessionList sessions={sessions} />);
+  const btn = await screen.findByTestId("pr-button");
+  const open = () => {
+    if (!screen.queryByRole("dialog")) fireEvent.click(btn);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  };
+  open();
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  open();
+  fireEvent.scroll(screen.getByRole("listbox"), { target: { scrollTop: 10 } });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  open();
+  fireEvent(window, new Event("resize"));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("the popover closes when its session leaves the list", async () => {
+  const sessions = makeSessions(3);
+  installPrs(() => ({ [sessions[0].sessionId]: [linkOf(3), linkOf(4)] }));
+  const { rerender } = render(<SessionList sessions={sessions} />);
+  fireEvent.click(await screen.findByTestId("pr-button"));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  rerender(<SessionList sessions={sessions.slice(1)} />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  rerender(<SessionList sessions={sessions} />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("the popover closes when a session is inserted above its row", async () => {
+  const sessions = makeSessions(3);
+  installPrs(() => ({ [sessions[0].sessionId]: [linkOf(3), linkOf(4)] }));
+  const { rerender } = render(<SessionList sessions={sessions} />);
+  fireEvent.click(await screen.findByTestId("pr-button"));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  const newer = { ...makeSessions(1)[0], sessionId: "id-newer" };
+  rerender(<SessionList sessions={[newer, ...sessions]} />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  rerender(<SessionList sessions={sessions} />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("after a search:changed refetch an open popover shows the new links", async () => {
+  const sessions = makeSessions(3);
+  let links = [linkOf(3), linkOf(4)];
+  const { fireChanged } = installPrs(() => ({
+    [sessions[0].sessionId]: links,
+  }));
+  render(<SessionList sessions={sessions} />);
+  fireEvent.click(await screen.findByTestId("pr-button"));
+  expect(within(screen.getByRole("dialog")).getAllByRole("button").length).toBe(
+    2,
+  );
+  links = [linkOf(3), linkOf(4), linkOf(9)];
+  await act(async () => {
+    fireChanged();
+  });
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("dialog")).getAllByRole("button").length,
+    ).toBe(3),
+  );
+});
+
+test("when a refetch leaves one PR the popover closes without throwing", async () => {
+  const sessions = makeSessions(3);
+  let links = [linkOf(3), linkOf(4)];
+  const { fireChanged } = installPrs(() => ({
+    [sessions[0].sessionId]: links,
+  }));
+  render(<SessionList sessions={sessions} />);
+  fireEvent.click(await screen.findByTestId("pr-button"));
+  links = [linkOf(3)];
+  await act(async () => {
+    fireChanged();
+  });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  links = [linkOf(3), linkOf(4)];
+  await act(async () => {
+    fireChanged();
+  });
+  await waitFor(() =>
+    expect(screen.getAllByTestId("pr-button").length).toBe(1),
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("Shift+Enter on a multi-PR row scrolled out of the window reveals the row and opens the popover", async () => {
+  const sessions = makeSessions(100);
+  installPrs(() => ({ [sessions[0].sessionId]: [linkOf(3), linkOf(4)] }));
+  render(<SessionList sessions={sessions} />);
+  await screen.findByTestId("pr-button");
+  const list = screen.getByRole("listbox");
+  fireEvent.scroll(list, { target: { scrollTop: 50 * ROW_HEIGHT } });
+  expect(screen.queryByTestId("pr-button")).toBeNull();
+  fireEvent.keyDown(list, { key: "Enter", shiftKey: true });
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(list.scrollTop).toBe(0);
+  fireEvent.scroll(list, { target: { scrollTop: 0 } });
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});
+
+test("a sub-pixel scroll readback after a reveal keeps the popover open", async () => {
+  const sessions = makeSessions(100);
+  installPrs(() => ({ [sessions[60].sessionId]: [linkOf(3), linkOf(4)] }));
+  render(<SessionList sessions={sessions} />);
+  const list = screen.getByRole("listbox");
+  fireEvent.scroll(list, { target: { scrollTop: 55 * ROW_HEIGHT } });
+  await screen.findByTestId("pr-button");
+  fireEvent.click(screen.getByTestId("pr-button"));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  fireEvent.scroll(list, { target: { scrollTop: 55 * ROW_HEIGHT + 0.33 } });
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  fireEvent.scroll(list, { target: { scrollTop: 56 * ROW_HEIGHT } });
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("a popover that closes while holding focus hands focus back to the list", async () => {
+  const sessions = makeSessions(3);
+  let links = [linkOf(3), linkOf(4)];
+  const { fireChanged } = installPrs(() => ({
+    [sessions[0].sessionId]: links,
+  }));
+  render(<SessionList sessions={sessions} />);
+  fireEvent.click(await screen.findByTestId("pr-button"));
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  links = [linkOf(3)];
+  await act(async () => {
+    fireChanged();
+  });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(document.activeElement).toBe(screen.getByRole("listbox"));
 });

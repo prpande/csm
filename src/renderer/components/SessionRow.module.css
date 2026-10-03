@@ -39,8 +39,10 @@
    without hovering. Shares the accent outline→fill language planned for the
    bypass modal (#98). */
 .open {
-  flex: 0 0 auto;
-  padding: 0.25rem 0.7rem;
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  padding: 0 0.7rem;
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--accent);
@@ -203,4 +205,97 @@
   height: 0.65em;
   border-radius: 4px;
   background: var(--skeleton-bg);
+}
+
+.actions {
+  flex: 0 0 9rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 9px;
+}
+
+.prButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.prText {
+  display: inline-flex;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.prState {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prMore {
+  flex: 0 0 auto;
+}
+
+.prIcon {
+  flex: 0 0 auto;
+  transition: transform 0.12s ease;
+}
+
+.isOpen {
+  transform: rotate(90deg);
+}
+
+.prButton[data-pr-state]:not([data-pr-state="unfetched"]) {
+  background: var(--pr-bg);
+  color: var(--pr-fg);
+  border-color: var(--pr-fg);
+}
+
+.prButton[data-pr-state]:not([data-pr-state="unfetched"]):hover {
+  background: var(--pr-fg);
+  color: var(--pr-bg);
+}
+
+.prButton[data-pr-state="unfetched"]:hover {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.row[data-selected] .prButton[data-pr-state="unfetched"] {
+  color: var(--selection-text);
+  border-color: var(--selection-text);
+}
+
+.row[data-selected] .prButton[data-pr-state="unfetched"]:hover {
+  background: var(--selection-text);
+  color: var(--selection-bg);
+}
+
+.prButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prIcon {
+    transition: none;
+  }
 }

@@ -201,3 +201,12 @@ test("listKeyAction: an empty list handles nothing", () => {
   expect(listKeyAction("End", -1, 0)).toBeNull();
   expect(listKeyAction("Enter", -1, 0)).toBeNull();
 });
+
+test("listKeyAction: Shift+Enter opens the focused row's PR (#206)", () => {
+  expect(listKeyAction("Enter", 2, 5, { shift: true })).toEqual({
+    type: "openPr",
+    index: 2,
+  });
+  expect(listKeyAction("Enter", 2, 5)).toEqual({ type: "open", index: 2 });
+  expect(listKeyAction("Enter", -1, 5, { shift: true })).toBeNull();
+});
