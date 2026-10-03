@@ -109,3 +109,5 @@ export function prButtonLabel(
     multiple: links.length > 1,
   };
 }
+
+export const prButtonId = (rowId: string): string => `${rowId}-pr`;

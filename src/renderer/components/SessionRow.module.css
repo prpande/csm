@@ -39,8 +39,10 @@
    without hovering. Shares the accent outline→fill language planned for the
    bypass modal (#98). */
 .open {
-  flex: 0 0 auto;
-  padding: 0.25rem 0.7rem;
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  padding: 0 0.7rem;
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--accent);
@@ -205,34 +207,41 @@
   background: var(--skeleton-bg);
 }
 
-/* PR chip: the session's primary PR, outlined like the branch chip so it
-   reads as information. Like the branch chip it may shrink, eliding the state
-   label first, so a narrow pane keeps the row's time/id in view. */
-.pr {
-  flex: 0 1 auto;
-  display: inline-flex;
+/* Right-hand action column: Open on top, the PR button under it. */
+.actions {
+  flex: 0 0 7.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 9px;
+}
+
+.prButton {
+  display: flex;
   align-items: center;
-  gap: 0.25rem;
-  min-width: 0;
-  padding: 0.05rem 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  justify-content: center;
+  gap: 0.3rem;
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 6px;
   background: transparent;
-  color: var(--text);
+  color: var(--text-muted);
   font: inherit;
-  font-size: 0.7rem;
-  line-height: 1.4;
+  font-size: 0.72rem;
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
 }
 
-.pr:hover {
-  border-color: var(--accent);
-}
-
-.prState,
-.prMore {
-  color: var(--text-muted);
+.prText {
+  display: inline-flex;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .prState {
@@ -243,4 +252,73 @@
 
 .prMore {
   flex: 0 0 auto;
+}
+
+.prIcon {
+  flex: 0 0 auto;
+  transition: transform 0.12s ease;
+}
+
+.isOpen {
+  transform: rotate(90deg);
+}
+
+.prButton[data-state="open"] {
+  background: var(--pr-open-bg);
+  color: var(--pr-open-text);
+  border-color: var(--pr-open-text);
+}
+
+.prButton[data-state="draft"] {
+  background: var(--pr-draft-bg);
+  color: var(--pr-draft-text);
+  border-color: var(--pr-draft-text);
+}
+
+.prButton[data-state="merged"] {
+  background: var(--pr-merged-bg);
+  color: var(--pr-merged-text);
+  border-color: var(--pr-merged-text);
+}
+
+.prButton[data-state="closed"] {
+  background: var(--pr-closed-bg);
+  color: var(--pr-closed-text);
+  border-color: var(--pr-closed-text);
+}
+
+.prButton[data-state="unfetched"]:hover {
+  background: var(--text-muted);
+  color: var(--bg);
+}
+
+.prButton[data-state="open"]:hover {
+  background: var(--pr-open-text);
+  color: var(--pr-open-bg);
+}
+
+.prButton[data-state="draft"]:hover {
+  background: var(--pr-draft-text);
+  color: var(--pr-draft-bg);
+}
+
+.prButton[data-state="merged"]:hover {
+  background: var(--pr-merged-text);
+  color: var(--pr-merged-bg);
+}
+
+.prButton[data-state="closed"]:hover {
+  background: var(--pr-closed-text);
+  color: var(--pr-closed-bg);
+}
+
+.prButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prIcon {
+    transition: none;
+  }
 }

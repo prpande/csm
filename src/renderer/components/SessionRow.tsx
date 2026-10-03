@@ -1,6 +1,11 @@
 import type { SessionMetadata } from "../../sessionParser";
 import type { SessionPrLink } from "../../ipcTypes";
-import { orderedPrs, prLinkSummary, prStateLabel } from "../../prChip";
+import {
+  orderedPrs,
+  prButtonId,
+  prButtonLabel,
+  prLinkSummary,
+} from "../../prChip";
 import {
   chipVariant,
   formatRelativeTime,
@@ -9,6 +14,8 @@ import {
   shouldShowGitBranch,
 } from "../../sessionRowView";
 import type { FactEntry } from "../hooks/useSessionFacts";
+import { ChevronIcon } from "./ChevronIcon";
+import { ExternalLinkIcon } from "./ExternalLinkIcon";
 import { GitBranchIcon } from "./GitBranchIcon";
 import styles from "./SessionRow.module.css";
 
@@ -39,10 +46,12 @@ interface SessionRowProps {
   worktreeBranch?: string;
   /** Lazily-loaded facts (#115). Undefined = still loading (renders a skeleton). */
   factState?: FactEntry;
-  /** PR links for this session. Undefined or empty renders no chip. */
+  /** PR links for this session. Undefined or empty renders no PR button. */
   prLinks?: SessionPrLink[];
-  /** Opens a PR in the browser. */
-  onOpenPr?: (link: SessionPrLink) => void;
+  /** True while this row's PR popover is open. */
+  prOpen?: boolean;
+  /** PR button click; the list decides between opening a PR and the popover. */
+  onPrButton?: (session: SessionMetadata, anchor: HTMLElement) => void;
 }
 
 // One presentational session row (spec §9): a text block (title over a
@@ -61,7 +70,8 @@ export function SessionRow({
   worktreeBranch,
   factState,
   prLinks,
-  onOpenPr,
+  prOpen = false,
+  onPrButton,
 }: SessionRowProps) {
   const variant = chipVariant(session.permissionMode);
   // Non-empty only in the loaded state; the skeleton/error arms don't read it.
@@ -78,8 +88,7 @@ export function SessionRow({
     : undefined;
   const branchLabel = worktreeBranch ?? ownBranch;
   const orderedLinks = prLinks ? orderedPrs(prLinks) : [];
-  const primary = orderedLinks[0];
-  const primaryState = primary ? prStateLabel(primary) : undefined;
+  const label = prLinks ? prButtonLabel(prLinks) : undefined;
   const linkSummaries = orderedLinks.map(prLinkSummary);
   return (
     <div
@@ -126,35 +135,6 @@ export function SessionRow({
               <span className={styles.branchName}>{branchLabel}</span>
             </span>
           )}
-          {primary && (
-            <button
-              type="button"
-              className={styles.pr}
-              data-testid="pr-chip"
-              // Not a tab stop, like the Open button: Shift+Enter on the row opens it.
-              tabIndex={-1}
-              title={linkSummaries.join("\n")}
-              aria-label={`Pull requests: ${linkSummaries.join("; ")}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (e.detail > 1) return;
-                onOpenPr?.(primary);
-              }}
-              onDoubleClick={(e) => e.stopPropagation()}
-            >
-              #{primary.number}
-              {primaryState && (
-                <span className={styles.prState} data-state={primaryState}>
-                  {primaryState}
-                </span>
-              )}
-              {orderedLinks.length > 1 && (
-                <span className={styles.prMore}>
-                  +{orderedLinks.length - 1}
-                </span>
-              )}
-            </button>
-          )}
           <span className={styles.sep} aria-hidden="true">
             ·
           </span>
@@ -189,29 +169,66 @@ export function SessionRow({
           </div>
         )}
       </div>
-      {/* Rendered only when a reopen handler is wired (always, in the app). The
-          accessible name is per-row; stopPropagation keeps a click from also
-          firing the row's double-click reopen. */}
-      {onOpen && (
-        <button
-          type="button"
-          className={styles.open}
-          // Not a tab stop: the listbox is the pane's single tab stop (spec §9,
-          // matching the tree chevron). Keyboard users open via Enter on the row;
-          // the button stays mouse-clickable and its accessible name is per-row.
-          tabIndex={-1}
-          aria-label={`Open session: ${session.title}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen(session);
-          }}
-          // Swallow a double-click on the button so it can't also bubble to the
-          // row's double-click reopen — the button owns its own gesture,
-          // independent of the reopen consumer being idempotent.
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          Open
-        </button>
+      {(onOpen || label) && (
+        <div className={styles.actions}>
+          {onOpen && (
+            <button
+              type="button"
+              className={styles.open}
+              // Not a tab stop: the listbox is the pane's single tab stop (spec §9);
+              // Enter on the row opens it.
+              tabIndex={-1}
+              aria-label={`Open session: ${session.title}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen(session);
+              }}
+              onDoubleClick={(e) => e.stopPropagation()}
+            >
+              Open
+            </button>
+          )}
+          {label && (
+            <button
+              type="button"
+              className={styles.prButton}
+              id={id ? prButtonId(id) : undefined}
+              data-testid="pr-button"
+              data-state={label.state ?? "unfetched"}
+              tabIndex={-1}
+              title={linkSummaries.join("\n")}
+              aria-label={`Pull requests: ${linkSummaries.join("; ")}`}
+              aria-haspopup={label.multiple ? "dialog" : undefined}
+              aria-expanded={label.multiple ? prOpen : undefined}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (e.detail > 1) return;
+                onPrButton?.(session, e.currentTarget);
+              }}
+              onDoubleClick={(e) => e.stopPropagation()}
+            >
+              <span className={styles.prText}>
+                #{label.number}
+                {label.state && (
+                  <span className={styles.prState}>{label.state}</span>
+                )}
+                {label.more > 0 && (
+                  <span className={styles.prMore}>+{label.more}</span>
+                )}
+              </span>
+              {label.multiple ? (
+                <ChevronIcon
+                  className={
+                    prOpen ? `${styles.prIcon} ${styles.isOpen}` : styles.prIcon
+                  }
+                  size={13}
+                />
+              ) : (
+                <ExternalLinkIcon className={styles.prIcon} size={13} />
+              )}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

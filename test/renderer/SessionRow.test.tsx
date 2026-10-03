@@ -328,25 +328,58 @@ const pr = (over: Partial<SessionPrLink> = {}): SessionPrLink => ({
   ...over,
 });
 
-test("the PR chip shows the primary PR, its state and how many more (#206)", () => {
-  render(
+const prButton = () => screen.getByTestId("pr-button");
+
+test("the PR button shows the primary PR, its state, how many more and a chevron (#206)", () => {
+  const { container } = render(
     <SessionRow
       session={makeSession()}
       rowHeight={56}
       prLinks={[pr(), pr({ number: 9, state: "MERGED", createdHere: false })]}
     />,
   );
-  const chip = screen.getByTestId("pr-chip");
-  expect(chip.textContent).toBe("#12open+1");
-  expect(chip.getAttribute("title")).toBe(
+  const btn = prButton();
+  expect(btn.textContent).toBe("#12open+1");
+  expect(btn.getAttribute("data-state")).toBe("open");
+  expect(btn.getAttribute("title")).toBe(
     "o/r#12 · open · Fix the parser\no/r#9 · merged · Fix the parser",
   );
-  expect(chip.getAttribute("aria-label")).toBe(
+  expect(btn.getAttribute("aria-label")).toBe(
     "Pull requests: o/r#12 · open · Fix the parser; o/r#9 · merged · Fix the parser",
+  );
+  expect(btn.getAttribute("aria-haspopup")).toBe("dialog");
+  expect(btn.getAttribute("aria-expanded")).toBe("false");
+  expect(btn.querySelector('path[d="M6 4l4 4-4 4"]')).toBeTruthy();
+  expect(container.querySelector('[data-testid="pr-chip"]')).toBeNull();
+});
+
+test("the chevron turns while the popover is open", () => {
+  render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr(), pr({ number: 9 })]}
+      prOpen
+    />,
+  );
+  expect(prButton().getAttribute("aria-expanded")).toBe("true");
+  expect(prButton().querySelector("svg")?.getAttribute("class")).toMatch(
+    /isOpen/,
   );
 });
 
-test("a draft PR reads draft, and an unenriched PR shows only its number", () => {
+test("a single PR shows the external-link icon and no popup attributes", () => {
+  render(
+    <SessionRow session={makeSession()} rowHeight={56} prLinks={[pr()]} />,
+  );
+  const btn = prButton();
+  expect(btn.textContent).toBe("#12open");
+  expect(btn.querySelector('path[d^="M9.5 2.5"]')).toBeTruthy();
+  expect(btn.hasAttribute("aria-haspopup")).toBe(false);
+  expect(btn.hasAttribute("aria-expanded")).toBe(false);
+});
+
+test("a draft PR reads draft, and an unfetched PR shows only its number", () => {
   const { rerender } = render(
     <SessionRow
       session={makeSession()}
@@ -354,7 +387,8 @@ test("a draft PR reads draft, and an unenriched PR shows only its number", () =>
       prLinks={[pr({ isDraft: true })]}
     />,
   );
-  expect(screen.getByTestId("pr-chip").textContent).toBe("#12draft");
+  expect(prButton().textContent).toBe("#12draft");
+  expect(prButton().getAttribute("data-state")).toBe("draft");
   rerender(
     <SessionRow
       session={makeSession()}
@@ -362,7 +396,8 @@ test("a draft PR reads draft, and an unenriched PR shows only its number", () =>
       prLinks={[pr({ state: null })]}
     />,
   );
-  expect(screen.getByTestId("pr-chip").textContent).toBe("#12");
+  expect(prButton().textContent).toBe("#12");
+  expect(prButton().getAttribute("data-state")).toBe("unfetched");
 });
 
 test("a PR title is never parsed as markup", () => {
@@ -374,55 +409,67 @@ test("a PR title is never parsed as markup", () => {
     />,
   );
   expect(container.querySelector("img")).toBeNull();
-  expect(screen.getByTestId("pr-chip").getAttribute("title")).toContain(
+  expect(prButton().getAttribute("title")).toContain(
     "<img src=x onerror=alert(1)>",
   );
 });
 
-test("no links, no chip", () => {
-  const { rerender } = render(
-    <SessionRow session={makeSession()} rowHeight={56} />,
+test("no links, no PR button; with links it sits under Open, outside the meta line", () => {
+  const { rerender, container } = render(
+    <SessionRow session={makeSession()} rowHeight={56} onOpen={vi.fn()} />,
   );
-  expect(screen.queryByTestId("pr-chip")).toBeNull();
-  rerender(<SessionRow session={makeSession()} rowHeight={56} prLinks={[]} />);
-  expect(screen.queryByTestId("pr-chip")).toBeNull();
-});
-
-test("the second click of a double-click on the chip does not open the PR again", () => {
-  const onOpenPr = vi.fn();
-  render(
+  expect(screen.queryByTestId("pr-button")).toBeNull();
+  expect(screen.getByRole("button", { name: /open session:/i })).toBeTruthy();
+  rerender(
     <SessionRow
       session={makeSession()}
       rowHeight={56}
       prLinks={[pr()]}
-      onOpenPr={onOpenPr}
+      onOpen={vi.fn()}
     />,
   );
-  const chip = screen.getByTestId("pr-chip");
-  fireEvent.click(chip, { detail: 1 });
-  fireEvent.click(chip, { detail: 2 });
-  expect(onOpenPr).toHaveBeenCalledTimes(1);
+  const open = screen.getByRole("button", { name: /open session:/i });
+  expect(open.parentElement).toBe(prButton().parentElement);
+  expect(open.nextElementSibling).toBe(prButton());
+  expect(container.querySelector('[class*="meta"] button')).toBeNull();
 });
 
-test("clicking the chip opens the primary PR without selecting or reopening the row", () => {
+test("clicking the PR button reports the session and anchor without selecting or reopening", () => {
   const onSelect = vi.fn();
   const onOpen = vi.fn();
-  const onOpenPr = vi.fn();
+  const onPrButton = vi.fn();
+  const session = makeSession();
   render(
     <SessionRow
-      session={makeSession()}
+      session={session}
       rowHeight={56}
       prLinks={[pr()]}
       onSelect={onSelect}
       onOpen={onOpen}
-      onOpenPr={onOpenPr}
+      onPrButton={onPrButton}
     />,
   );
-  const chip = screen.getByTestId("pr-chip");
-  fireEvent.click(chip);
-  fireEvent.doubleClick(chip);
-  expect(onOpenPr).toHaveBeenCalledWith(pr());
+  const btn = prButton();
+  fireEvent.click(btn);
+  fireEvent.doubleClick(btn);
+  expect(onPrButton).toHaveBeenCalledTimes(1);
+  expect(onPrButton).toHaveBeenCalledWith(session, btn);
   expect(onSelect).not.toHaveBeenCalled();
   expect(onOpen).not.toHaveBeenCalled();
-  expect(chip.tabIndex).toBe(-1);
+  expect(btn.tabIndex).toBe(-1);
+});
+
+test("the second click of a double-click on the PR button is ignored", () => {
+  const onPrButton = vi.fn();
+  render(
+    <SessionRow
+      session={makeSession()}
+      rowHeight={56}
+      prLinks={[pr()]}
+      onPrButton={onPrButton}
+    />,
+  );
+  fireEvent.click(prButton(), { detail: 1 });
+  fireEvent.click(prButton(), { detail: 2 });
+  expect(onPrButton).toHaveBeenCalledTimes(1);
 });

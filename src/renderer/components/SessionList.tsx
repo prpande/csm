@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { SessionMetadata } from "../../sessionParser";
 import type { SessionPrLink } from "../../ipcTypes";
-import { primaryPr } from "../../prChip";
+import { prButtonId } from "../../prChip";
 import { currentBridge } from "../bridge";
 import {
   computeWindow,
@@ -13,6 +13,7 @@ import {
 } from "../../sessionListWindow";
 import { useSessionFacts } from "../hooks/useSessionFacts";
 import { useSessionPrs } from "../hooks/useSessionPrs";
+import { PrPopover } from "./PrPopover";
 import { SessionRow } from "./SessionRow";
 import styles from "./SessionList.module.css";
 
@@ -62,6 +63,32 @@ export function SessionList({
 
   const openPr = (link: SessionPrLink) => {
     void currentBridge()?.openExternal(link.url);
+  };
+
+  const [picker, setPicker] = useState<{
+    sessionId: string;
+    anchor: HTMLElement;
+  } | null>(null);
+  const closePicker = (how: { keyboard: boolean }) => {
+    setPicker(null);
+    if (how.keyboard) scrollRef.current?.focus();
+  };
+
+  // One PR opens directly; several toggle the popover on that row's button.
+  const activatePr = (
+    sessionId: string,
+    links: readonly SessionPrLink[],
+    anchor: HTMLElement | null,
+  ) => {
+    if (links.length === 0) return;
+    if (links.length === 1) {
+      openPr(links[0]);
+      return;
+    }
+    if (!anchor) return;
+    setPicker((prev) =>
+      prev?.sessionId === sessionId ? null : { sessionId, anchor },
+    );
   };
 
   // Measure the viewport height and keep it current on resize. ResizeObserver is
@@ -123,8 +150,12 @@ export function SessionList({
     }
     if (action.type === "openPr") {
       if (e.repeat) return;
-      const link = primaryPr(prs.get(sessions[action.index].sessionId) ?? []);
-      if (link) openPr(link);
+      const sessionId = sessions[action.index].sessionId;
+      activatePr(
+        sessionId,
+        prs.get(sessionId) ?? [],
+        document.getElementById(prButtonId(optionId(sessionId))),
+      );
       return;
     }
     const target = sessions[action.index];
@@ -153,6 +184,20 @@ export function SessionList({
 
   const { facts, requestFacts } = useSessionFacts();
   const { prs, requestPrs } = useSessionPrs();
+  const pickerLinks = picker ? (prs.get(picker.sessionId) ?? []) : [];
+  const pickerSession = picker
+    ? sessions.find((s) => s.sessionId === picker.sessionId)
+    : undefined;
+  const pickerValid = pickerSession !== undefined && pickerLinks.length > 1;
+  useEffect(() => {
+    if (picker && !pickerValid) setPicker(null);
+  }, [picker, pickerValid]);
+  useEffect(() => {
+    if (!picker) return;
+    const close = () => setPicker(null);
+    window.addEventListener("resize", close);
+    return () => window.removeEventListener("resize", close);
+  }, [picker]);
   // Request facts for the rows actually mounted (the window). Keyed on the id list
   // so a scroll into new rows fetches just the newly-visible, uncached ones.
   const visibleIds = visible.map((s) => s.sessionId);
@@ -185,7 +230,10 @@ export function SessionList({
       // contract sound.
       tabIndex={sessions.length > 0 ? 0 : -1}
       aria-activedescendant={activeDescendant}
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      onScroll={(e) => {
+        setScrollTop(e.currentTarget.scrollTop);
+        setPicker(null);
+      }}
       onKeyDown={onKeyDown}
     >
       {/* The spacer/window wrappers carry no semantics — mark them presentation
@@ -215,11 +263,23 @@ export function SessionList({
               worktreeBranch={worktreeBranches?.get(session.sessionId)}
               factState={facts.get(session.sessionId)}
               prLinks={prs.get(session.sessionId)}
-              onOpenPr={openPr}
+              prOpen={picker?.sessionId === session.sessionId}
+              onPrButton={(s, anchor) =>
+                activatePr(s.sessionId, prs.get(s.sessionId) ?? [], anchor)
+              }
             />
           ))}
         </div>
       </div>
+      {picker && pickerSession && pickerValid && (
+        <PrPopover
+          anchor={picker.anchor}
+          sessionTitle={pickerSession.title}
+          links={pickerLinks}
+          onOpenPr={openPr}
+          onClose={closePicker}
+        />
+      )}
     </div>
   );
 }
