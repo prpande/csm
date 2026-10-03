@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+  isBusyError,
   isCorruptionError,
   openSearchDb,
   openSearchDbSafe,
@@ -73,6 +74,28 @@ test("isCorruptionError recognises SQLITE_CORRUPT and SQLITE_NOTADB", () => {
   expect(isCorruptionError({ errcode: 267 })).toBe(true); // SQLITE_CORRUPT_VTAB
   expect(isCorruptionError({ errcode: 5 })).toBe(false);
   expect(isCorruptionError(new Error("x"))).toBe(false);
+});
+
+test("isBusyError recognises SQLITE_BUSY and SQLITE_LOCKED", () => {
+  expect(isBusyError({ errcode: 5 })).toBe(true);
+  expect(isBusyError({ errcode: 517 })).toBe(true); // SQLITE_BUSY_SNAPSHOT
+  expect(isBusyError({ errcode: 6 })).toBe(true);
+  expect(isBusyError({ errcode: 11 })).toBe(false);
+  expect(isBusyError(new Error("x"))).toBe(false);
+});
+
+test("a healthy database opens while another connection holds the write lock", () => {
+  openSearchDb(dir, { platform: process.platform }).close();
+  const other = new DatabaseSync(join(dir, SEARCH_DB_FILENAME));
+  other.exec("BEGIN IMMEDIATE");
+  try {
+    const db = openSearchDb(dir, { platform: process.platform });
+    expect(db.ftsOk).toBe(true);
+    db.close();
+  } finally {
+    other.exec("ROLLBACK");
+    other.close();
+  }
 });
 
 describe("openSearchDbSafe", () => {

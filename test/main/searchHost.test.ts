@@ -199,6 +199,33 @@ describe("createSearchHost", () => {
     expect(host.state).toBe("failed");
   });
 
+  test("a busy database at open is retried like a crash", () => {
+    const { host, workers, last } = setup();
+    host.start();
+    const first = last();
+    first.send({ type: "fatal", code: "OPEN_BUSY" });
+    expect(first.terminated).toBe(true);
+    expect(host.state).toBe("starting");
+    first.exit(1);
+    vi.advanceTimersByTime(RESTART_DELAYS_MS[0]);
+    expect(workers).toHaveLength(2);
+    last().send(READY);
+    expect(host.state).toBe("running");
+  });
+
+  test("an open failure while stop waits for the ack ends the wait at once", async () => {
+    const { host, last } = setup();
+    host.start();
+    let done = false;
+    const stopping = host.stop().then(() => {
+      done = true;
+    });
+    last().send({ type: "fatal", code: "OPEN_FAILED" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).toBe(true);
+    await stopping;
+  });
+
   test("stop waits for the ack, terminates, and never restarts", async () => {
     const { host, workers, last } = setup();
     host.start();

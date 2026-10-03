@@ -19,4 +19,4 @@ export type WorkerToHost =
   | { type: "result"; id: number; ok: true; value: SessionPrsResult }
   | { type: "result"; id: number; ok: false }
   | { type: "shutdownAck" }
-  | { type: "fatal"; code: "OPEN_FAILED" };
+  | { type: "fatal"; code: "OPEN_FAILED" | "OPEN_BUSY" };

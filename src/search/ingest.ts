@@ -29,6 +29,7 @@ import {
   type TurnRow,
 } from "./turnExtractor";
 
+// Bump whenever sessionParser's title or prompt rules change; closed transcripts are re-read only on a version change.
 export const EXTRACT_VERSION = 1;
 export const COMMIT_EVERY_BYTES = 4 * 1024 * 1024;
 
@@ -332,8 +333,12 @@ export function createIngester(deps: IngesterDeps): {
       deps.onProgress?.({ done: i + 1, total: work.length });
     }
 
-    if (await settleAbsent(rows, seen)) result.changed = true;
-    if (db.pruneOrphanPrs() > 0) result.changed = true;
+    try {
+      if (await settleAbsent(rows, seen)) result.changed = true;
+      if (db.pruneOrphanPrs() > 0) result.changed = true;
+    } catch (err) {
+      deps.log?.("search: could not settle missing transcripts", err);
+    }
     if (result.invalidPrRefs > 0)
       deps.log?.(
         `search: dropped ${result.invalidPrRefs} invalid PR references`,

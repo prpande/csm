@@ -95,12 +95,17 @@ export function createSearchHost(deps: SearchHostDeps): SearchHost {
         break;
       case "fatal": {
         const w = worker;
-        state = "failed";
         worker = null;
+        void w?.terminate().catch(() => 0);
+        if (msg.code === "OPEN_BUSY") {
+          onExit(msg.code);
+          break;
+        }
+        state = "failed";
         clearTimeout(stableTimer);
         settleAll();
+        onAck?.();
         deps.log(`search worker failed: ${msg.code}`);
-        void w?.terminate().catch(() => 0);
         break;
       }
     }

@@ -1,7 +1,7 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { ghEnv, runGhBatch } from "./ghClient";
 import type { HostToWorker, WorkerInit, WorkerToHost } from "./protocol";
-import { openSearchDbSafe } from "./searchDb";
+import { isBusyError, openSearchDbSafe } from "./searchDb";
 import { createSearchService } from "./searchService";
 
 const port = parentPort;
@@ -31,6 +31,6 @@ try {
   service.start();
 } catch (err) {
   log("could not open search.db", err);
-  post({ type: "fatal", code: "OPEN_FAILED" });
+  post({ type: "fatal", code: isBusyError(err) ? "OPEN_BUSY" : "OPEN_FAILED" });
   port.close();
 }

@@ -274,12 +274,25 @@ function migrate(db: DatabaseSync): void {
     });
 }
 
+function readMeta(db: DatabaseSync, key: string): string | undefined {
+  return (
+    str(
+      (
+        db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as
+          Row | undefined
+      )?.value,
+    ) ?? undefined
+  );
+}
+
+function writeMeta(db: DatabaseSync, key: string, value: string): void {
+  db.prepare(
+    "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+  ).run(key, value);
+}
+
 function ensureFts(db: DatabaseSync, ddl: string): boolean {
-  const wasOk =
-    (
-      db.prepare("SELECT value FROM meta WHERE key = 'fts_ok'").get() as
-        Row | undefined
-    )?.value === "1";
+  const wasOk = readMeta(db, "fts_ok") === "1";
   const exists =
     db
       .prepare(
@@ -297,9 +310,7 @@ function ensureFts(db: DatabaseSync, ddl: string): boolean {
     if (isCorruptionError(err)) throw err;
     ok = false;
   }
-  db.prepare(
-    "INSERT INTO meta (key, value) VALUES ('fts_ok', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-  ).run(ok ? "1" : "0");
+  if (ok !== wasOk || !exists) writeMeta(db, "fts_ok", ok ? "1" : "0");
   return ok;
 }
 
@@ -379,10 +390,6 @@ export function openSearchDb(dir: string, opts: OpenOptions): SearchDb {
   );
   const restamp = db.prepare(
     "UPDATE session SET title = ?, extract_version = ? WHERE root = ? AND sid = ?",
-  );
-  const getMeta = db.prepare("SELECT value FROM meta WHERE key = ?");
-  const setMeta = db.prepare(
-    "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
   );
   const prsFor = db.prepare(
     `SELECT sp.sid, p.repo, p.number, p.url, p.title, p.state, p.is_draft,
@@ -491,10 +498,10 @@ export function openSearchDb(dir: string, opts: OpenOptions): SearchDb {
       restamp.run(title, extractVersion, root, sid);
     },
     getMeta(key) {
-      return str((getMeta.get(key) as Row | undefined)?.value) ?? undefined;
+      return readMeta(db, key);
     },
     setMeta(key, value) {
-      setMeta.run(key, value);
+      writeMeta(db, key, value);
     },
     prsForSessions(root, sids) {
       const out: SessionPrsResult = {};
@@ -589,11 +596,20 @@ export function openSearchDb(dir: string, opts: OpenOptions): SearchDb {
   };
 }
 
-export function isCorruptionError(err: unknown): boolean {
+function primaryErrcode(err: unknown): number | undefined {
   const code = (err as { errcode?: unknown } | null | undefined)?.errcode;
-  if (typeof code !== "number") return false;
-  const primary = code & 0xff;
+  return typeof code === "number" ? code & 0xff : undefined;
+}
+
+export function isCorruptionError(err: unknown): boolean {
+  const primary = primaryErrcode(err);
   return primary === 11 || primary === 26;
+}
+
+/** True for SQLITE_BUSY / SQLITE_LOCKED: another connection holds the file and a later open can succeed. */
+export function isBusyError(err: unknown): boolean {
+  const primary = primaryErrcode(err);
+  return primary === 5 || primary === 6;
 }
 
 export interface SafeOpenOptions extends OpenOptions {

@@ -196,6 +196,21 @@ describe("ingest", () => {
     expect(texts()).toEqual([]);
   });
 
+  test("a failure after the files commit still reports the pass as changed", async () => {
+    write([user("u1", "alpha")]);
+    const locked: typeof db = {
+      ...db,
+      pruneOrphanPrs: () => {
+        throw Object.assign(new Error("database is locked"), { errcode: 5 });
+      },
+    };
+    const log = vi.fn();
+    const r = await ingester({ db: locked, log }).runPass();
+    expect(r.changed).toBe(true);
+    expect(texts()).toEqual(["alpha"]);
+    expect(log).toHaveBeenCalled();
+  });
+
   test("a replayed uuid is stored once, within and across passes", async () => {
     write([user("u1", "same"), user("u1", "same")]);
     await ingester().runPass();

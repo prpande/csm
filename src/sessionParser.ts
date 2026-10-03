@@ -215,8 +215,8 @@ export interface TitleSources {
   firstPrompt?: string | null;
 }
 
-// The single title rule shared by the browse parser and the search index, so the
-// two cannot drift.
+// The single title rule shared by the browse parser and the search index. A change
+// here needs INDEX_SCHEMA_VERSION and EXTRACT_VERSION bumped, or both serve stale titles.
 export function composeTitleFrom(src: TitleSources): string {
   return composeTitle(
     src.customTitle ?? undefined,

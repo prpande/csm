@@ -52,7 +52,7 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
-  # node:sqlite + FTS5 must exist in the Electron runtime the app ships (#206).
+  # node:sqlite + FTS5 must exist in the Electron runtime the app ships.
   # Unit tests run on the runner's Node, so this job downloads the Electron
   # binary and runs the probe with it.
   sqlite-probe:
