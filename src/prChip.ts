@@ -48,3 +48,64 @@ export function prLinkSummary(link: SessionPrLink): string {
     .filter((part): part is string => !!part)
     .join(" · ");
 }
+
+export function popoverPlacement(
+  anchor: { top: number; bottom: number },
+  popoverHeight: number,
+  viewportHeight: number,
+  gap: number,
+): "below" | "above" {
+  const roomBelow = viewportHeight - anchor.bottom - gap;
+  if (popoverHeight <= roomBelow) return "below";
+  const roomAbove = anchor.top - gap;
+  return roomAbove > roomBelow ? "above" : "below";
+}
+
+export type PrPopoverKeyAction =
+  | { type: "move"; index: number }
+  | { type: "open"; index: number }
+  | { type: "close" };
+
+export function prPopoverKey(
+  key: string,
+  index: number,
+  count: number,
+): PrPopoverKeyAction | null {
+  const last = Math.max(count - 1, 0);
+  switch (key) {
+    case "ArrowDown":
+      return { type: "move", index: Math.min(index + 1, last) };
+    case "ArrowUp":
+      return { type: "move", index: Math.max(index - 1, 0) };
+    case "Home":
+      return { type: "move", index: 0 };
+    case "End":
+      return { type: "move", index: last };
+    case "Enter":
+      return { type: "open", index };
+    case "Escape":
+      return { type: "close" };
+    default:
+      return null;
+  }
+}
+
+export interface PrButtonLabel {
+  number: number;
+  state: PrStateLabel | undefined;
+  more: number;
+  multiple: boolean;
+}
+
+export function prButtonLabel(
+  links: readonly SessionPrLink[],
+): PrButtonLabel | undefined {
+  const [primary] = orderedPrs(links);
+  if (!primary) return undefined;
+  return {
+    number: primary.number,
+    state: prStateLabel(primary),
+    more: links.length - 1,
+    multiple: links.length > 1,
+  };
+}
