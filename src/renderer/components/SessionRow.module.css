@@ -228,7 +228,7 @@
   border: 1px solid var(--text-muted);
   border-radius: 6px;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text);
   font: inherit;
   font-size: 0.72rem;
   font-weight: 600;
@@ -287,8 +287,18 @@
 }
 
 .prButton[data-state="unfetched"]:hover {
-  background: var(--text-muted);
+  background: var(--text);
   color: var(--bg);
+}
+
+.row[data-selected] .prButton[data-state="unfetched"] {
+  color: var(--selection-text);
+  border-color: var(--selection-text);
+}
+
+.row[data-selected] .prButton[data-state="unfetched"]:hover {
+  background: var(--selection-text);
+  color: var(--selection-bg);
 }
 
 .prButton[data-state="open"]:hover {

@@ -71,6 +71,27 @@ describe("PR state token contrast", () => {
           }
         });
       }
+
+      test("unfetched: text and border are readable on plain, hovered and selected rows", () => {
+        const block = themeBlocks()[theme];
+        for (const surface of ["--bg", "--hover-bg"]) {
+          const bg = token(block, surface);
+          expect(
+            contrast(token(block, "--text"), bg),
+            surface,
+          ).toBeGreaterThanOrEqual(4.5);
+          expect(
+            contrast(token(block, "--text-muted"), bg),
+            surface,
+          ).toBeGreaterThanOrEqual(3);
+        }
+        expect(
+          contrast(
+            token(block, "--selection-text"),
+            token(block, "--selection-bg"),
+          ),
+        ).toBeGreaterThanOrEqual(4.5);
+      });
     });
   }
 });

@@ -512,8 +512,9 @@ Rows failing validation are dropped and counted in the worker's diagnostics.
 - **State colours.** Four new token pairs per theme, `--pr-<state>-bg` and
   `--pr-<state>-text` for open (green), draft (neutral), merged (purple) and
   closed (red). The button has a tinted fill, text in the state colour and a
-  `1px` border in the state colour; an unfetched PR uses a transparent fill
-  and `--text-muted`. Text on fill is at least 4.5:1 and the border at least
+  `1px` border in the state colour. An unfetched PR uses a transparent fill,
+  `--text` for the label and a `--text-muted` border, and `--selection-text`
+  for both on a selected row. Text on fill is at least 4.5:1 and the border at least
   3:1 against the row, the hovered row and the selected row, in both themes.
   The state is always written as text, so colour is never the only signal.
   On hover the fill and text swap.
